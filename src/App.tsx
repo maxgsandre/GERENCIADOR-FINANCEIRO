@@ -1,0 +1,558 @@
+import React, { useState, useEffect } from 'react';
+import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from './components/ui/sidebar';
+import { Sheet, SheetContent, SheetTrigger } from './components/ui/sheet';
+import { Button } from './components/ui/button';
+import { Alert, AlertDescription } from './components/ui/alert';
+import { useIsMobile } from './components/ui/use-mobile';
+import { Home, Wallet, ArrowUpDown, CreditCard, TrendingDown, Menu, Info } from 'lucide-react';
+import Dashboard from './components/Dashboard';
+import CaixasManager from './components/CaixasManager';
+import TransacoesManager from './components/TransacoesManager';
+import GastosFixosManager from './components/GastosFixosManager';
+import DividasManager from './components/DividasManager';
+import UserMenu from './components/UserMenu';
+import AuthWrapper from './components/Auth/AuthWrapper';
+import LoadingSpinner from './components/LoadingSpinner';
+import Logo from './components/Logo';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import * as firebaseService from './services/firebaseService';
+import { localStorageService, initializeLocalStorage } from './services/localStorageService';
+
+// Types para os dados financeiros
+export interface Caixa {
+  id: string;
+  nome: string;
+  saldo: number;
+  tipo: 'conta_corrente' | 'poupanca' | 'carteira' | 'investimento';
+}
+
+export interface Transacao {
+  id: string;
+  caixaId: string;
+  tipo: 'entrada' | 'saida';
+  valor: number;
+  descricao: string;
+  categoria: string;
+  data: string;
+  hora: string;
+}
+
+export interface GastoFixo {
+  id: string;
+  descricao: string;
+  valor: number;
+  categoria: string;
+  diaVencimento: number;
+  pago: boolean;
+}
+
+export interface Divida {
+  id: string;
+  descricao: string;
+  valorTotal: number;
+  valorPago: number;
+  parcelas: number;
+  parcelasPagas: number;
+  valorParcela: number;
+  dataVencimento: string;
+  tipo: 'parcelada' | 'total';
+}
+
+export interface Cofrinho {
+  id: string;
+  nome: string;
+  saldo: number;
+  objetivo?: number;
+  percentualCDI: number;
+  rendimentoMensal: number;
+  dataCriacao: string;
+  cor: string;
+}
+
+export interface Categoria {
+  id: string;
+  nome: string;
+}
+
+export interface ReceitaPrevista {
+  id: string;
+  descricao: string;
+  valor: number;
+  recebido: boolean;
+  dataVencimento: string;
+}
+
+// Context para dados globais
+export interface FinanceiroContextType {
+  caixas: Caixa[];
+  setCaixas: React.Dispatch<React.SetStateAction<Caixa[]>>;
+  transacoes: Transacao[];
+  setTransacoes: React.Dispatch<React.SetStateAction<Transacao[]>>;
+  gastosFixos: GastoFixo[];
+  setGastosFixos: React.Dispatch<React.SetStateAction<GastoFixo[]>>;
+  dividas: Divida[];
+  setDividas: React.Dispatch<React.SetStateAction<Divida[]>>;
+  cofrinhos: Cofrinho[];
+  setCofrinhos: React.Dispatch<React.SetStateAction<Cofrinho[]>>;
+  categorias: Categoria[];
+  setCategorias: React.Dispatch<React.SetStateAction<Categoria[]>>;
+  receitasPrevistas: ReceitaPrevista[];
+  setReceitasPrevistas: React.Dispatch<React.SetStateAction<ReceitaPrevista[]>>;
+  // Funções para salvar no Firebase
+  saveCaixa: (caixa: Caixa) => Promise<void>;
+  deleteCaixa: (caixaId: string) => Promise<void>;
+  saveTransacao: (transacao: Transacao) => Promise<void>;
+  deleteTransacao: (transacaoId: string) => Promise<void>;
+  saveGastoFixo: (gastoFixo: GastoFixo) => Promise<void>;
+  deleteGastoFixo: (gastoFixoId: string) => Promise<void>;
+  saveDivida: (divida: Divida) => Promise<void>;
+  deleteDivida: (dividaId: string) => Promise<void>;
+  saveCofrinho: (cofrinho: Cofrinho) => Promise<void>;
+  deleteCofrinho: (cofrinhoId: string) => Promise<void>;
+  saveCategoria: (categoria: Categoria) => Promise<void>;
+  deleteCategoria: (categoriaId: string) => Promise<void>;
+  saveReceitaPrevista: (receita: ReceitaPrevista) => Promise<void>;
+  deleteReceitaPrevista: (receitaId: string) => Promise<void>;
+}
+
+export const FinanceiroContext = React.createContext<FinanceiroContextType | null>(null);
+
+const menuItems = [
+  { icon: Home, label: 'Dashboard', key: 'dashboard' },
+  { icon: Wallet, label: 'Caixas', key: 'caixas' },
+  { icon: ArrowUpDown, label: 'Transações', key: 'transacoes' },
+  { icon: CreditCard, label: 'Gastos Fixos', key: 'gastos' },
+  { icon: TrendingDown, label: 'Dívidas', key: 'dividas' },
+];
+
+function AppContent() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const { currentUser, isDemo, loading } = useAuth();
+  
+  // Estados para dados financeiros - sempre declarar todos os hooks
+  const [caixas, setCaixas] = useState<Caixa[]>([]);
+  const [transacoes, setTransacoes] = useState<Transacao[]>([]);
+  const [gastosFixos, setGastosFixos] = useState<GastoFixo[]>([]);
+  const [dividas, setDividas] = useState<Divida[]>([]);
+  const [cofrinhos, setCofrinhos] = useState<Cofrinho[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [receitasPrevistas, setReceitasPrevistas] = useState<ReceitaPrevista[]>([]);
+
+  // Configurar listeners do Firebase ou localStorage quando o usuário logar
+  useEffect(() => {
+    if (!currentUser) return;
+
+    if (isDemo) {
+      // Modo demo: usar localStorage
+      initializeLocalStorage();
+      
+      // Carregar dados do localStorage
+      setCaixas(localStorageService.getCaixas());
+      setTransacoes(localStorageService.getTransacoes());
+      setGastosFixos(localStorageService.getGastosFixos());
+      setDividas(localStorageService.getDividas());
+      setCofrinhos(localStorageService.getCofrinhos());
+      setCategorias(localStorageService.getCategorias());
+      setReceitasPrevistas(localStorageService.getReceitasPrevistas());
+    } else {
+      // Modo Firebase: configurar listeners
+      firebaseService.createUserDocument(currentUser);
+
+      const unsubscribeCaixas = firebaseService.subscribeToCaixas(currentUser.uid, setCaixas);
+      const unsubscribeTransacoes = firebaseService.subscribeToTransacoes(currentUser.uid, setTransacoes);
+      const unsubscribeGastosFixos = firebaseService.subscribeToGastosFixos(currentUser.uid, setGastosFixos);
+      const unsubscribeDividas = firebaseService.subscribeToDividas(currentUser.uid, setDividas);
+      const unsubscribeCofrinhos = firebaseService.subscribeToCofrinhos(currentUser.uid, setCofrinhos);
+      const unsubscribeCategorias = firebaseService.subscribeToCategorias(currentUser.uid, setCategorias);
+      const unsubscribeReceitasPrevistas = firebaseService.subscribeToReceitasPrevistas(currentUser.uid, setReceitasPrevistas);
+
+      // Cleanup function
+      return () => {
+        unsubscribeCaixas();
+        unsubscribeTransacoes();
+        unsubscribeGastosFixos();
+        unsubscribeDividas();
+        unsubscribeCofrinhos();
+        unsubscribeCategorias();
+        unsubscribeReceitasPrevistas();
+      };
+    }
+  }, [currentUser, isDemo]);
+
+  // Funções para integração com Firebase ou localStorage
+  const saveCaixa = async (caixa: Caixa) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveCaixa(caixa);
+        setCaixas(localStorageService.getCaixas());
+      } else {
+        await firebaseService.saveCaixa(currentUser.uid, caixa);
+      }
+    }
+  };
+
+  const deleteCaixa = async (caixaId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteCaixa(caixaId);
+        setCaixas(localStorageService.getCaixas());
+      } else {
+        await firebaseService.deleteCaixa(currentUser.uid, caixaId);
+      }
+    }
+  };
+
+  const saveTransacao = async (transacao: Transacao) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveTransacao(transacao);
+        setTransacoes(localStorageService.getTransacoes());
+      } else {
+        await firebaseService.saveTransacao(currentUser.uid, transacao);
+      }
+    }
+  };
+
+  const deleteTransacao = async (transacaoId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteTransacao(transacaoId);
+        setTransacoes(localStorageService.getTransacoes());
+      } else {
+        await firebaseService.deleteTransacao(currentUser.uid, transacaoId);
+      }
+    }
+  };
+
+  const saveGastoFixo = async (gastoFixo: GastoFixo) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveGastoFixo(gastoFixo);
+        setGastosFixos(localStorageService.getGastosFixos());
+      } else {
+        await firebaseService.saveGastoFixo(currentUser.uid, gastoFixo);
+      }
+    }
+  };
+
+  const deleteGastoFixo = async (gastoFixoId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteGastoFixo(gastoFixoId);
+        setGastosFixos(localStorageService.getGastosFixos());
+      } else {
+        await firebaseService.deleteGastoFixo(currentUser.uid, gastoFixoId);
+      }
+    }
+  };
+
+  const saveDivida = async (divida: Divida) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveDivida(divida);
+        setDividas(localStorageService.getDividas());
+      } else {
+        await firebaseService.saveDivida(currentUser.uid, divida);
+      }
+    }
+  };
+
+  const deleteDivida = async (dividaId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteDivida(dividaId);
+        setDividas(localStorageService.getDividas());
+      } else {
+        await firebaseService.deleteDivida(currentUser.uid, dividaId);
+      }
+    }
+  };
+
+  const saveCofrinho = async (cofrinho: Cofrinho) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveCofrinho(cofrinho);
+        setCofrinhos(localStorageService.getCofrinhos());
+      } else {
+        await firebaseService.saveCofrinho(currentUser.uid, cofrinho);
+      }
+    }
+  };
+
+  const deleteCofrinho = async (cofrinhoId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteCofrinho(cofrinhoId);
+        setCofrinhos(localStorageService.getCofrinhos());
+      } else {
+        await firebaseService.deleteCofrinho(currentUser.uid, cofrinhoId);
+      }
+    }
+  };
+
+  const saveCategoria = async (categoria: Categoria) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveCategoria(categoria);
+        setCategorias(localStorageService.getCategorias());
+      } else {
+        await firebaseService.saveCategoria(currentUser.uid, categoria);
+      }
+    }
+  };
+
+  const deleteCategoria = async (categoriaId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteCategoria(categoriaId);
+        setCategorias(localStorageService.getCategorias());
+      } else {
+        await firebaseService.deleteCategoria(currentUser.uid, categoriaId);
+      }
+    }
+  };
+
+  const saveReceitaPrevista = async (receita: ReceitaPrevista) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveReceitaPrevista(receita);
+        setReceitasPrevistas(localStorageService.getReceitasPrevistas());
+      } else {
+        await firebaseService.saveReceitaPrevista(currentUser.uid, receita);
+      }
+    }
+  };
+
+  const deleteReceitaPrevista = async (receitaId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteReceitaPrevista(receitaId);
+        setReceitasPrevistas(localStorageService.getReceitasPrevistas());
+      } else {
+        await firebaseService.deleteReceitaPrevista(currentUser.uid, receitaId);
+      }
+    }
+  };
+
+  const contextValue: FinanceiroContextType = {
+    caixas,
+    setCaixas,
+    transacoes,
+    setTransacoes,
+    gastosFixos,
+    setGastosFixos,
+    dividas,
+    setDividas,
+    cofrinhos,
+    setCofrinhos,
+    categorias,
+    setCategorias,
+    receitasPrevistas,
+    setReceitasPrevistas,
+    saveCaixa,
+    deleteCaixa,
+    saveTransacao,
+    deleteTransacao,
+    saveGastoFixo,
+    deleteGastoFixo,
+    saveDivida,
+    deleteDivida,
+    saveCofrinho,
+    deleteCofrinho,
+    saveCategoria,
+    deleteCategoria,
+    saveReceitaPrevista,
+    deleteReceitaPrevista,
+  };
+
+  // Mostrar loading enquanto carrega
+  if (loading) {
+    return <LoadingSpinner message="Carregando aplicação..." />;
+  }
+
+  // Se não estiver logado, mostrar tela de autenticação
+  if (!currentUser) {
+    return <AuthWrapper />;
+  }
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return <Dashboard />;
+      case 'caixas':
+        return <CaixasManager />;
+      case 'transacoes':
+        return <TransacoesManager />;
+      case 'gastos':
+        return <GastosFixosManager />;
+      case 'dividas':
+        return <DividasManager />;
+      default:
+        return <Dashboard />;
+    }
+  };
+
+  const handleTabChange = (key: string) => {
+    setActiveTab(key);
+    setIsSheetOpen(false);
+  };
+
+  // Layout Mobile
+  if (isMobile) {
+    return (
+      <FinanceiroContext.Provider value={contextValue}>
+        <div className="flex flex-col h-screen w-full bg-background">
+          {/* Header móvel */}
+          <header className="border-b bg-background px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center">
+              <Logo size={24} className="mr-3" />
+              <h1 className="text-lg font-semibold">
+                {menuItems.find(item => item.key === activeTab)?.label || 'Dashboard'}
+              </h1>
+            </div>
+            <UserMenu />
+            <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-80">
+                <div className="py-4">
+                  <div className="flex items-center px-4 mb-4">
+                    <Logo size={24} className="mr-3" />
+                    <h2 className="text-lg font-semibold">Controle Financeiro</h2>
+                  </div>
+                  <nav className="space-y-2">
+                    {menuItems.map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => handleTabChange(item.key)}
+                        className={`w-full flex items-center px-4 py-3 rounded-lg transition-colors ${
+                          activeTab === item.key
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-accent text-foreground'
+                        }`}
+                      >
+                        <item.icon className="h-5 w-5 mr-3" />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </nav>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </header>
+          
+          {/* Banner de modo demo */}
+          {isDemo && (
+            <Alert className="mx-4 mt-4">
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Modo Demo:</strong> Seus dados estão sendo salvos localmente. Para persistência permanente, configure o Firebase.
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {/* Conteúdo principal */}
+          <main className="flex-1 overflow-auto p-4">
+            {renderContent()}
+          </main>
+          
+          {/* Navegação inferior */}
+          <nav className="border-t bg-background px-2 py-2">
+            <div className="flex justify-around">
+              {menuItems.slice(0, 5).map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => setActiveTab(item.key)}
+                  className={`flex flex-col items-center px-3 py-2 rounded-lg transition-colors ${
+                    activeTab === item.key
+                      ? 'text-primary bg-primary/10'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <item.icon className="h-5 w-5 mb-1" />
+                  <span className="text-xs">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </nav>
+        </div>
+      </FinanceiroContext.Provider>
+    );
+  }
+
+  // Layout Desktop
+  return (
+    <FinanceiroContext.Provider value={contextValue}>
+      <SidebarProvider>
+        <div className="flex h-screen w-full">
+          <Sidebar>
+            <SidebarContent>
+              <SidebarGroup>
+                <div className="px-4 py-2">
+                  <div className="flex items-center">
+                    <Logo size={20} className="mr-2" />
+                    <h2 className="font-medium">Controle Financeiro</h2>
+                  </div>
+                </div>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {menuItems.map((item) => (
+                      <SidebarMenuItem key={item.key}>
+                        <SidebarMenuButton
+                          onClick={() => setActiveTab(item.key)}
+                          isActive={activeTab === item.key}
+                        >
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </SidebarContent>
+          </Sidebar>
+          
+          <main className="flex-1 flex flex-col">
+            <header className="border-b bg-background px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center">
+                <SidebarTrigger />
+                <Logo size={24} className="ml-4 mr-3" />
+                <h1 className="font-medium">
+                  {menuItems.find(item => item.key === activeTab)?.label || 'Dashboard'}
+                </h1>
+              </div>
+              <UserMenu />
+            </header>
+            
+            <div className="flex-1 overflow-auto p-6">
+              {/* Banner de modo demo */}
+              {isDemo && (
+                <Alert className="mb-6">
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    <strong>Modo Demo:</strong> Seus dados estão sendo salvos localmente. Para persistência permanente, configure o Firebase seguindo as instruções no arquivo FIREBASE_SETUP.md.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {renderContent()}
+            </div>
+          </main>
+        </div>
+      </SidebarProvider>
+    </FinanceiroContext.Provider>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
