@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import logoPng from './assets/logo.png';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from './components/ui/sidebar';
 import { Sheet, SheetContent, SheetTrigger } from './components/ui/sheet';
 import { Button } from './components/ui/button';
@@ -416,7 +417,7 @@ function AppContent() {
           {/* Header móvel */}
           <header className="border-b bg-background px-4 py-3 flex items-center justify-between">
             <div className="flex items-center">
-              <Logo size={24} className="mr-3" />
+              {/* Removido símbolo antigo no header mobile */}
               <h1 className="text-lg font-semibold">
                 {menuItems.find(item => item.key === activeTab)?.label || 'Dashboard'}
               </h1>
@@ -431,8 +432,8 @@ function AppContent() {
               <SheetContent side="right" className="w-80">
                 <div className="py-4">
                   <div className="flex items-center px-4 mb-4">
-                    <Logo size={24} className="mr-3" />
-                    <h2 className="text-lg font-semibold">Controle Financeiro</h2>
+                    {/* Remove ícone antigo e nome, exibe apenas a logo PNG */}
+                    <img src={logoPng} alt="Logo" className="h-6" />
                   </div>
                   <nav className="space-y-2">
                     {menuItems.map((item) => (
@@ -503,10 +504,7 @@ function AppContent() {
             <SidebarContent>
               <SidebarGroup>
                 <div className="px-4 py-2">
-                  <div className="flex items-center">
-                    <Logo size={20} className="mr-2" />
-                    <h2 className="font-medium">Controle Financeiro</h2>
-                  </div>
+                  <img src={logoPng} alt="Logo" className="h-6" />
                 </div>
                 <SidebarGroupContent>
                   <SidebarMenu>
@@ -531,8 +529,7 @@ function AppContent() {
             <header className="border-b bg-background px-6 py-3 flex items-center justify-between">
               <div className="flex items-center">
                 <SidebarTrigger />
-                <Logo size={24} className="ml-4 mr-3" />
-                <h1 className="font-medium">
+                <h1 className="ml-4 font-medium">
                   {menuItems.find(item => item.key === activeTab)?.label || 'Dashboard'}
                 </h1>
               </div>

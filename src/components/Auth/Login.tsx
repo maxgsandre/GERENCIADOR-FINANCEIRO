@@ -14,6 +14,7 @@ interface LoginProps {
 }
 
 export default function Login({ onToggleMode }: LoginProps) {
+  const logo = new URL('../../assets/logo.png', import.meta.url).href;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -73,6 +74,7 @@ export default function Login({ onToggleMode }: LoginProps) {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
+          <img src={logo} alt="Gerenciador Financeiro" className="mx-auto h-16 mb-2" />
           <CardTitle className="text-2xl text-center">Entrar</CardTitle>
           <CardDescription className="text-center">
             Entre com sua conta para acessar seu controle financeiro
