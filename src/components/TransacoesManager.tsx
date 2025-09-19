@@ -16,7 +16,7 @@ export default function TransacoesManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria } = context;
+  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
@@ -58,7 +58,6 @@ export default function TransacoesManager() {
     }
 
     await saveTransacao(novaTransacao);
-    setTransacoes(prev => [...prev, novaTransacao]);
     resetForm();
   };
 
@@ -96,7 +95,6 @@ export default function TransacoesManager() {
       await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
     }
     await deleteTransacao(transacao.id);
-    setTransacoes(prev => prev.filter(t => t.id !== transacao.id));
   };
 
   const openEdit = (transacao: Transacao) => {
@@ -146,12 +144,12 @@ export default function TransacoesManager() {
     }
 
     await saveTransacao(transacaoAtualizada);
-    setTransacoes(prev => prev.map(t => t.id === transacaoAtualizada.id ? transacaoAtualizada : t));
     resetForm();
   };
 
-  // Filtrar transações
+  // Filtrar transações (por tipo/mês e, se houver, por caixa selecionada)
   const transacoesFiltradas = transacoes.filter(transacao => {
+    const passaCaixa = !selectedCaixaId || transacao.caixaId === selectedCaixaId;
     const passaTipoFiltro = filtroTipo === 'todos' || transacao.tipo === filtroTipo;
     
     let passaMesFiltro = true;
@@ -162,7 +160,7 @@ export default function TransacoesManager() {
                        dataTransacao.getMonth() === parseInt(mes) - 1;
     }
     
-    return passaTipoFiltro && passaMesFiltro;
+    return passaCaixa && passaTipoFiltro && passaMesFiltro;
   });
 
   // Ordenar por data e hora (mais recentes primeiro)

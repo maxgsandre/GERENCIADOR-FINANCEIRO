@@ -42,6 +42,8 @@ export default function CaixasManager() {
     deleteCaixa,
     saveCofrinho,
     deleteCofrinho,
+    setSelectedCaixaId,
+    goToTab,
   } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -536,6 +538,14 @@ export default function CaixasManager() {
                     >
                       <Edit className="h-4 w-4 md:mr-1" />
                       <span className="hidden md:inline">Editar</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setSelectedCaixaId(caixa.id); goToTab('transacoes'); }}
+                      className="flex-1"
+                    >
+                      Extrato
                     </Button>
                     <Button
                       variant="outline"

@@ -99,6 +99,9 @@ export interface FinanceiroContextType {
   setCategorias: React.Dispatch<React.SetStateAction<Categoria[]>>;
   receitasPrevistas: ReceitaPrevista[];
   setReceitasPrevistas: React.Dispatch<React.SetStateAction<ReceitaPrevista[]>>;
+  selectedCaixaId: string | null;
+  setSelectedCaixaId: React.Dispatch<React.SetStateAction<string | null>>;
+  goToTab: (key: string) => void;
   // Funções para salvar no Firebase
   saveCaixa: (caixa: Caixa) => Promise<void>;
   deleteCaixa: (caixaId: string) => Promise<void>;
@@ -146,6 +149,7 @@ function AppContent() {
   const [cofrinhos, setCofrinhos] = useState<Cofrinho[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [receitasPrevistas, setReceitasPrevistas] = useState<ReceitaPrevista[]>([]);
+  const [selectedCaixaId, setSelectedCaixaId] = useState<string | null>(null);
 
   // Configurar listeners do Firebase ou localStorage quando o usuário logar
   useEffect(() => {
@@ -358,6 +362,15 @@ function AppContent() {
     setCategorias,
     receitasPrevistas,
     setReceitasPrevistas,
+    selectedCaixaId,
+    setSelectedCaixaId,
+    goToTab: (key: string) => {
+      setActiveTab(key);
+      try {
+        sessionStorage.setItem('active_tab', key);
+      } catch {}
+      setIsSheetOpen(false);
+    },
     saveCaixa,
     deleteCaixa,
     saveTransacao,
@@ -408,6 +421,7 @@ function AppContent() {
     } catch {}
     setIsSheetOpen(false);
   };
+  const goToTab = (key: string) => handleTabChange(key);
 
   // Layout Mobile
   if (isMobile) {
