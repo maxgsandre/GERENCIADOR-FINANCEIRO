@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, ArrowUp, ArrowDown, Filter, Tag } from 'lucide-react';
+import { Trash2, Plus, ArrowUp, ArrowDown, Filter, Tag, Edit } from 'lucide-react';
 import { FinanceiroContext, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
 
@@ -16,9 +16,10 @@ export default function TransacoesManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias } = context;
+  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [filtroMes, setFiltroMes] = useState('');
@@ -33,13 +34,12 @@ export default function TransacoesManager() {
     hora: new Date().toTimeString().slice(0, 5),
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!formData.caixaId || !formData.valor || !formData.descricao || !formData.categoria) return;
 
     const novaTransacao: Transacao = {
-      id: Date.now().toString(),
+      id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
       caixaId: formData.caixaId,
       tipo: formData.tipo,
       valor: parseFloat(formData.valor),
@@ -49,18 +49,15 @@ export default function TransacoesManager() {
       hora: formData.hora,
     };
 
-    // Atualizar saldo da caixa
-    setCaixas(prev => prev.map(caixa => {
-      if (caixa.id === formData.caixaId) {
-        const novoSaldo = formData.tipo === 'entrada' 
-          ? caixa.saldo + novaTransacao.valor
-          : caixa.saldo - novaTransacao.valor;
-        return { ...caixa, saldo: novoSaldo };
-      }
-      return caixa;
-    }));
+    const caixaAtual = caixas.find(c => c.id === formData.caixaId);
+    if (caixaAtual) {
+      const novoSaldo = formData.tipo === 'entrada' 
+        ? caixaAtual.saldo + novaTransacao.valor
+        : caixaAtual.saldo - novaTransacao.valor;
+      await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
+    }
 
-    setTransacoes(prev => [...prev, novaTransacao]);
+    await saveTransacao(novaTransacao);
     resetForm();
   };
 
@@ -75,36 +72,79 @@ export default function TransacoesManager() {
       hora: new Date().toTimeString().slice(0, 5),
     });
     setIsDialogOpen(false);
+    setEditingTransacao(null);
   };
 
-  const handleAdicionarCategoria = () => {
+  const handleAdicionarCategoria = async () => {
     if (novaCategoria.trim() && !categorias.some(cat => cat.nome.toLowerCase() === novaCategoria.trim().toLowerCase())) {
       const novaId = (Math.max(...categorias.map(c => parseInt(c.id))) + 1).toString();
-      setCategorias(prev => [...prev, { 
-        id: novaId, 
-        nome: novaCategoria.trim() 
-      }]);
+      await saveCategoria({ id: novaId, nome: novaCategoria.trim() });
       setFormData(prev => ({ ...prev, categoria: novaCategoria.trim() }));
       setNovaCategoria('');
       setIsCategoriaDialogOpen(false);
     }
   };
 
-  const handleDelete = (transacao: Transacao) => {
-    if (confirm('Tem certeza que deseja excluir esta transação?')) {
-      // Reverter o saldo da caixa
-      setCaixas(prev => prev.map(caixa => {
-        if (caixa.id === transacao.caixaId) {
-          const novoSaldo = transacao.tipo === 'entrada' 
-            ? caixa.saldo - transacao.valor
-            : caixa.saldo + transacao.valor;
-          return { ...caixa, saldo: novoSaldo };
-        }
-        return caixa;
-      }));
-
-      setTransacoes(prev => prev.filter(t => t.id !== transacao.id));
+  const handleDelete = async (transacao: Transacao) => {
+    if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
+    const caixaAtual = caixas.find(c => c.id === transacao.caixaId);
+    if (caixaAtual) {
+      const novoSaldo = transacao.tipo === 'entrada' 
+        ? caixaAtual.saldo - transacao.valor
+        : caixaAtual.saldo + transacao.valor;
+      await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
     }
+    await deleteTransacao(transacao.id);
+  };
+
+  const openEdit = (transacao: Transacao) => {
+    setEditingTransacao(transacao);
+    setFormData({
+      caixaId: transacao.caixaId,
+      tipo: transacao.tipo,
+      valor: transacao.valor.toString(),
+      descricao: transacao.descricao,
+      categoria: transacao.categoria,
+      data: transacao.data,
+      hora: transacao.hora,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTransacao) return;
+    if (!formData.caixaId || !formData.valor || !formData.descricao || !formData.categoria) return;
+
+    const transacaoAtualizada: Transacao = {
+      id: editingTransacao.id,
+      caixaId: formData.caixaId,
+      tipo: formData.tipo,
+      valor: parseFloat(formData.valor),
+      descricao: formData.descricao,
+      categoria: formData.categoria,
+      data: formData.data,
+      hora: formData.hora,
+    };
+
+    const caixaAntiga = caixas.find(c => c.id === editingTransacao.caixaId);
+    if (caixaAntiga) {
+      const saldoRevertido = editingTransacao.tipo === 'entrada' 
+        ? caixaAntiga.saldo - editingTransacao.valor
+        : caixaAntiga.saldo + editingTransacao.valor;
+      await saveCaixa({ ...caixaAntiga, saldo: saldoRevertido });
+    }
+
+    const caixaNova = caixas.find(c => c.id === transacaoAtualizada.caixaId);
+    if (caixaNova) {
+      const saldoAplicado = transacaoAtualizada.tipo === 'entrada' 
+        ? caixaNova.saldo + transacaoAtualizada.valor
+        : caixaNova.saldo - transacaoAtualizada.valor;
+      await saveCaixa({ ...caixaNova, saldo: saldoAplicado });
+    }
+
+    await saveTransacao(transacaoAtualizada);
+    resetForm();
   };
 
   // Filtrar transações
@@ -156,13 +196,13 @@ export default function TransacoesManager() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Nova Transação</DialogTitle>
+              <DialogTitle>{editingTransacao ? 'Editar Transação' : 'Nova Transação'}</DialogTitle>
               <DialogDescription>
                 Registre uma nova entrada ou saída de dinheiro.
               </DialogDescription>
             </DialogHeader>
             
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={editingTransacao ? handleUpdate : handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="tipo">Tipo</Label>

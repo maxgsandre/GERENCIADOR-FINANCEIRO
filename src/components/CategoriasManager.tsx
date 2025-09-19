@@ -15,7 +15,7 @@ export default function CategoriasManager({ onCategoriaSelect }: CategoriasManag
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { categorias, setCategorias } = context;
+  const { categorias, setCategorias, saveCategoria, deleteCategoria } = context;
   
   const [isMainDialogOpen, setIsMainDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -24,40 +24,31 @@ export default function CategoriasManager({ onCategoriaSelect }: CategoriasManag
   const [editandoCategoria, setEditandoCategoria] = useState<Categoria | null>(null);
   const [nomeEdicao, setNomeEdicao] = useState('');
 
-  const handleAdicionarCategoria = () => {
+  const handleAdicionarCategoria = async () => {
     if (novaCategoria.trim() && !categorias.some(cat => cat.nome.toLowerCase() === novaCategoria.trim().toLowerCase())) {
-      const novaId = (Math.max(...categorias.map(c => parseInt(c.id))) + 1).toString();
-      setCategorias(prev => [...prev, { 
-        id: novaId, 
-        nome: novaCategoria.trim() 
-      }]);
-      
+      const novaId = ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : (Math.max(...categorias.map(c => parseInt(c.id))) + 1).toString());
+      await saveCategoria({ id: novaId, nome: novaCategoria.trim() });
       if (onCategoriaSelect) {
         onCategoriaSelect(novaCategoria.trim());
       }
-      
       setNovaCategoria('');
       setIsAddDialogOpen(false);
     }
   };
 
-  const handleEditarCategoria = () => {
+  const handleEditarCategoria = async () => {
     if (editandoCategoria && nomeEdicao.trim() && 
         !categorias.some(cat => cat.nome.toLowerCase() === nomeEdicao.trim().toLowerCase() && cat.id !== editandoCategoria.id)) {
-      setCategorias(prev => prev.map(cat => 
-        cat.id === editandoCategoria.id 
-          ? { ...cat, nome: nomeEdicao.trim() }
-          : cat
-      ));
+      await saveCategoria({ ...editandoCategoria, nome: nomeEdicao.trim() });
       setEditandoCategoria(null);
       setNomeEdicao('');
       setIsEditDialogOpen(false);
     }
   };
 
-  const handleExcluirCategoria = (categoria: Categoria) => {
+  const handleExcluirCategoria = async (categoria: Categoria) => {
     if (confirm(`Tem certeza que deseja excluir a categoria "${categoria.nome}"?`)) {
-      setCategorias(prev => prev.filter(cat => cat.id !== categoria.id));
+      await deleteCategoria(categoria.id);
     }
   };
 

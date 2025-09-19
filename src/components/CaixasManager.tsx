@@ -37,7 +37,11 @@ export default function CaixasManager() {
     receitasPrevistas, 
     setReceitasPrevistas, 
     saveReceitaPrevista, 
-    deleteReceitaPrevista 
+    deleteReceitaPrevista,
+    saveCaixa,
+    deleteCaixa,
+    saveCofrinho,
+    deleteCofrinho,
   } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -64,23 +68,19 @@ export default function CaixasManager() {
     dataVencimento: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.nome || !formData.saldo) return;
 
     const novaCaixa: Caixa = {
-      id: editingCaixa?.id || Date.now().toString(),
+      id: editingCaixa?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
       nome: formData.nome,
       saldo: parseFloat(formData.saldo),
       tipo: formData.tipo,
     };
 
-    if (editingCaixa) {
-      setCaixas(prev => prev.map(c => c.id === editingCaixa.id ? novaCaixa : c));
-    } else {
-      setCaixas(prev => [...prev, novaCaixa]);
-    }
+    await saveCaixa(novaCaixa);
 
     resetForm();
   };
@@ -101,14 +101,13 @@ export default function CaixasManager() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Tem certeza que deseja excluir esta caixa?')) {
-      setCaixas(prev => prev.filter(c => c.id !== id));
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta caixa?')) return;
+    await deleteCaixa(id);
   };
 
   // Funções para cofrinhos
-  const handleCofrinhoSubmit = (e: React.FormEvent) => {
+  const handleCofrinhoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!cofrinhoFormData.nome || !cofrinhoFormData.saldo || !cofrinhoFormData.percentualCDI) return;
@@ -118,7 +117,7 @@ export default function CaixasManager() {
     const rendimentoMensal = (parseFloat(cofrinhoFormData.saldo) * rendimentoAnual) / 12 / 100;
 
     const novoCofrinho: Cofrinho = {
-      id: editingCofrinho?.id || Date.now().toString(),
+      id: editingCofrinho?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
       nome: cofrinhoFormData.nome,
       saldo: parseFloat(cofrinhoFormData.saldo),
       objetivo: cofrinhoFormData.objetivo ? parseFloat(cofrinhoFormData.objetivo) : undefined,
@@ -128,11 +127,7 @@ export default function CaixasManager() {
       cor: cofrinhoFormData.cor,
     };
 
-    if (editingCofrinho) {
-      setCofrinhos(prev => prev.map(c => c.id === editingCofrinho.id ? novoCofrinho : c));
-    } else {
-      setCofrinhos(prev => [...prev, novoCofrinho]);
-    }
+    await saveCofrinho(novoCofrinho);
 
     resetCofrinhoForm();
   };
@@ -155,10 +150,9 @@ export default function CaixasManager() {
     setIsCofrinhoDialogOpen(true);
   };
 
-  const handleDeleteCofrinho = (id: string) => {
-    if (confirm('Tem certeza que deseja excluir este cofrinho?')) {
-      setCofrinhos(prev => prev.filter(c => c.id !== id));
-    }
+  const handleDeleteCofrinho = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este cofrinho?')) return;
+    await deleteCofrinho(id);
   };
 
   // Funções para receitas previstas

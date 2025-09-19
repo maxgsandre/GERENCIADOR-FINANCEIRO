@@ -17,7 +17,7 @@ export default function GastosFixosManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { gastosFixos, setGastosFixos, categorias, setCategorias } = context;
+  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
@@ -31,13 +31,13 @@ export default function GastosFixosManager() {
     pago: false,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.descricao || !formData.valor || !formData.categoria || !formData.diaVencimento) return;
 
     const novoGasto: GastoFixo = {
-      id: editingGasto?.id || Date.now().toString(),
+      id: editingGasto?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
       descricao: formData.descricao,
       valor: parseFloat(formData.valor),
       categoria: formData.categoria,
@@ -45,11 +45,7 @@ export default function GastosFixosManager() {
       pago: formData.pago,
     };
 
-    if (editingGasto) {
-      setGastosFixos(prev => prev.map(g => g.id === editingGasto.id ? novoGasto : g));
-    } else {
-      setGastosFixos(prev => [...prev, novoGasto]);
-    }
+    await saveGastoFixo(novoGasto);
 
     resetForm();
   };
@@ -66,13 +62,10 @@ export default function GastosFixosManager() {
     setIsDialogOpen(false);
   };
 
-  const handleAdicionarCategoria = () => {
+  const handleAdicionarCategoria = async () => {
     if (novaCategoria.trim() && !categorias.some(cat => cat.nome.toLowerCase() === novaCategoria.trim().toLowerCase())) {
       const novaId = (Math.max(...categorias.map(c => parseInt(c.id))) + 1).toString();
-      setCategorias(prev => [...prev, { 
-        id: novaId, 
-        nome: novaCategoria.trim() 
-      }]);
+      await saveCategoria({ id: novaId, nome: novaCategoria.trim() });
       setFormData(prev => ({ ...prev, categoria: novaCategoria.trim() }));
       setNovaCategoria('');
       setIsCategoriaDialogOpen(false);
@@ -91,10 +84,9 @@ export default function GastosFixosManager() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Tem certeza que deseja excluir este gasto fixo?')) {
-      setGastosFixos(prev => prev.filter(g => g.id !== id));
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este gasto fixo?')) return;
+    await deleteGastoFixo(id);
   };
 
   const togglePago = (id: string) => {

@@ -15,7 +15,7 @@ export default function DividasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { dividas, setDividas } = context;
+  const { dividas, setDividas, saveDivida, deleteDivida } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingDivida, setEditingDivida] = useState<Divida | null>(null);
@@ -30,13 +30,13 @@ export default function DividasManager() {
     tipo: 'parcelada' as 'parcelada' | 'total',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.descricao || !formData.valorTotal || !formData.dataVencimento) return;
 
     const novaDivida: Divida = {
-      id: editingDivida?.id || Date.now().toString(),
+      id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
       descricao: formData.descricao,
       valorTotal: parseFloat(formData.valorTotal),
       valorPago: editingDivida?.valorPago || 0,
@@ -49,11 +49,7 @@ export default function DividasManager() {
       tipo: formData.tipo,
     };
 
-    if (editingDivida) {
-      setDividas(prev => prev.map(d => d.id === editingDivida.id ? novaDivida : d));
-    } else {
-      setDividas(prev => [...prev, novaDivida]);
-    }
+    await saveDivida(novaDivida);
 
     resetForm();
   };
@@ -84,10 +80,9 @@ export default function DividasManager() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Tem certeza que deseja excluir esta dívida?')) {
-      setDividas(prev => prev.filter(d => d.id !== id));
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta dívida?')) return;
+    await deleteDivida(id);
   };
 
   const handlePagamento = (divida: Divida) => {
@@ -95,24 +90,24 @@ export default function DividasManager() {
     setIsPagamentoOpen(true);
   };
 
-  const processarPagamento = (valorPagamento: number) => {
+  const processarPagamento = async (valorPagamento: number) => {
     if (!dividaSelecionada) return;
 
-    setDividas(prev => prev.map(divida => {
-      if (divida.id === dividaSelecionada.id) {
-        const novoValorPago = divida.valorPago + valorPagamento;
-        const novasParcelasPagas = divida.tipo === 'parcelada' 
-          ? Math.floor(novoValorPago / divida.valorParcela)
-          : novoValorPago >= divida.valorTotal ? 1 : 0;
-        
-        return {
-          ...divida,
-          valorPago: novoValorPago,
-          parcelasPagas: Math.min(novasParcelasPagas, divida.parcelas),
-        };
-      }
-      return divida;
-    }));
+    const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
+    if (!dividaAtual) return;
+
+    const novoValorPago = dividaAtual.valorPago + valorPagamento;
+    const novasParcelasPagas = dividaAtual.tipo === 'parcelada' 
+      ? Math.floor(novoValorPago / dividaAtual.valorParcela)
+      : novoValorPago >= dividaAtual.valorTotal ? 1 : 0;
+
+    const atualizada: Divida = {
+      ...dividaAtual,
+      valorPago: novoValorPago,
+      parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas),
+    };
+
+    await saveDivida(atualizada);
 
     setIsPagamentoOpen(false);
     setDividaSelecionada(null);
