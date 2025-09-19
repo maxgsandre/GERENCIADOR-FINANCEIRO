@@ -50,6 +50,15 @@ export default function DividasManager() {
     };
 
     await saveDivida(novaDivida);
+    setDividas(prev => {
+      const index = prev.findIndex(d => d.id === novaDivida.id);
+      if (index >= 0) {
+        const clone = [...prev];
+        clone[index] = novaDivida;
+        return clone;
+      }
+      return [...prev, novaDivida];
+    });
 
     resetForm();
   };
@@ -83,6 +92,7 @@ export default function DividasManager() {
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir esta dívida?')) return;
     await deleteDivida(id);
+    setDividas(prev => prev.filter(d => d.id !== id));
   };
 
   const handlePagamento = (divida: Divida) => {
@@ -108,6 +118,7 @@ export default function DividasManager() {
     };
 
     await saveDivida(atualizada);
+    setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
 
     setIsPagamentoOpen(false);
     setDividaSelecionada(null);

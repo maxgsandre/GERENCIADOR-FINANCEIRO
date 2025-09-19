@@ -46,6 +46,15 @@ export default function GastosFixosManager() {
     };
 
     await saveGastoFixo(novoGasto);
+    setGastosFixos(prev => {
+      const index = prev.findIndex(g => g.id === novoGasto.id);
+      if (index >= 0) {
+        const clone = [...prev];
+        clone[index] = novoGasto;
+        return clone;
+      }
+      return [...prev, novoGasto];
+    });
 
     resetForm();
   };
@@ -87,6 +96,7 @@ export default function GastosFixosManager() {
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este gasto fixo?')) return;
     await deleteGastoFixo(id);
+    setGastosFixos(prev => prev.filter(g => g.id !== id));
   };
 
   const togglePago = (id: string) => {

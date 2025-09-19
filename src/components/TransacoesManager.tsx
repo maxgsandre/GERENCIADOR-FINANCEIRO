@@ -58,6 +58,7 @@ export default function TransacoesManager() {
     }
 
     await saveTransacao(novaTransacao);
+    setTransacoes(prev => [...prev, novaTransacao]);
     resetForm();
   };
 
@@ -95,6 +96,7 @@ export default function TransacoesManager() {
       await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
     }
     await deleteTransacao(transacao.id);
+    setTransacoes(prev => prev.filter(t => t.id !== transacao.id));
   };
 
   const openEdit = (transacao: Transacao) => {
@@ -144,6 +146,7 @@ export default function TransacoesManager() {
     }
 
     await saveTransacao(transacaoAtualizada);
+    setTransacoes(prev => prev.map(t => t.id === transacaoAtualizada.id ? transacaoAtualizada : t));
     resetForm();
   };
 

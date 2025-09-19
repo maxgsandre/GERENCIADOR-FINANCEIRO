@@ -81,6 +81,16 @@ export default function CaixasManager() {
     };
 
     await saveCaixa(novaCaixa);
+    // Atualização otimista da UI; o listener confirmará em seguida
+    setCaixas(prev => {
+      const index = prev.findIndex(c => c.id === novaCaixa.id);
+      if (index >= 0) {
+        const clone = [...prev];
+        clone[index] = novaCaixa;
+        return clone;
+      }
+      return [...prev, novaCaixa];
+    });
 
     resetForm();
   };
@@ -104,6 +114,8 @@ export default function CaixasManager() {
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir esta caixa?')) return;
     await deleteCaixa(id);
+    // Atualização otimista da UI
+    setCaixas(prev => prev.filter(c => c.id !== id));
   };
 
   // Funções para cofrinhos
@@ -128,6 +140,15 @@ export default function CaixasManager() {
     };
 
     await saveCofrinho(novoCofrinho);
+    setCofrinhos(prev => {
+      const index = prev.findIndex(c => c.id === novoCofrinho.id);
+      if (index >= 0) {
+        const clone = [...prev];
+        clone[index] = novoCofrinho;
+        return clone;
+      }
+      return [...prev, novoCofrinho];
+    });
 
     resetCofrinhoForm();
   };
@@ -153,6 +174,7 @@ export default function CaixasManager() {
   const handleDeleteCofrinho = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este cofrinho?')) return;
     await deleteCofrinho(id);
+    setCofrinhos(prev => prev.filter(c => c.id !== id));
   };
 
   // Funções para receitas previstas
