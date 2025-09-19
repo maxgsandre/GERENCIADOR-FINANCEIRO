@@ -8,8 +8,7 @@ import {
   updateProfile
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { MockAuthProvider, useMockAuth } from './MockAuthContext';
-import { isFirebaseConfigured } from '../lib/env';
+// Modo demo removido
 
 interface AuthContextType {
   currentUser: any; // User para Firebase, MockUser para modo demo
@@ -87,35 +86,6 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function DemoAuthProvider({ children }: { children: React.ReactNode }) {
-  const mockAuth = useMockAuth();
-
-  const value = {
-    currentUser: mockAuth.currentUser,
-    login: mockAuth.login,
-    register: mockAuth.register,
-    logout: mockAuth.logout,
-    loading: mockAuth.loading,
-    isDemo: true
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const useFirebase = isFirebaseConfigured();
-
-  if (useFirebase) {
-    return <FirebaseAuthProvider>{children}</FirebaseAuthProvider>;
-  } else {
-    return (
-      <MockAuthProvider>
-        <DemoAuthProvider>{children}</DemoAuthProvider>
-      </MockAuthProvider>
-    );
-  }
+  return <FirebaseAuthProvider>{children}</FirebaseAuthProvider>;
 }
