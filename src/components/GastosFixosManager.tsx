@@ -9,7 +9,7 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle } from 'lucide-react';
 import { FinanceiroContext, GastoFixo } from '../App';
 import CategoriasManager from './CategoriasManager';
 
@@ -437,11 +437,16 @@ export default function GastosFixosManager() {
                 
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={gasto.pago}
-                      onCheckedChange={() => togglePago(gasto.id)}
-                      size="sm"
-                    />
+                    <button
+                      onClick={() => togglePago(gasto.id)}
+                      className={`p-1 rounded-full ${gasto.pago ? 'text-green-600 hover:text-green-700' : 'text-gray-400 hover:text-gray-600'}`}
+                    >
+                      {gasto.pago ? (
+                        <CheckCircle className="h-5 w-5" />
+                      ) : (
+                        <Circle className="h-5 w-5" />
+                      )}
+                    </button>
                     <span className="text-sm">
                       {gasto.pago ? 'Pago' : 'Pendente'}
                     </span>
