@@ -16,13 +16,14 @@ export default function TransacoesManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId } = context;
+  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'entrada' | 'saida'>('todos');
-  const [filtroMes, setFiltroMes] = useState('');
+  const [filtroDe, setFiltroDe] = useState('');
+  const [filtroAte, setFiltroAte] = useState('');
   const [novaCategoria, setNovaCategoria] = useState('');
   const [formData, setFormData] = useState({
     caixaId: '',
@@ -147,20 +148,23 @@ export default function TransacoesManager() {
     resetForm();
   };
 
-  // Filtrar transações (por tipo/mês e, se houver, por caixa selecionada)
+  // Filtrar transações (por tipo/período e, se houver, por caixa selecionada)
   const transacoesFiltradas = transacoes.filter(transacao => {
     const passaCaixa = !selectedCaixaId || transacao.caixaId === selectedCaixaId;
     const passaTipoFiltro = filtroTipo === 'todos' || transacao.tipo === filtroTipo;
-    
-    let passaMesFiltro = true;
-    if (filtroMes) {
-      const [ano, mes] = filtroMes.split('-');
-      const dataTransacao = new Date(transacao.data);
-      passaMesFiltro = dataTransacao.getFullYear() === parseInt(ano) && 
-                       dataTransacao.getMonth() === parseInt(mes) - 1;
+
+    let passaPeriodo = true;
+    const dataTransacao = new Date(transacao.data);
+    if (filtroDe) {
+      const ini = new Date(filtroDe);
+      passaPeriodo = passaPeriodo && dataTransacao >= ini;
     }
-    
-    return passaCaixa && passaTipoFiltro && passaMesFiltro;
+    if (filtroAte) {
+      const fim = new Date(filtroAte);
+      passaPeriodo = passaPeriodo && dataTransacao <= fim;
+    }
+
+    return passaCaixa && passaTipoFiltro && passaPeriodo;
   });
 
   // Ordenar por data e hora (mais recentes primeiro)
@@ -433,6 +437,21 @@ export default function TransacoesManager() {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col md:flex-row gap-3 md:gap-4">
+          {/* Caixa */}
+          <Select
+            value={selectedCaixaId ?? 'todos'}
+            onValueChange={(value) => setSelectedCaixaId(value === 'todos' ? null : value)}
+          >
+            <SelectTrigger className="w-full md:w-52">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas as caixas</SelectItem>
+              {caixas.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={filtroTipo} onValueChange={(value: 'todos' | 'entrada' | 'saida') => setFiltroTipo(value)}>
             <SelectTrigger className="w-full md:w-40">
               <SelectValue />
@@ -444,19 +463,31 @@ export default function TransacoesManager() {
             </SelectContent>
           </Select>
           
-          <Input
-            type="month"
-            value={filtroMes}
-            onChange={(e) => setFiltroMes(e.target.value)}
-            className="w-full md:w-40"
-            placeholder="Filtrar por mês"
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={filtroDe}
+              onChange={(e) => setFiltroDe(e.target.value)}
+              className="w-full md:w-[165px] md:min-w-[165px] md:max-w-[165px] md:flex-none"
+              placeholder="De"
+            />
+            <span className="text-sm text-muted-foreground">até</span>
+            <Input
+              type="date"
+              value={filtroAte}
+              onChange={(e) => setFiltroAte(e.target.value)}
+              className="w-full md:w-[165px] md:min-w-[165px] md:max-w-[165px] md:flex-none"
+              placeholder="Até"
+            />
+          </div>
           
           <Button 
             variant="outline" 
             onClick={() => {
               setFiltroTipo('todos');
-              setFiltroMes('');
+              setFiltroDe('');
+              setFiltroAte('');
+              setSelectedCaixaId(null);
             }}
             className="w-full md:w-auto"
           >
