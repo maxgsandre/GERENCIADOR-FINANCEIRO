@@ -436,14 +436,14 @@ function AppContent() {
                 {menuItems.find(item => item.key === activeTab)?.label || 'Dashboard'}
               </h1>
             </div>
-            <UserMenu />
-            <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-80">
+            <div className="flex items-center gap-2">
+              <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-80">
                 <div className="py-4">
                   <div className="flex items-center px-4 mb-4">
                     {/* Remove ícone antigo e nome, exibe apenas a logo PNG */}
@@ -466,8 +466,10 @@ function AppContent() {
                     ))}
                   </nav>
                 </div>
-              </SheetContent>
-            </Sheet>
+                </SheetContent>
+              </Sheet>
+              <UserMenu />
+            </div>
           </header>
           
           {/* Banner de modo demo */}
