@@ -128,7 +128,7 @@ const menuItems = [
 function AppContent() {
   const [activeTab, setActiveTab] = useState(() => {
     try {
-      return localStorage.getItem('active_tab') || 'dashboard';
+      return sessionStorage.getItem('active_tab') || 'dashboard';
     } catch {
       return 'dashboard';
     }
@@ -403,7 +403,7 @@ function AppContent() {
   const handleTabChange = (key: string) => {
     setActiveTab(key);
     try {
-      localStorage.setItem('active_tab', key);
+      sessionStorage.setItem('active_tab', key);
     } catch {}
     setIsSheetOpen(false);
   };
