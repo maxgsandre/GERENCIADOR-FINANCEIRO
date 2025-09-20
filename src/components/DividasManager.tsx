@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,19 +8,21 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, DollarSign, Calendar, CheckCircle } from 'lucide-react';
-import { FinanceiroContext, Divida, GastoFixo } from '../App';
+import { Trash2, Plus, Edit, DollarSign, Calendar, CheckCircle, CreditCard } from 'lucide-react';
+import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 
 export default function DividasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveTransacao, gastosFixos, setGastosFixos, saveGastoFixo } = context as any;
+  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveTransacao, gastosFixos, setGastosFixos, saveGastoFixo, deleteGastoFixo, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const scrollBeforeDialogRef = useRef<number>(0);
   const [editingDivida, setEditingDivida] = useState<Divida | null>(null);
   const [isPagamentoOpen, setIsPagamentoOpen] = useState(false);
   const [dividaSelecionada, setDividaSelecionada] = useState<Divida | null>(null);
+  const [compraSelecionada, setCompraSelecionada] = useState<CompraCartao | null>(null);
   const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
@@ -36,6 +38,21 @@ export default function DividasManager() {
     dataVencimento: '',
     tipo: 'parcelada' as 'parcelada' | 'total',
   });
+  // Cartões - dialogs e formulários
+  const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
+  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
+  const [isEditCardDialogOpen, setIsEditCardDialogOpen] = useState(false);
+  const [cardName, setCardName] = useState('');
+  const [cardLimit, setCardLimit] = useState('');
+  const [editingCard, setEditingCard] = useState<CartaoCredito | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [purchaseDesc, setPurchaseDesc] = useState('');
+  const [purchaseValorTotal, setPurchaseValorTotal] = useState('');
+  const [purchaseParcelas, setPurchaseParcelas] = useState('1');
+  const [purchaseValorParcela, setPurchaseValorParcela] = useState('');
+  const [purchaseStartDate, setPurchaseStartDate] = useState(() => new Date().toISOString().slice(0,10));
+  const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().slice(0,10));
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
 
   // Calcula automaticamente o valor da parcela quando total/parcelas mudarem.
   const recomputeParcela = (totalStr: string, parcelasStr: string) => {
@@ -48,6 +65,32 @@ export default function DividasManager() {
     // A última parcela receberá o residual (pode ser 0..(parcelas-1) centavos)
     // Para o input exibimos o valor base; ao salvar ajustaremos a última parcela.
     return (base).toFixed(2);
+  };
+
+  const replanGastosFixosDaDivida = async (d: Divida) => {
+    const [sy, sm, sd] = d.dataVencimento.split('-').map(Number);
+    const expected = new Set<string>();
+    const totalParcelas = d.tipo === 'parcelada' ? d.parcelas : 1;
+    for (let i = 0; i < totalParcelas; i++) {
+      const { y, m } = addMonths(sy, sm, i);
+      const ym = `${y}-${String(m).padStart(2,'0')}`;
+      expected.add(ym);
+      const gastoId = `divida:${d.id}:${ym}`;
+      const valor = getInstallmentValue(d, i);
+      const gasto: GastoFixo = { id: gastoId, descricao: `Parcela dívida: ${d.descricao} – ${i+1}/${totalParcelas}`, valor, categoria: 'Dívidas', diaVencimento: sd, pago: i < (d.parcelasPagas || 0) } as any;
+      await saveGastoFixo(gasto);
+      setGastosFixos((prev: GastoFixo[]) => {
+        const j = prev.findIndex(g => g.id === gastoId);
+        if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
+        return [...prev, gasto];
+      });
+    }
+    // Remover gastos que sobraram
+    const toRemove = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(`divida:${d.id}:`)).filter(g => !expected.has(g.id.split(':')[2]));
+    for (const g of toRemove) {
+      await deleteGastoFixo(g.id);
+      setGastosFixos((prev: GastoFixo[]) => prev.filter(x => x.id !== g.id));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,23 +128,9 @@ export default function DividasManager() {
       return [...prev, novaDivida];
     });
 
-    // Criar/atualizar gastos fixos de todas as competências desta dívida
+    // Replanejar gastos fixos vinculados
     try {
-      const [y, m, d] = novaDivida.dataVencimento.split('-').map(Number);
-      const totalParcelas = novaDivida.tipo === 'parcelada' ? novaDivida.parcelas : 1;
-      for (let i = 0; i < totalParcelas; i++) {
-        const { y: yy, m: mm } = addMonths(y, m, i);
-        const ym = `${yy}-${String(mm).padStart(2,'0')}`;
-        const valor = getInstallmentValue(novaDivida, i);
-        const gastoId = `divida:${novaDivida.id}:${ym}`;
-        const gasto: GastoFixo = { id: gastoId, descricao: `Parcela dívida: ${novaDivida.descricao} – ${i+1}/${totalParcelas}`, valor, categoria: 'Dívidas', diaVencimento: d, pago: i < (novaDivida.parcelasPagas || 0) } as any;
-        await (saveGastoFixo && saveGastoFixo(gasto));
-        setGastosFixos((prev: GastoFixo[]) => {
-          const j = prev.findIndex(g => g.id === gastoId);
-          if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
-          return [...prev, gasto];
-        });
-      }
+      await replanGastosFixosDaDivida(novaDivida);
     } catch {}
 
     resetForm();
@@ -118,9 +147,135 @@ export default function DividasManager() {
     });
     setEditingDivida(null);
     setIsDialogOpen(false);
+    try { setTimeout(() => window.scrollTo({ top: scrollBeforeDialogRef.current || 0, left: 0, behavior: 'instant' as ScrollBehavior }), 60); } catch {}
+  };
+
+  // Evitar salto de scroll ao abrir/fechar o diálogo (trava o body)
+  useEffect(() => {
+    const body = document.body as HTMLBodyElement;
+    if (isDialogOpen) {
+      try {
+        scrollBeforeDialogRef.current = window.scrollY || 0;
+        body.style.position = 'fixed';
+        body.style.top = `-${scrollBeforeDialogRef.current}px`;
+        body.style.width = '100%';
+      } catch {}
+    } else {
+      const top = body.style.top;
+      body.style.position = '';
+      body.style.top = '';
+      body.style.width = '';
+      if (top) {
+        try { window.scrollTo(0, -parseInt(top || '0')); } catch {}
+      }
+    }
+  }, [isDialogOpen]);
+
+  // CRUD simples de cartões e compras (na própria seção de dívidas)
+  const handleCreateCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cardName.trim()) return;
+    const novo: CartaoCredito = { id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(), nome: cardName.trim(), limite: cardLimit ? parseFloat(cardLimit) : undefined } as any;
+    await saveCartao(novo);
+    setCardName('');
+    setIsCardDialogOpen(false);
+  };
+
+  const handleCreatePurchase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCardId || !purchaseDesc || !purchaseValorTotal || !purchaseValorParcela || !purchaseStartDate) return;
+    const startMonth = purchaseStartDate.slice(0,7);
+    const startDay = parseInt(purchaseStartDate.slice(8,10));
+    const p: CompraCartao = {
+      id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(),
+      cardId: selectedCardId,
+      descricao: purchaseDesc,
+      valorTotal: parseFloat(purchaseValorTotal),
+      parcelas: parseInt(purchaseParcelas || '1'),
+      valorParcela: parseFloat(purchaseValorParcela),
+      startMonth,
+      dataCompra: purchaseDate,
+      parcelasPagas: 0,
+      startDay,
+    } as any;
+    await saveCompraCartao(p);
+
+    // gerar gastos fixos vinculados
+    try {
+      const [sy, sm] = startMonth.split('-').map(Number);
+      for (let i = 0; i < p.parcelas; i++) {
+        const { y, m } = addMonths(sy, sm, i);
+        const ym = `${y}-${String(m).padStart(2,'0')}`;
+        const valor = getInstallmentValue({
+          id: 'tmp', descricao: '', valorTotal: p.valorTotal, valorPago: 0, parcelas: p.parcelas, parcelasPagas: 0, valorParcela: p.valorParcela, dataVencimento: `${startMonth}-${String(startDay).padStart(2,'0')}`, tipo: p.parcelas > 1 ? 'parcelada' : 'total'
+        } as Divida, i);
+        const gastoId = `cartao:${p.cardId}:${p.id}:${ym}`;
+        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${(cartoes as CartaoCredito[]).find(c => c.id === p.cardId)?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Dívidas', diaVencimento: startDay, pago: false } as any;
+        await saveGastoFixo(gasto);
+        setGastosFixos((prev: GastoFixo[]) => {
+          const j = prev.findIndex(g => g.id === gastoId);
+          if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
+          return [...prev, gasto];
+        });
+      }
+    } catch {}
+
+    setIsPurchaseDialogOpen(false);
+    setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); setPurchaseStartDate(`${selectedMonth}-05`);
+  };
+
+  const handleDeleteCard = async (cardId: string) => {
+    if (!confirm('Excluir este cartão e suas compras?')) return;
+    try {
+      // remover gastos fixos vinculados
+      const prefix = `cartao:${cardId}:`;
+      const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
+      for (const g of vinculados) {
+        await deleteGastoFixo(g.id);
+      }
+      setGastosFixos((prev: GastoFixo[]) => prev.filter(g => !g.id.startsWith(prefix)));
+
+      // remover compras deste cartão
+      const compras = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
+      for (const c of compras) {
+        await (context as any).deleteCompraCartao(c.id);
+      }
+      setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.cardId !== cardId));
+
+      // remover cartão
+      await (context as any).deleteCartao(cardId);
+      setCartoes((prev: CartaoCredito[]) => prev.filter(c => c.id !== cardId));
+    } catch (e) {
+      console.error(e);
+      alert('Não foi possível excluir o cartão.');
+    }
+  };
+
+  const openEditCard = (card: CartaoCredito) => {
+    setEditingCard(card);
+    setCardName(card.nome || '');
+    setCardLimit(card.limite != null ? String(card.limite) : '');
+    setIsEditCardDialogOpen(true);
+  };
+
+  const handleSaveEditCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCard) return;
+    const atualizado: CartaoCredito = { ...editingCard, nome: cardName.trim() || editingCard.nome, limite: cardLimit ? parseFloat(cardLimit) : undefined } as any;
+    try {
+      await saveCartao(atualizado);
+      setCartoes((prev: CartaoCredito[]) => prev.map(c => c.id === atualizado.id ? atualizado : c));
+      setIsEditCardDialogOpen(false);
+      setEditingCard(null);
+      setCardName(''); setCardLimit('');
+    } catch (e) {
+      console.error(e);
+      alert('Não foi possível salvar o cartão.');
+    }
   };
 
   const handleEdit = (divida: Divida) => {
+    try { scrollBeforeDialogRef.current = window.scrollY || 0; } catch {}
     setEditingDivida(divida);
     setFormData({
       descricao: divida.descricao,
@@ -136,7 +291,16 @@ export default function DividasManager() {
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir esta dívida?')) return;
     await deleteDivida(id);
-    setDividas(prev => prev.filter(d => d.id !== id));
+      setDividas(prev => prev.filter(d => d.id !== id));
+    // Remover gastos fixos vinculados
+    try {
+      const prefix = `divida:${id}:`;
+      const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
+      for (const g of vinculados) {
+        await deleteGastoFixo(g.id);
+      }
+      setGastosFixos((prev: GastoFixo[]) => prev.filter(g => !g.id.startsWith(prefix)));
+    } catch {}
   };
 
   const handlePagamento = (divida: Divida) => {
@@ -145,58 +309,104 @@ export default function DividasManager() {
     setIsPagamentoOpen(true);
   };
 
+  const handlePagamentoCompra = (compra: CompraCartao) => {
+    setCompraSelecionada(compra);
+    setDividaSelecionada(null);
+    setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+    setIsPagamentoOpen(true);
+  };
+
   const processarPagamento = async (valorPagamento: number) => {
-    if (!dividaSelecionada) return;
+    if (!dividaSelecionada && !compraSelecionada) return;
     if (!caixaPagamento) { alert('Selecione um caixa.'); return; }
     // Bloqueio de saldo negativo
     const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
     if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
 
-    const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
-    if (!dividaAtual) return;
+    if (dividaSelecionada) {
+      const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
+      if (!dividaAtual) return;
 
-    const novoValorPago = dividaAtual.valorPago + valorPagamento;
-    const novasParcelasPagas = dividaAtual.tipo === 'parcelada' 
-      ? Math.floor(novoValorPago / dividaAtual.valorParcela)
-      : novoValorPago >= dividaAtual.valorTotal ? 1 : 0;
+      const novoValorPago = dividaAtual.valorPago + valorPagamento;
+      const novasParcelasPagas = dividaAtual.tipo === 'parcelada' 
+        ? Math.floor(novoValorPago / dividaAtual.valorParcela)
+        : novoValorPago >= dividaAtual.valorTotal ? 1 : 0;
 
-    const atualizada: Divida = {
-      ...dividaAtual,
-      valorPago: novoValorPago,
-      parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas),
-    };
+      const atualizada: Divida = {
+        ...dividaAtual,
+          valorPago: novoValorPago,
+        parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas),
+      };
 
-    await saveDivida(atualizada);
-    setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
+      await saveDivida(atualizada);
+      setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
 
-    // registrar saída no caixa selecionado
-    try {
-      await (saveTransacao && saveTransacao({
-        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
-        caixaId: caixaPagamento,
-        tipo: 'saida',
-        valor: valorPagamento,
-        descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
-        categoria: 'Dívidas',
-        data: new Date().toISOString().slice(0,10),
-        hora: new Date().toTimeString().slice(0,5)
-      }));
-    } catch {}
+      // registrar saída no caixa selecionado
+      try {
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'saida',
+          valor: valorPagamento,
+          descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
+          categoria: 'Dívidas',
+          data: new Date().toISOString().slice(0,10),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+      } catch {}
 
-    // marcar gasto fixo do mês como pago, se existir
-    try {
-      const ym = `${selectedYM.y}-${String(selectedYM.m).padStart(2,'0')}`;
-      const gastoId = `divida:${dividaAtual.id}:${ym}`;
-      const existente = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
-      if (existente) {
-        const atualizadoGasto: GastoFixo = { ...existente, pago: true } as any;
-        await (saveGastoFixo && saveGastoFixo(atualizadoGasto));
-        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? atualizadoGasto : g));
-      }
-    } catch {}
+      // marcar gasto fixo do mês como pago, se existir
+      try {
+        const ym = `${selectedYM.y}-${String(selectedYM.m).padStart(2,'0')}`;
+        const gastoId = `divida:${dividaAtual.id}:${ym}`;
+        const existente = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
+        if (existente) {
+          const atualizadoGasto: GastoFixo = { ...existente, pago: true } as any;
+          await (saveGastoFixo && saveGastoFixo(atualizadoGasto));
+          setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? atualizadoGasto : g));
+        }
+      } catch {}
+    }
+
+    if (compraSelecionada) {
+      const compra = comprasCartao.find((p: CompraCartao) => p.id === compraSelecionada.id);
+      if (!compra) return;
+      // avançar a competência paga até o mês selecionado
+      const [sy, sm] = compra.startMonth.split('-').map(Number);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+      const novasPagas = Math.max(compra.parcelasPagas || 0, Math.min(compra.parcelas, idx + 1));
+      const atualizada = { ...compra, parcelasPagas: novasPagas } as CompraCartao;
+      await saveCompraCartao(atualizada);
+      setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === atualizada.id ? atualizada : p));
+
+      try {
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'saida',
+          valor: valorPagamento,
+          descricao: `Pagamento cartão: ${compra.descricao}`,
+          categoria: 'Dívidas',
+          data: new Date().toISOString().slice(0,10),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+      } catch {}
+
+      try {
+        const ym = `${selectedYM.y}-${String(selectedYM.m).padStart(2,'0')}`;
+        const gastoId = `cartao:${compra.cardId}:${compra.id}:${ym}`;
+        const existente = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
+        if (existente) {
+          const atualizadoGasto: GastoFixo = { ...existente, pago: true } as any;
+          await (saveGastoFixo && saveGastoFixo(atualizadoGasto));
+          setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? atualizadoGasto : g));
+        }
+      } catch {}
+    }
 
     setIsPagamentoOpen(false);
     setDividaSelecionada(null);
+    setCompraSelecionada(null);
   };
 
   // Helpers de competência mensal
@@ -270,6 +480,30 @@ export default function DividasManager() {
   const monthlyRemaining = Math.max(0, monthlyTotal - monthlyPaid);
   const monthlyCount = dividas.filter(d => getMonthlyDue(d) > 0).length;
 
+  // Mapear compras de cartão como "dividas" para exibição
+  const purchasesAsDividas: Divida[] = (comprasCartao as CompraCartao[]).map((c) => {
+    const valorPagoEstimado = Math.min(c.parcelas, c.parcelasPagas || 0) * c.valorParcela + ((c.parcelasPagas || 0) === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
+    return {
+      id: `purchase:${c.id}`,
+      descricao: `Cartão ${(cartoes as CartaoCredito[]).find(x => x.id === c.cardId)?.nome || ''}: ${c.descricao}`,
+      valorTotal: c.valorTotal,
+      valorPago: valorPagoEstimado,
+      parcelas: c.parcelas,
+      parcelasPagas: c.parcelasPagas || 0,
+      valorParcela: c.valorParcela,
+      dataVencimento: `${c.startMonth}-05`,
+      tipo: c.parcelas > 1 ? 'parcelada' : 'total',
+    } as Divida;
+  });
+  // Unificar e deduplicar por id (evita warnings de keys duplicadas)
+  const allDividasForView: Divida[] = (() => {
+    const map = new Map<string, Divida>();
+    [...dividas, ...purchasesAsDividas].forEach((d) => {
+      if (!map.has(d.id)) map.set(d.id, d);
+    });
+    return Array.from(map.values());
+  })();
+
   // Calcular totais
   const totalDividas = dividas.reduce((sum, d) => sum + d.valorTotal, 0);
   const totalPago = dividas.reduce((sum, d) => sum + d.valorPago, 0);
@@ -294,14 +528,14 @@ export default function DividasManager() {
           </p>
         </div>
         
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={(o) => { setIsDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 60); } catch {} } }}>
           <DialogTrigger asChild>
             <Button onClick={resetForm}>
               <Plus className="h-4 w-4 mr-2" />
               Nova Dívida
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent aria-describedby={undefined}>
             <DialogHeader>
               <DialogTitle>
                 {editingDivida ? 'Editar Dívida' : 'Nova Dívida'}
@@ -421,8 +655,8 @@ export default function DividasManager() {
       </div>
 
       {/* Dialog de pagamento */}
-      <Dialog open={isPagamentoOpen} onOpenChange={setIsPagamentoOpen}>
-        <DialogContent>
+      <Dialog open={isPagamentoOpen} onOpenChange={(o) => { setIsPagamentoOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Registrar Pagamento</DialogTitle>
             <DialogDescription>
@@ -554,6 +788,160 @@ export default function DividasManager() {
         </CardContent>
       </Card>
 
+      {/* Cartões de Crédito dentro de Dívidas */}
+      <Card className="mt-4">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm">Cartões de Crédito</CardTitle>
+              <CardDescription>As parcelas caem na lista de dívidas do mês</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Dialog open={isCardDialogOpen} onOpenChange={(o) => { setIsCardDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
+                <DialogTrigger asChild>
+                  <Button size="sm"><Plus className="h-4 w-4 mr-2" /> Novo Cartão</Button>
+                </DialogTrigger>
+                <DialogContent aria-describedby={undefined}>
+                  <DialogHeader>
+                    <DialogTitle>Novo Cartão</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateCard} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Nome</Label>
+                      <Input value={cardName} onChange={(e) => setCardName(e.target.value)} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Limite de Crédito (opcional)</Label>
+                      <Input type="number" step="0.01" value={cardLimit} onChange={(e) => setCardLimit(e.target.value)} placeholder="0.00" />
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" type="button" onClick={() => setIsCardDialogOpen(false)}>Cancelar</Button>
+                      <Button type="submit">Criar</Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={isPurchaseDialogOpen} onOpenChange={(o) => { setIsPurchaseDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="secondary"><Plus className="h-4 w-4 mr-2" /> Nova Compra</Button>
+                </DialogTrigger>
+                <DialogContent aria-describedby={undefined}>
+                  <DialogHeader>
+                    <DialogTitle>Nova Compra no Cartão</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleCreatePurchase} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Cartão</Label>
+                      <select className="w-full border rounded h-9 px-2 bg-background" value={selectedCardId || ''} onChange={(e) => setSelectedCardId(e.target.value)} required>
+                        <option value="" disabled>Selecione</option>
+                        {cartoes.map((c: CartaoCredito) => (
+                          <option key={c.id} value={c.id}>{c.nome}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Descrição</Label>
+                      <Input value={purchaseDesc} onChange={(e) => setPurchaseDesc(e.target.value)} required />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Valor Total</Label>
+                        <Input type="number" step="0.01" value={purchaseValorTotal} onChange={(e) => { setPurchaseValorTotal(e.target.value); setPurchaseValorParcela(recomputeParcela(e.target.value, purchaseParcelas)); }} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Parcelas</Label>
+                        <Input type="number" min="1" value={purchaseParcelas} onChange={(e) => { setPurchaseParcelas(e.target.value); setPurchaseValorParcela(recomputeParcela(purchaseValorTotal, e.target.value)); }} required />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Valor da Parcela</Label>
+                      <Input type="number" step="0.01" value={purchaseValorParcela} onChange={(e) => setPurchaseValorParcela(e.target.value)} required />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Começa a cobrar em</Label>
+                        <Input type="date" value={purchaseStartDate} onChange={(e) => setPurchaseStartDate(e.target.value)} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Data da compra</Label>
+                        <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" type="button" onClick={() => setIsPurchaseDialogOpen(false)}>Cancelar</Button>
+                      <Button type="submit">Adicionar</Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {cartoes.map((c: CartaoCredito) => {
+              const totalMes = purchasesAsDividas
+                .filter(pd => pd.descricao.startsWith(`Cartão ${c.nome}`))
+                .reduce((s, d) => s + getMonthlyDue(d), 0);
+              const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === c.id);
+              return (
+                <div key={c.id} className="border rounded p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> <span className="font-medium">{c.nome}</span></div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm">Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                      <button title="Editar" onClick={() => openEditCard(c)} className="p-1 text-muted-foreground hover:text-foreground">
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button title="Excluir" onClick={() => handleDeleteCard(c.id)} className="p-1 text-red-600 hover:text-red-700">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <button className="text-xs text-muted-foreground mt-2 underline" onClick={() => setExpandedCardId(expandedCardId === c.id ? null : c.id)}>
+                    {expandedCardId === c.id ? 'Ocultar compras' : 'Ver compras'}
+                  </button>
+                  {expandedCardId === c.id && (
+                    <div className="mt-2 text-sm">
+                      {comprasDoCartao.length === 0 && <div className="text-muted-foreground">Sem compras</div>}
+                      {comprasDoCartao.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between py-1">
+                          <div>{p.descricao} — {p.parcelasPagas || 0}/{p.parcelas} parcelas — compra em {new Date(p.dataCompra).toLocaleDateString('pt-BR')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Editar Cartão */}
+      <Dialog open={isEditCardDialogOpen} onOpenChange={setIsEditCardDialogOpen}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Editar Cartão</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSaveEditCard} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nome</Label>
+              <Input value={cardName} onChange={(e) => setCardName(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Limite de Crédito (opcional)</Label>
+              <Input type="number" step="0.01" value={cardLimit} onChange={(e) => setCardLimit(e.target.value)} />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsEditCardDialogOpen(false)}>Cancelar</Button>
+              <Button type="submit">Salvar</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Progresso geral */}
       <Card>
         <CardHeader>
@@ -582,7 +970,7 @@ export default function DividasManager() {
         <CardContent>
           {/* Versão mobile - Lista de cards */}
           <div className="md:hidden space-y-3">
-            {dividas.map((divida) => {
+            {allDividasForView.map((divida) => {
               const percentualPago = (divida.valorPago / divida.valorTotal) * 100;
               const restante = divida.valorTotal - divida.valorPago;
               const isQuitada = divida.valorPago >= divida.valorTotal;
@@ -632,7 +1020,14 @@ export default function DividasManager() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handlePagamento(divida)}
+                          onClick={() => {
+                            if (divida.id.startsWith('purchase:')) {
+                              const comp = (comprasCartao as CompraCartao[]).find(p => `purchase:${p.id}` === divida.id);
+                              if (comp) handlePagamentoCompra(comp);
+                            } else {
+                              handlePagamento(divida);
+                            }
+                          }}
                           className="text-green-600 hover:text-green-700"
                         >
                           <DollarSign className="h-4 w-4" />
@@ -676,7 +1071,7 @@ export default function DividasManager() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {dividas.map((divida) => {
+                {allDividasForView.map((divida) => {
                   const percentualPago = (divida.valorPago / divida.valorTotal) * 100;
                   const restante = divida.valorTotal - divida.valorPago;
                   const isQuitada = divida.valorPago >= divida.valorTotal;
@@ -729,7 +1124,14 @@ export default function DividasManager() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handlePagamento(divida)}
+                              onClick={() => {
+                                if (divida.id.startsWith('purchase:')) {
+                                  const comp = (comprasCartao as CompraCartao[]).find(p => `purchase:${p.id}` === divida.id);
+                                  if (comp) handlePagamentoCompra(comp);
+                                } else {
+                                  handlePagamento(divida);
+                                }
+                              }}
                               className="text-green-600 hover:text-green-700"
                             >
                               <DollarSign className="h-4 w-4" />

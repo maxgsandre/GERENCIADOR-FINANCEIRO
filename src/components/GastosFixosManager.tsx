@@ -37,6 +37,24 @@ export default function GastosFixosManager() {
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < gastoSelecionado.valor) : false;
 
+  // Mês selecionado para exibição (filtrar parcelas geradas por mês)
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  const includeInSelectedMonth = (g: GastoFixo) => {
+    const id = g.id || '';
+    if (id.startsWith('cartao:') || id.startsWith('divida:')) {
+      const parts = id.split(':');
+      const ym = parts[parts.length - 1];
+      return ym === selectedMonth;
+    }
+    return true; // gastos fixos recorrentes (ex.: Aluguel)
+  };
+
+  const filteredGastos = (gastosFixos as GastoFixo[]).filter(includeInSelectedMonth);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -232,19 +250,19 @@ export default function GastosFixosManager() {
     setGastoSelecionado(null);
   };
 
-  // Calcular totais
-  const totalPagos = gastosFixos
+  // Calcular totais (considerando filtro de mês para parcelas geradas)
+  const totalPagos = filteredGastos
     .filter(g => g.pago)
     .reduce((sum, g) => sum + g.valor, 0);
 
-  const totalPendentes = gastosFixos
+  const totalPendentes = filteredGastos
     .filter(g => !g.pago)
     .reduce((sum, g) => sum + g.valor, 0);
 
   // Verificar vencimentos próximos (próximos 7 dias) que ainda não foram pagos
   const hoje = new Date();
   const diaAtual = hoje.getDate();
-  const proximosVencimentos = gastosFixos
+  const proximosVencimentos = filteredGastos
     .filter(g => !g.pago)
     .filter(g => {
       const diasAteVencimento = g.diaVencimento - diaAtual;
@@ -253,7 +271,7 @@ export default function GastosFixosManager() {
     .sort((a, b) => a.diaVencimento - b.diaVencimento);
 
   // Gastos por categoria (todos os gastos)
-  const gastosPorCategoria = gastosFixos
+  const gastosPorCategoria = filteredGastos
     .reduce((acc, gasto) => {
       acc[gasto.categoria] = (acc[gasto.categoria] || 0) + gasto.valor;
       return acc;
@@ -473,6 +491,10 @@ export default function GastosFixosManager() {
       </div>
 
       {/* Cards de resumo */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-muted-foreground">Mês</div>
+        <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px] border rounded h-9 px-2 bg-background" />
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         <Card>
           <CardHeader className="pb-2">
@@ -581,7 +603,7 @@ export default function GastosFixosManager() {
         <CardContent>
           {/* Versão mobile - Lista de cards */}
           <div className="md:hidden space-y-3">
-            {gastosFixos.map((gasto) => (
+            {filteredGastos.map((gasto) => (
               <div key={gasto.id} className={`border rounded-lg p-3 space-y-3 ${gasto.pago ? 'bg-green-50 border-green-200' : ''}`}>
                 <div className="flex justify-between items-start">
                   <div className="space-y-1 flex-1">
@@ -653,7 +675,7 @@ export default function GastosFixosManager() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {gastosFixos.map((gasto) => (
+                {filteredGastos.map((gasto) => (
                   <TableRow key={gasto.id} className={gasto.pago ? 'bg-green-50' : ''}>
                     <TableCell className="font-medium">{gasto.descricao}</TableCell>
                     <TableCell>{gasto.categoria}</TableCell>

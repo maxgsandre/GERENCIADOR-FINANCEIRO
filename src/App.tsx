@@ -11,7 +11,6 @@ import Dashboard from './components/Dashboard';
 import CaixasManager from './components/CaixasManager';
 import TransacoesManager from './components/TransacoesManager';
 import GastosFixosManager from './components/GastosFixosManager';
-import CreditCardsManager from './components/CreditCardsManager';
 import DividasManager from './components/DividasManager';
 import UserMenu from './components/UserMenu';
 import AuthWrapper from './components/Auth/AuthWrapper';
@@ -90,6 +89,7 @@ export interface CartaoCredito {
   id: string;
   nome: string;
   observacao?: string;
+  limite?: number;
 }
 
 export interface CompraCartao {
@@ -102,6 +102,7 @@ export interface CompraCartao {
   startMonth: string; // YYYY-MM primeira competência
   dataCompra: string; // YYYY-MM-DD
   parcelasPagas: number;
+  startDay?: number;
 }
 
 // Context para dados globais
@@ -155,7 +156,6 @@ const menuItems = [
   { icon: Wallet, label: 'Caixas', key: 'caixas' },
   { icon: ArrowUpDown, label: 'Transações', key: 'transacoes' },
   { icon: CreditCard, label: 'Gastos Fixos', key: 'gastos' },
-  { icon: CreditCard, label: 'Cartões', key: 'cartoes' },
   { icon: TrendingDown, label: 'Dívidas', key: 'dividas' },
 ];
 
@@ -499,8 +499,6 @@ function AppContent() {
         return <GastosFixosManager />;
       case 'dividas':
         return <DividasManager />;
-      case 'cartoes':
-        return <CreditCardsManager />;
       default:
         return <Dashboard />;
     }
