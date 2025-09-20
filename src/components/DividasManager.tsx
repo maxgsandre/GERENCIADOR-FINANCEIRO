@@ -156,19 +156,19 @@ export default function DividasManager() {
       setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === updated.id ? updated : p));
       try { await replanGastosFixosDaCompra(updated); } catch {}
     } else {
-      const novaDivida: Divida = {
+    const novaDivida: Divida = {
         id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
-        descricao: formData.descricao,
-        valorTotal: parseFloat(formData.valorTotal),
-        valorPago: editingDivida?.valorPago || 0,
-        parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
-        parcelasPagas: editingDivida?.parcelasPagas || 0,
-        valorParcela: formData.tipo === 'parcelada' 
+      descricao: formData.descricao,
+      valorTotal: parseFloat(formData.valorTotal),
+      valorPago: editingDivida?.valorPago || 0,
+      parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
+      parcelasPagas: editingDivida?.parcelasPagas || 0,
+      valorParcela: formData.tipo === 'parcelada' 
           ? valorParcelaNum 
-          : parseFloat(formData.valorTotal),
-        dataVencimento: formData.dataVencimento,
-        tipo: formData.tipo,
-      };
+        : parseFloat(formData.valorTotal),
+      dataVencimento: formData.dataVencimento,
+      tipo: formData.tipo,
+    };
 
       await saveDivida(novaDivida);
       setDividas(prev => {
@@ -368,13 +368,13 @@ export default function DividasManager() {
 
     // Dívida normal
     await deleteDivida(id);
-    setDividas(prev => prev.filter(d => d.id !== id));
+      setDividas(prev => prev.filter(d => d.id !== id));
     try {
       const prefix = `divida:${id}:`;
       const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
       for (const g of vinculados) {
         await deleteGastoFixo(g.id);
-      }
+    }
       setGastosFixos((prev: GastoFixo[]) => prev.filter(g => !g.id.startsWith(prefix)));
     } catch {}
   };
@@ -957,10 +957,10 @@ export default function DividasManager() {
               <CardTitle className="text-sm">Cartões de Crédito</CardTitle>
               <CardDescription>As parcelas caem na lista de dívidas do mês</CardDescription>
             </div>
-            <div className="flex gap-2">
+          <div className="mt-2 flex flex-col gap-2 md:ml-auto md:flex-row md:mt-0">
               <Dialog open={isCardDialogOpen} onOpenChange={(o) => { setIsCardDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
                 <DialogTrigger asChild>
-                  <Button size="sm"><Plus className="h-4 w-4 mr-2" /> Novo Cartão</Button>
+                  <Button size="sm" className="h-8 px-3 md:h-9 md:px-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" /> Novo Cartão</Button>
                 </DialogTrigger>
                 <DialogContent aria-describedby={undefined}>
                   <DialogHeader>
@@ -989,7 +989,7 @@ export default function DividasManager() {
 
               <Dialog open={isPurchaseDialogOpen} onOpenChange={(o) => { setIsPurchaseDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
                 <DialogTrigger asChild>
-                  <Button size="sm" variant="secondary"><Plus className="h-4 w-4 mr-2" /> Nova Compra</Button>
+                  <Button size="sm" variant="secondary" className="h-8 px-3 md:h-9 md:px-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" /> Nova Compra</Button>
                 </DialogTrigger>
                 <DialogContent aria-describedby={undefined}>
                   <DialogHeader>
@@ -1052,27 +1052,29 @@ export default function DividasManager() {
               const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === c.id);
               return (
                 <div key={c.id} className="border rounded p-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> <span className="font-medium">{c.nome}</span></div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-sm">Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                      <button className="px-2 py-1 text-xs rounded border" onClick={() => openInvoiceDialog(c)}>Pagar fatura</button>
-                      <button title="Editar" onClick={() => openEditCard(c)} className="p-1 text-muted-foreground hover:text-foreground">
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button title="Excluir" onClick={() => handleDeleteCard(c.id)} className="p-1 text-red-600 hover:text-red-700">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                    <div className="flex items-center gap-2 flex-wrap md:justify-end">
+                      <div className="text-sm whitespace-nowrap">Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                      <button className="px-3 h-8 md:h-9 text-sm rounded border" onClick={() => openInvoiceDialog(c)}>Pagar fatura</button>
+                      <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                        <button title="Editar" onClick={() => openEditCard(c)} className="p-2 text-muted-foreground hover:text-foreground">
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button title="Excluir" onClick={() => handleDeleteCard(c.id)} className="p-2 text-red-600 hover:text-red-700">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <button className="text-xs text-muted-foreground mt-2 underline" onClick={() => setExpandedCardId(expandedCardId === c.id ? null : c.id)}>
                     {expandedCardId === c.id ? 'Ocultar compras' : 'Ver compras'}
                   </button>
                   {expandedCardId === c.id && (
-                    <div className="mt-2 text-sm">
+                    <div className="mt-2 text-sm overflow-x-auto">
                       {comprasDoCartao.length === 0 && <div className="text-muted-foreground">Sem compras</div>}
                       {comprasDoCartao.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between py-1">
+                        <div key={p.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 py-1">
                           <div>{p.descricao} — {p.parcelasPagas || 0}/{p.parcelas} parcelas — compra em {new Date(p.dataCompra).toLocaleDateString('pt-BR')}</div>
                         </div>
                       ))}
