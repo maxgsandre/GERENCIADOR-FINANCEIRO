@@ -10,14 +10,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
 import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle } from 'lucide-react';
-import { FinanceiroContext, GastoFixo } from '../App';
+import { FinanceiroContext, GastoFixo, Divida } from '../App';
 import CategoriasManager from './CategoriasManager';
 
 export default function GastosFixosManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria } = context;
+  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria, caixas, dividas, setDividas, saveDivida, saveTransacao } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
@@ -30,6 +30,12 @@ export default function GastosFixosManager() {
     diaVencimento: '',
     pago: false,
   });
+  const [isPagamentoOpen, setIsPagamentoOpen] = useState(false);
+  const [gastoSelecionado, setGastoSelecionado] = useState<GastoFixo | null>(null);
+  const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
+  const [modoPagamento, setModoPagamento] = useState<'pay' | 'refund'>('pay');
+  const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
+  const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < gastoSelecionado.valor) : false;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,9 +106,130 @@ export default function GastosFixosManager() {
   };
 
   const togglePago = (id: string) => {
-    setGastosFixos(prev => prev.map(g => 
-      g.id === id ? { ...g, pago: !g.pago } : g
-    ));
+    const gasto = gastosFixos.find(g => g.id === id);
+    if (!gasto) return;
+    const isLinkedDivida = gasto.id.startsWith('divida:');
+    const isLinkedCartao = gasto.id.startsWith('cartao:');
+    const isLinked = isLinkedDivida || isLinkedCartao;
+    if (!gasto.pago && isLinked) {
+      setGastoSelecionado(gasto);
+      setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+      setModoPagamento('pay');
+      setIsPagamentoOpen(true);
+      return;
+    }
+    if (gasto.pago && isLinked) {
+      if (!confirm('Desmarcar pagamento e estornar?')) return;
+      setGastoSelecionado(gasto);
+      setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+      setModoPagamento('refund');
+      setIsPagamentoOpen(true);
+      return;
+    }
+    const atualizado = { ...gasto, pago: !gasto.pago };
+    setGastosFixos(prev => prev.map(g => g.id === id ? atualizado : g));
+    saveGastoFixo && saveGastoFixo(atualizado);
+  };
+
+  const ymToIndex = (year: number, month1to12: number) => year * 12 + (month1to12 - 1);
+
+  const confirmarPagamentoVinculado = async () => {
+    if (!gastoSelecionado || !caixaPagamento) return;
+    const gasto = gastoSelecionado;
+    // Marcar gasto como pago
+    const gastoPago = { ...gasto, pago: true };
+    await (saveGastoFixo && saveGastoFixo(gastoPago));
+    setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoPago : g));
+
+    // Extrair dividaId e YYYY-MM do id do gasto: divida:{id}:{YYYY-MM}
+    const parts = gasto.id.split(':');
+    if (parts.length >= 3) {
+      const prefix = parts[0];
+      if (prefix === 'divida') {
+        const dividaId = parts[1];
+        const ym = parts[2];
+        const d = dividas.find((x: Divida) => x.id === dividaId);
+        if (d) {
+          const [yy, mm] = ym.split('-').map(Number);
+          const [sy, sm] = d.dataVencimento.split('-').slice(0,2).map(Number);
+          const idx = ymToIndex(yy, mm) - ymToIndex(sy, sm);
+          const novoValorPago = d.valorPago + gasto.valor;
+          const novasParcelasPagas = d.tipo === 'parcelada' ? Math.max(d.parcelasPagas, Math.min(d.parcelas, idx + 1)) : (novoValorPago >= d.valorTotal ? 1 : d.parcelasPagas);
+          const atualizada: Divida = { ...d, valorPago: novoValorPago, parcelasPagas: novasParcelasPagas };
+          await (saveDivida && saveDivida(atualizada));
+          setDividas((prev: Divida[]) => prev.map(x => x.id === d.id ? atualizada : x));
+        }
+      }
+      if (prefix === 'cartao') {
+        // parts: cartao:{cardId}:{purchaseId}:{YYYY-MM}
+        const purchaseId = parts[2];
+        const purchases = (context as any).comprasCartao as any[];
+        const savePurchase = (context as any).saveCompraCartao as (p: any) => Promise<void>;
+        const purchase = purchases?.find(p => p.id === purchaseId);
+        if (purchase) {
+          const atualizada = { ...purchase, parcelasPagas: Math.min(purchase.parcelas, (purchase.parcelasPagas || 0) + 1) };
+          await (savePurchase && savePurchase(atualizada));
+          (context as any).setComprasCartao((prev: any[]) => prev.map(p => p.id === atualizada.id ? atualizada : p));
+        }
+      }
+    }
+
+    // Lançar saída no caixa
+    try {
+      await (saveTransacao && saveTransacao({
+        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+        caixaId: caixaPagamento,
+        tipo: 'saida',
+        valor: gasto.valor,
+        descricao: `Gasto fixo pago: ${gasto.descricao}`,
+        categoria: 'Dívidas',
+        data: new Date().toISOString().slice(0,10),
+        hora: new Date().toTimeString().slice(0,5)
+      }));
+    } catch {}
+
+    setIsPagamentoOpen(false);
+    setGastoSelecionado(null);
+  };
+
+  const confirmarEstornoVinculado = async () => {
+    if (!gastoSelecionado || !caixaPagamento) return;
+    const gasto = gastoSelecionado;
+    // Marcar gasto como não pago
+    const gastoNaoPago = { ...gasto, pago: false };
+    await (saveGastoFixo && saveGastoFixo(gastoNaoPago));
+    setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoNaoPago : g));
+
+    // Atualizar dívida (subtrair valor e recalcular parcelasPagas)
+    const parts = gasto.id.split(':');
+    if (parts.length >= 3) {
+      const dividaId = parts[1];
+      const d = dividas.find((x: Divida) => x.id === dividaId);
+      if (d) {
+        const novoValorPago = Math.max(0, d.valorPago - gasto.valor);
+        const novasParcelasPagas = d.tipo === 'parcelada' ? Math.floor(novoValorPago / d.valorParcela) : (novoValorPago >= d.valorTotal ? 1 : 0);
+        const atualizada: Divida = { ...d, valorPago: novoValorPago, parcelasPagas: Math.min(novasParcelasPagas, d.parcelas) };
+        await (saveDivida && saveDivida(atualizada));
+        setDividas((prev: Divida[]) => prev.map(x => x.id === d.id ? atualizada : x));
+      }
+    }
+
+    // Lançar entrada de estorno no caixa
+    try {
+      await (saveTransacao && saveTransacao({
+        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+        caixaId: caixaPagamento,
+        tipo: 'entrada',
+        valor: gasto.valor,
+        descricao: `Estorno gasto fixo: ${gasto.descricao}`,
+        categoria: 'Dívidas',
+        data: new Date().toISOString().slice(0,10),
+        hora: new Date().toTimeString().slice(0,5)
+      }));
+    } catch {}
+
+    setIsPagamentoOpen(false);
+    setGastoSelecionado(null);
   };
 
   // Calcular totais
@@ -134,6 +261,44 @@ export default function GastosFixosManager() {
 
   return (
     <div className="space-y-6">
+      {/* Modal pagamento vinculado a dívida */}
+      <Dialog open={isPagamentoOpen} onOpenChange={setIsPagamentoOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{modoPagamento === 'pay' ? 'Pagar gasto fixo' : 'Estornar gasto fixo'}</DialogTitle>
+            <DialogDescription>
+              {gastoSelecionado?.descricao}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {caixas && caixas.length > 0 && (
+              <div className="space-y-2">
+                <Label>Selecionar Caixa</Label>
+                <select className="w-full border rounded h-9 px-2 bg-background" value={caixaPagamento || ''} onChange={(e) => setCaixaPagamento(e.target.value)}>
+                  {caixas.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">Valor: <strong>R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
+            {caixaSelecionado && (
+              <p className={`text-sm ${saldoInsuficiente ? 'text-red-600' : 'text-muted-foreground'}`}>Saldo do caixa: <strong>R$ {caixaSelecionado.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
+            )}
+            {saldoInsuficiente && (
+              <p className="text-sm text-red-600">Saldo insuficiente. Selecione outro caixa ou ajuste o valor.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)}>Cancelar</Button>
+            {modoPagamento === 'pay' ? (
+              <Button onClick={confirmarPagamentoVinculado} disabled={!caixaPagamento || saldoInsuficiente}>Confirmar pagamento</Button>
+            ) : (
+              <Button onClick={confirmarEstornoVinculado} disabled={!caixaPagamento}>Confirmar estorno</Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">Gastos Fixos</h2>
@@ -285,14 +450,14 @@ export default function GastosFixosManager() {
                 </Select>
               </div>
               
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="pago"
-                  checked={formData.pago}
-                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, pago: checked }))}
-                />
-                <Label htmlFor="pago">Gasto já pago neste mês</Label>
-              </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="pago"
+                    checked={formData.pago}
+                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, pago: checked }))}
+                  />
+                  <Label htmlFor="pago">Gasto já pago neste mês</Label>
+                </div>
               
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={resetForm}>

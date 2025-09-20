@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -9,18 +9,25 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
 import { Trash2, Plus, Edit, DollarSign, Calendar, CheckCircle } from 'lucide-react';
-import { FinanceiroContext, Divida } from '../App';
+import { FinanceiroContext, Divida, GastoFixo } from '../App';
 
 export default function DividasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { dividas, setDividas, saveDivida, deleteDivida } = context;
+  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveTransacao, gastosFixos, setGastosFixos, saveGastoFixo } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingDivida, setEditingDivida] = useState<Divida | null>(null);
   const [isPagamentoOpen, setIsPagamentoOpen] = useState(false);
   const [dividaSelecionada, setDividaSelecionada] = useState<Divida | null>(null);
+  const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`; // YYYY-MM
+  });
   const [formData, setFormData] = useState({
     descricao: '',
     valorTotal: '',
@@ -30,10 +37,28 @@ export default function DividasManager() {
     tipo: 'parcelada' as 'parcelada' | 'total',
   });
 
+  // Calcula automaticamente o valor da parcela quando total/parcelas mudarem.
+  const recomputeParcela = (totalStr: string, parcelasStr: string) => {
+    const total = parseFloat(totalStr.replace(',', '.'));
+    const parcelas = parseInt(parcelasStr);
+    if (!isFinite(total) || !isFinite(parcelas) || parcelas <= 0) return '';
+    // valor base arredondado para 2 casas
+    const base = Math.floor((total / parcelas) * 100) / 100; // trunca para evitar exceder
+    const residual = Math.round(total * 100) - (base * 100 * parcelas);
+    // A última parcela receberá o residual (pode ser 0..(parcelas-1) centavos)
+    // Para o input exibimos o valor base; ao salvar ajustaremos a última parcela.
+    return (base).toFixed(2);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.descricao || !formData.valorTotal || !formData.dataVencimento) return;
+
+    // Ajusta parcela automaticamente se for parcelada e não informada
+    let valorParcelaNum = formData.tipo === 'parcelada'
+      ? (formData.valorParcela ? parseFloat(formData.valorParcela) : parseFloat(recomputeParcela(formData.valorTotal, formData.parcelas) || '0'))
+      : parseFloat(formData.valorTotal);
 
     const novaDivida: Divida = {
       id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
@@ -43,7 +68,7 @@ export default function DividasManager() {
       parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
       parcelasPagas: editingDivida?.parcelasPagas || 0,
       valorParcela: formData.tipo === 'parcelada' 
-        ? parseFloat(formData.valorParcela) 
+        ? valorParcelaNum 
         : parseFloat(formData.valorTotal),
       dataVencimento: formData.dataVencimento,
       tipo: formData.tipo,
@@ -59,6 +84,25 @@ export default function DividasManager() {
       }
       return [...prev, novaDivida];
     });
+
+    // Criar/atualizar gastos fixos de todas as competências desta dívida
+    try {
+      const [y, m, d] = novaDivida.dataVencimento.split('-').map(Number);
+      const totalParcelas = novaDivida.tipo === 'parcelada' ? novaDivida.parcelas : 1;
+      for (let i = 0; i < totalParcelas; i++) {
+        const { y: yy, m: mm } = addMonths(y, m, i);
+        const ym = `${yy}-${String(mm).padStart(2,'0')}`;
+        const valor = getInstallmentValue(novaDivida, i);
+        const gastoId = `divida:${novaDivida.id}:${ym}`;
+        const gasto: GastoFixo = { id: gastoId, descricao: `Parcela dívida: ${novaDivida.descricao} – ${i+1}/${totalParcelas}`, valor, categoria: 'Dívidas', diaVencimento: d, pago: i < (novaDivida.parcelasPagas || 0) } as any;
+        await (saveGastoFixo && saveGastoFixo(gasto));
+        setGastosFixos((prev: GastoFixo[]) => {
+          const j = prev.findIndex(g => g.id === gastoId);
+          if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
+          return [...prev, gasto];
+        });
+      }
+    } catch {}
 
     resetForm();
   };
@@ -97,11 +141,16 @@ export default function DividasManager() {
 
   const handlePagamento = (divida: Divida) => {
     setDividaSelecionada(divida);
+    setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
     setIsPagamentoOpen(true);
   };
 
   const processarPagamento = async (valorPagamento: number) => {
     if (!dividaSelecionada) return;
+    if (!caixaPagamento) { alert('Selecione um caixa.'); return; }
+    // Bloqueio de saldo negativo
+    const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
+    if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
 
     const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
     if (!dividaAtual) return;
@@ -120,9 +169,106 @@ export default function DividasManager() {
     await saveDivida(atualizada);
     setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
 
+    // registrar saída no caixa selecionado
+    try {
+      await (saveTransacao && saveTransacao({
+        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+        caixaId: caixaPagamento,
+        tipo: 'saida',
+        valor: valorPagamento,
+        descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
+        categoria: 'Dívidas',
+        data: new Date().toISOString().slice(0,10),
+        hora: new Date().toTimeString().slice(0,5)
+      }));
+    } catch {}
+
+    // marcar gasto fixo do mês como pago, se existir
+    try {
+      const ym = `${selectedYM.y}-${String(selectedYM.m).padStart(2,'0')}`;
+      const gastoId = `divida:${dividaAtual.id}:${ym}`;
+      const existente = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
+      if (existente) {
+        const atualizadoGasto: GastoFixo = { ...existente, pago: true } as any;
+        await (saveGastoFixo && saveGastoFixo(atualizadoGasto));
+        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? atualizadoGasto : g));
+      }
+    } catch {}
+
     setIsPagamentoOpen(false);
     setDividaSelecionada(null);
   };
+
+  // Helpers de competência mensal
+  // Manipulação robusta de ano/mês sem normalização de datas do JS
+  const ymToIndex = (year: number, month1to12: number) => year * 12 + (month1to12 - 1);
+  const parseYYYYMM = (s: string) => {
+    const [y, m] = s.split('-').map(Number);
+    return { y, m };
+  };
+  const parseYYYYMMDDtoYM = (s: string) => {
+    const [y, m] = s.split('-').slice(0, 2).map(Number);
+    return { y, m };
+  };
+  const selectedYM = useMemo(() => parseYYYYMM(selectedMonth), [selectedMonth]);
+
+  const getInstallmentValue = (d: Divida, index: number): number => {
+    if (d.tipo !== 'parcelada') return d.valorTotal;
+    const base = d.valorParcela;
+    const delta = Math.round(d.valorTotal * 100) - Math.round(base * 100) * d.parcelas;
+    const isLast = index === d.parcelas - 1;
+    return base + (isLast ? delta / 100 : 0);
+  };
+
+  const addMonths = (y: number, m1to12: number, add: number) => {
+    const idx = ymToIndex(y, m1to12) + add;
+    const ny = Math.floor(idx / 12);
+    const nm = (idx % 12) + 1;
+    return { y: ny, m: nm };
+  };
+
+  const getMonthlyDue = (d: Divida): number => {
+    if (d.tipo === 'parcelada') {
+      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
+      if (idx < 0 || idx >= d.parcelas) return 0;
+      const base = d.valorParcela;
+      const delta = Math.round(d.valorTotal * 100) - Math.round(base * 100) * d.parcelas;
+      const isLast = idx === d.parcelas - 1;
+      const valor = base + (isLast ? delta / 100 : 0);
+      return Math.max(0, valor);
+    }
+    // Valor total: conta no mês do vencimento
+    const vencYM = parseYYYYMMDDtoYM(d.dataVencimento);
+    if (vencYM.y === selectedYM.y && vencYM.m === selectedYM.m) {
+      return d.valorTotal;
+    }
+    return 0;
+  };
+
+  const getMonthlyPaid = (d: Divida): number => {
+    if (d.tipo === 'parcelada') {
+      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
+      if (idx < 0 || idx >= d.parcelas) return 0;
+      const delta = Math.round(d.valorTotal * 100) - Math.round(d.valorParcela * 100) * d.parcelas;
+      const isLast = idx === d.parcelas - 1;
+      const parcelaEsperada = d.valorParcela + (isLast ? delta / 100 : 0);
+      // Considera paga se a competência já está dentro das parcelasPagas
+      return idx < d.parcelasPagas ? parcelaEsperada : 0;
+    }
+    const vencYM = parseYYYYMMDDtoYM(d.dataVencimento);
+    if (vencYM.y === selectedYM.y && vencYM.m === selectedYM.m) {
+      return d.valorPago >= d.valorTotal ? d.valorTotal : 0;
+    }
+    return 0;
+  };
+
+  // Totais mensais
+  const monthlyTotal = dividas.reduce((sum, d) => sum + getMonthlyDue(d), 0);
+  const monthlyPaid = dividas.reduce((sum, d) => sum + getMonthlyPaid(d), 0);
+  const monthlyRemaining = Math.max(0, monthlyTotal - monthlyPaid);
+  const monthlyCount = dividas.filter(d => getMonthlyDue(d) > 0).length;
 
   // Calcular totais
   const totalDividas = dividas.reduce((sum, d) => sum + d.valorTotal, 0);
@@ -204,7 +350,11 @@ export default function DividasManager() {
                     type="number"
                     step="0.01"
                     value={formData.valorTotal}
-                    onChange={(e) => setFormData(prev => ({ ...prev, valorTotal: e.target.value }))}
+                    onChange={(e) => setFormData(prev => ({ 
+                      ...prev, 
+                      valorTotal: e.target.value,
+                      valorParcela: prev.tipo === 'parcelada' ? recomputeParcela(e.target.value, prev.parcelas) : prev.valorParcela
+                    }))}
                     placeholder="0.00"
                     required
                   />
@@ -220,7 +370,11 @@ export default function DividasManager() {
                       type="number"
                       min="1"
                       value={formData.parcelas}
-                      onChange={(e) => setFormData(prev => ({ ...prev, parcelas: e.target.value }))}
+                      onChange={(e) => setFormData(prev => ({ 
+                        ...prev, 
+                        parcelas: e.target.value,
+                        valorParcela: recomputeParcela(prev.valorTotal, e.target.value)
+                      }))}
                       placeholder="Ex: 12"
                       required
                     />
@@ -237,6 +391,7 @@ export default function DividasManager() {
                       placeholder="0.00"
                       required
                     />
+                    <p className="text-xs text-muted-foreground">O sistema sugere automaticamente com base no total e parcelas. Você pode ajustar se desejar.</p>
                   </div>
                 </div>
               )}
@@ -294,6 +449,16 @@ export default function DividasManager() {
                 required
               />
             </div>
+            {caixas && caixas.length > 0 && (
+              <div className="space-y-2">
+                <Label>Selecionar Caixa</Label>
+                <select className="w-full border rounded h-9 px-2 bg-background" value={caixaPagamento || ''} onChange={(e) => setCaixaPagamento(e.target.value)}>
+                  {caixas.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsPagamentoOpen(false)}>
@@ -307,48 +472,52 @@ export default function DividasManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Cards de resumo */}
+      {/* Cards de resumo do mês selecionado */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-muted-foreground">Mês</div>
+        <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px]" />
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total das Dívidas</CardTitle>
+            <CardTitle className="text-sm">Total do mês</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              R$ {totalDividas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {monthlyTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total Pago</CardTitle>
+            <CardTitle className="text-sm">Pago no mês</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              R$ {totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {monthlyPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Restante a Pagar</CardTitle>
+            <CardTitle className="text-sm">Restante do mês</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
-              R$ {totalRestante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {monthlyRemaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Vencendo em 30 dias</CardTitle>
+            <CardTitle className="text-sm">Com parcela no mês</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-yellow-600">
-              {dividasVencendoSoon.length}
+              {monthlyCount}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               dívida(s)
@@ -356,6 +525,34 @@ export default function DividasManager() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Totais gerais (sem filtro de mês) */}
+      <Card className="mt-2">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Totais gerais</CardTitle>
+          <CardDescription>Somatório de todas as dívidas</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+            <div>
+              <div className="text-xs text-muted-foreground">Total das Dívidas</div>
+              <div className="text-lg font-bold text-red-600">R$ {totalDividas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Total Pago</div>
+              <div className="text-lg font-bold text-green-600">R$ {totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Restante a Pagar</div>
+              <div className="text-lg font-bold text-orange-600">R$ {totalRestante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Vencendo em 30 dias</div>
+              <div className="text-lg font-bold text-yellow-600">{dividasVencendoSoon.length}</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Progresso geral */}
       <Card>
@@ -389,6 +586,7 @@ export default function DividasManager() {
               const percentualPago = (divida.valorPago / divida.valorTotal) * 100;
               const restante = divida.valorTotal - divida.valorPago;
               const isQuitada = divida.valorPago >= divida.valorTotal;
+              const parcelaMes = getMonthlyDue(divida);
               
               return (
                 <div key={divida.id} className={`border rounded-lg p-3 space-y-3 ${isQuitada ? 'opacity-60' : ''}`}>
@@ -408,6 +606,7 @@ export default function DividasManager() {
                         <Calendar className="h-4 w-4 mr-1" />
                         {new Date(divida.dataVencimento).toLocaleDateString('pt-BR')}
                       </div>
+                      <div className="text-sm text-muted-foreground">Parcela do mês: <span className="font-medium text-foreground">R$ {parcelaMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
                     </div>
                     
                     <div className="text-right space-y-1">
@@ -470,6 +669,7 @@ export default function DividasManager() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Vencimento</TableHead>
                   <TableHead>Progresso</TableHead>
+                  <TableHead className="text-right">Parcela do mês</TableHead>
                   <TableHead className="text-right">Valor Total</TableHead>
                   <TableHead className="text-right">Restante</TableHead>
                   <TableHead className="w-32">Ações</TableHead>
@@ -480,6 +680,7 @@ export default function DividasManager() {
                   const percentualPago = (divida.valorPago / divida.valorTotal) * 100;
                   const restante = divida.valorTotal - divida.valorPago;
                   const isQuitada = divida.valorPago >= divida.valorTotal;
+                  const parcelaMes = getMonthlyDue(divida);
                   
                   return (
                     <TableRow key={divida.id} className={isQuitada ? 'opacity-60' : ''}>
@@ -510,6 +711,9 @@ export default function DividasManager() {
                             {percentualPago.toFixed(1)}%
                           </span>
                         </div>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        R$ {parcelaMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         R$ {divida.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}

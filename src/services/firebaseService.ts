@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { User } from 'firebase/auth';
-import { Caixa, Transacao, GastoFixo, Divida, Cofrinho, Categoria, ReceitaPrevista } from '../App';
+import { Caixa, Transacao, GastoFixo, Divida, Cofrinho, Categoria, ReceitaPrevista, CartaoCredito, CompraCartao } from '../App';
 
 // Função para criar documento do usuário
 export const createUserDocument = async (user: User) => {
@@ -229,5 +229,44 @@ export const subscribeToReceitasPrevistas = (userId: string, callback: (receitas
       receitas.push({ id: doc.id, ...doc.data() } as ReceitaPrevista);
     });
     callback(receitas);
+  });
+};
+
+// =======================
+// Cartões de Crédito
+// =======================
+
+export const saveCreditCard = async (userId: string, card: CartaoCredito) => {
+  await setDoc(doc(db, 'users', userId, 'creditCards', card.id), card);
+};
+
+export const deleteCreditCard = async (userId: string, cardId: string) => {
+  await deleteDoc(doc(db, 'users', userId, 'creditCards', cardId));
+};
+
+export const subscribeToCreditCards = (userId: string, callback: (cards: CartaoCredito[]) => void) => {
+  const q = query(collection(db, 'users', userId, 'creditCards'));
+  return onSnapshot(q, (snapshot) => {
+    const cards: CartaoCredito[] = [];
+    snapshot.forEach((doc) => cards.push({ id: doc.id, ...doc.data() } as CartaoCredito));
+    callback(cards);
+  });
+};
+
+// Compras de Cartão (flat por usuário; relaciona por cardId)
+export const saveCreditCardPurchase = async (userId: string, purchase: CompraCartao) => {
+  await setDoc(doc(db, 'users', userId, 'creditCardPurchases', purchase.id), purchase);
+};
+
+export const deleteCreditCardPurchase = async (userId: string, purchaseId: string) => {
+  await deleteDoc(doc(db, 'users', userId, 'creditCardPurchases', purchaseId));
+};
+
+export const subscribeToCreditCardPurchases = (userId: string, callback: (purchases: CompraCartao[]) => void) => {
+  const q = query(collection(db, 'users', userId, 'creditCardPurchases'));
+  return onSnapshot(q, (snapshot) => {
+    const purchases: CompraCartao[] = [];
+    snapshot.forEach((doc) => purchases.push({ id: doc.id, ...doc.data() } as CompraCartao));
+    callback(purchases);
   });
 };

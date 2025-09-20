@@ -11,6 +11,7 @@ import Dashboard from './components/Dashboard';
 import CaixasManager from './components/CaixasManager';
 import TransacoesManager from './components/TransacoesManager';
 import GastosFixosManager from './components/GastosFixosManager';
+import CreditCardsManager from './components/CreditCardsManager';
 import DividasManager from './components/DividasManager';
 import UserMenu from './components/UserMenu';
 import AuthWrapper from './components/Auth/AuthWrapper';
@@ -84,6 +85,25 @@ export interface ReceitaPrevista {
   dataVencimento: string;
 }
 
+// Cartão de crédito
+export interface CartaoCredito {
+  id: string;
+  nome: string;
+  observacao?: string;
+}
+
+export interface CompraCartao {
+  id: string;
+  cardId: string;
+  descricao: string;
+  valorTotal: number;
+  parcelas: number; // 1 para à vista
+  valorParcela: number;
+  startMonth: string; // YYYY-MM primeira competência
+  dataCompra: string; // YYYY-MM-DD
+  parcelasPagas: number;
+}
+
 // Context para dados globais
 export interface FinanceiroContextType {
   caixas: Caixa[];
@@ -94,6 +114,10 @@ export interface FinanceiroContextType {
   setGastosFixos: React.Dispatch<React.SetStateAction<GastoFixo[]>>;
   dividas: Divida[];
   setDividas: React.Dispatch<React.SetStateAction<Divida[]>>;
+  cartoes: CartaoCredito[];
+  setCartoes: React.Dispatch<React.SetStateAction<CartaoCredito[]>>;
+  comprasCartao: CompraCartao[];
+  setComprasCartao: React.Dispatch<React.SetStateAction<CompraCartao[]>>;
   cofrinhos: Cofrinho[];
   setCofrinhos: React.Dispatch<React.SetStateAction<Cofrinho[]>>;
   categorias: Categoria[];
@@ -118,6 +142,10 @@ export interface FinanceiroContextType {
   deleteCategoria: (categoriaId: string) => Promise<void>;
   saveReceitaPrevista: (receita: ReceitaPrevista) => Promise<void>;
   deleteReceitaPrevista: (receitaId: string) => Promise<void>;
+  saveCartao: (card: CartaoCredito) => Promise<void>;
+  deleteCartao: (cardId: string) => Promise<void>;
+  saveCompraCartao: (purchase: CompraCartao) => Promise<void>;
+  deleteCompraCartao: (purchaseId: string) => Promise<void>;
 }
 
 export const FinanceiroContext = React.createContext<FinanceiroContextType | null>(null);
@@ -127,6 +155,7 @@ const menuItems = [
   { icon: Wallet, label: 'Caixas', key: 'caixas' },
   { icon: ArrowUpDown, label: 'Transações', key: 'transacoes' },
   { icon: CreditCard, label: 'Gastos Fixos', key: 'gastos' },
+  { icon: CreditCard, label: 'Cartões', key: 'cartoes' },
   { icon: TrendingDown, label: 'Dívidas', key: 'dividas' },
 ];
 
@@ -147,6 +176,8 @@ function AppContent() {
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [gastosFixos, setGastosFixos] = useState<GastoFixo[]>([]);
   const [dividas, setDividas] = useState<Divida[]>([]);
+  const [cartoes, setCartoes] = useState<CartaoCredito[]>([]);
+  const [comprasCartao, setComprasCartao] = useState<CompraCartao[]>([]);
   const [cofrinhos, setCofrinhos] = useState<Cofrinho[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [receitasPrevistas, setReceitasPrevistas] = useState<ReceitaPrevista[]>([]);
@@ -165,6 +196,8 @@ function AppContent() {
       setTransacoes(localStorageService.getTransacoes());
       setGastosFixos(localStorageService.getGastosFixos());
       setDividas(localStorageService.getDividas());
+      setCartoes(localStorageService.getCreditCards());
+      setComprasCartao(localStorageService.getCreditCardPurchases());
       setCofrinhos(localStorageService.getCofrinhos());
       setCategorias(localStorageService.getCategorias());
       setReceitasPrevistas(localStorageService.getReceitasPrevistas());
@@ -179,6 +212,8 @@ function AppContent() {
       const unsubscribeCofrinhos = firebaseService.subscribeToCofrinhos(currentUser.uid, setCofrinhos);
       const unsubscribeCategorias = firebaseService.subscribeToCategorias(currentUser.uid, setCategorias);
       const unsubscribeReceitasPrevistas = firebaseService.subscribeToReceitasPrevistas(currentUser.uid, setReceitasPrevistas);
+      const unsubscribeCards = (firebaseService as any).subscribeToCreditCards ? (firebaseService as any).subscribeToCreditCards(currentUser.uid, setCartoes) : () => {};
+      const unsubscribePurchases = (firebaseService as any).subscribeToCreditCardPurchases ? (firebaseService as any).subscribeToCreditCardPurchases(currentUser.uid, setComprasCartao) : () => {};
 
       // Cleanup function
       return () => {
@@ -189,6 +224,8 @@ function AppContent() {
         unsubscribeCofrinhos();
         unsubscribeCategorias();
         unsubscribeReceitasPrevistas();
+        unsubscribeCards();
+        unsubscribePurchases();
       };
     }
   }, [currentUser, isDemo]);
@@ -348,6 +385,50 @@ function AppContent() {
     }
   };
 
+  const saveCartao = async (card: CartaoCredito) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveCreditCard(card);
+        setCartoes(localStorageService.getCreditCards());
+      } else {
+        await (firebaseService as any).saveCreditCard(currentUser.uid, card);
+      }
+    }
+  };
+
+  const deleteCartao = async (cardId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteCreditCard(cardId);
+        setCartoes(localStorageService.getCreditCards());
+      } else {
+        await (firebaseService as any).deleteCreditCard(currentUser.uid, cardId);
+      }
+    }
+  };
+
+  const saveCompraCartao = async (purchase: CompraCartao) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.saveCreditCardPurchase(purchase);
+        setComprasCartao(localStorageService.getCreditCardPurchases());
+      } else {
+        await (firebaseService as any).saveCreditCardPurchase(currentUser.uid, purchase);
+      }
+    }
+  };
+
+  const deleteCompraCartao = async (purchaseId: string) => {
+    if (currentUser) {
+      if (isDemo) {
+        localStorageService.deleteCreditCardPurchase(purchaseId);
+        setComprasCartao(localStorageService.getCreditCardPurchases());
+      } else {
+        await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId);
+      }
+    }
+  };
+
   const contextValue: FinanceiroContextType = {
     caixas,
     setCaixas,
@@ -357,6 +438,10 @@ function AppContent() {
     setGastosFixos,
     dividas,
     setDividas,
+    cartoes,
+    setCartoes,
+    comprasCartao,
+    setComprasCartao,
     cofrinhos,
     setCofrinhos,
     categorias,
@@ -386,6 +471,10 @@ function AppContent() {
     deleteCategoria,
     saveReceitaPrevista,
     deleteReceitaPrevista,
+    saveCartao: async (card: CartaoCredito) => { if (currentUser) await (firebaseService as any).saveCreditCard(currentUser.uid, card); },
+    deleteCartao: async (cardId: string) => { if (currentUser) await (firebaseService as any).deleteCreditCard(currentUser.uid, cardId); },
+    saveCompraCartao: async (purchase: CompraCartao) => { if (currentUser) await (firebaseService as any).saveCreditCardPurchase(currentUser.uid, purchase); },
+    deleteCompraCartao: async (purchaseId: string) => { if (currentUser) await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId); },
   };
 
   // Mostrar loading enquanto carrega
@@ -410,6 +499,8 @@ function AppContent() {
         return <GastosFixosManager />;
       case 'dividas':
         return <DividasManager />;
+      case 'cartoes':
+        return <CreditCardsManager />;
       default:
         return <Dashboard />;
     }
