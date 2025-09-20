@@ -604,7 +604,7 @@ export default function GastosFixosManager() {
           {/* Versão mobile - Lista de cards */}
           <div className="md:hidden space-y-3">
             {filteredGastos.map((gasto) => (
-              <div key={gasto.id} className={`border rounded-lg p-3 space-y-3 ${gasto.pago ? 'bg-green-50 border-green-200' : ''}`}>
+              <div key={gasto.id} className={`border rounded-lg p-3 space-y-3`}>
                 <div className="flex justify-between items-start">
                   <div className="space-y-1 flex-1">
                     <p className="font-medium">{gasto.descricao}</p>
@@ -623,11 +623,11 @@ export default function GastosFixosManager() {
                 </div>
                 
                 <div className="flex justify-between items-center">
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => togglePago(gasto.id)}
-                      className={`p-1 rounded-full ${gasto.pago ? 'text-green-600 hover:text-green-700' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => togglePago(gasto.id)}
+                    className={`p-1 rounded-full ${gasto.pago ? 'text-green-600 hover:text-green-700' : 'text-gray-400 hover:text-gray-600'}`}
+                  >
                       {gasto.pago ? (
                         <CheckCircle className="h-5 w-5" />
                       ) : (
@@ -676,7 +676,7 @@ export default function GastosFixosManager() {
               </TableHeader>
               <TableBody>
                 {filteredGastos.map((gasto) => (
-                  <TableRow key={gasto.id} className={gasto.pago ? 'bg-green-50' : ''}>
+                  <TableRow key={gasto.id}>
                     <TableCell className="font-medium">{gasto.descricao}</TableCell>
                     <TableCell>{gasto.categoria}</TableCell>
                     <TableCell>
