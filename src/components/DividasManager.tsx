@@ -47,6 +47,7 @@ export default function DividasManager() {
   const [invoiceCaixaId, setInvoiceCaixaId] = useState<string | null>(null);
   const [cardName, setCardName] = useState('');
   const [cardLimit, setCardLimit] = useState('');
+  const [cardDueDay, setCardDueDay] = useState('15');
   const [editingCard, setEditingCard] = useState<CartaoCredito | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [purchaseDesc, setPurchaseDesc] = useState('');
@@ -98,17 +99,19 @@ export default function DividasManager() {
 
   const replanGastosFixosDaCompra = async (compra: CompraCartao) => {
     const [sy, sm] = compra.startMonth.split('-').map(Number);
+    const card = (cartoes as CartaoCredito[]).find(x => x.id === compra.cardId);
+    const day = card?.diaVencimento || compra.startDay || 5;
     const expected = new Set<string>();
     for (let i = 0; i < compra.parcelas; i++) {
       const { y, m } = addMonths(sy, sm, i);
       const ym = `${y}-${String(m).padStart(2,'0')}`;
       expected.add(ym);
       const valor = getInstallmentValue({
-        id: 'tmp', descricao: '', valorTotal: compra.valorTotal, valorPago: 0, parcelas: compra.parcelas, parcelasPagas: compra.parcelasPagas || 0, valorParcela: compra.valorParcela, dataVencimento: `${compra.startMonth}-${String(compra.startDay || 5).padStart(2,'0')}`, tipo: compra.parcelas > 1 ? 'parcelada' : 'total'
+        id: 'tmp', descricao: '', valorTotal: compra.valorTotal, valorPago: 0, parcelas: compra.parcelas, parcelasPagas: compra.parcelasPagas || 0, valorParcela: compra.valorParcela, dataVencimento: `${compra.startMonth}-${String(day).padStart(2,'0')}`, tipo: compra.parcelas > 1 ? 'parcelada' : 'total'
       } as Divida, i);
       const gastoId = `cartao:${compra.cardId}:${compra.id}:${ym}`;
       const cardName = (cartoes as CartaoCredito[]).find(c => c.id === compra.cardId)?.nome || '';
-      const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${cardName}: ${compra.descricao} – ${i+1}/${compra.parcelas}`, valor, categoria: 'Dívidas', diaVencimento: (compra.startDay || 5), pago: i < (compra.parcelasPagas || 0) } as any;
+      const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${cardName}: ${compra.descricao} – ${i+1}/${compra.parcelas}`, valor, categoria: 'Dívidas', diaVencimento: day, pago: i < (compra.parcelasPagas || 0) } as any;
       await saveGastoFixo(gasto);
       setGastosFixos((prev: GastoFixo[]) => {
         const j = prev.findIndex(g => g.id === gastoId);
@@ -139,6 +142,7 @@ export default function DividasManager() {
       const purchaseId = editingDivida.id.replace('purchase:', '');
       const compraAtual = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
       if (!compraAtual) return;
+      const cardForPurchase = (cartoes as CartaoCredito[]).find(c => c.id === compraAtual.cardId);
       const updated: CompraCartao = {
         ...compraAtual,
         descricao: formData.descricao,
@@ -146,7 +150,7 @@ export default function DividasManager() {
         parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
         valorParcela: formData.tipo === 'parcelada' ? valorParcelaNum : parseFloat(formData.valorTotal),
         startMonth: formData.dataVencimento.slice(0,7),
-        startDay: parseInt(formData.dataVencimento.slice(8,10)) || (compraAtual.startDay || 5),
+        startDay: (cardForPurchase?.diaVencimento || compraAtual.startDay || 5),
       } as CompraCartao;
       await saveCompraCartao(updated);
       setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === updated.id ? updated : p));
@@ -222,17 +226,19 @@ export default function DividasManager() {
   const handleCreateCard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cardName.trim()) return;
-    const novo: CartaoCredito = { id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(), nome: cardName.trim(), limite: cardLimit ? parseFloat(cardLimit) : undefined } as any;
+    const novo: CartaoCredito = { id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(), nome: cardName.trim(), limite: cardLimit ? parseFloat(cardLimit) : undefined, diaVencimento: parseInt(cardDueDay || '15') } as any;
     await saveCartao(novo);
     setCardName('');
     setIsCardDialogOpen(false);
+    setCardName(''); setCardLimit(''); setCardDueDay('15');
   };
 
   const handleCreatePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCardId || !purchaseDesc || !purchaseValorTotal || !purchaseValorParcela || !purchaseStartDate) return;
     const startMonth = purchaseStartDate.slice(0,7);
-    const startDay = parseInt(purchaseStartDate.slice(8,10));
+    const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
+    const startDay = selectedCard?.diaVencimento || 5;
     const p: CompraCartao = {
       id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(),
       cardId: selectedCardId,
@@ -247,7 +253,7 @@ export default function DividasManager() {
     } as any;
     await saveCompraCartao(p);
 
-    // gerar gastos fixos vinculados
+    // gerar gastos fixos vinculados com dia do vencimento do cartão
     try {
       const [sy, sm] = startMonth.split('-').map(Number);
       for (let i = 0; i < p.parcelas; i++) {
@@ -302,13 +308,14 @@ export default function DividasManager() {
     setEditingCard(card);
     setCardName(card.nome || '');
     setCardLimit(card.limite != null ? String(card.limite) : '');
+    setCardDueDay(card.diaVencimento != null ? String(card.diaVencimento) : '15');
     setIsEditCardDialogOpen(true);
   };
 
   const handleSaveEditCard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCard) return;
-    const atualizado: CartaoCredito = { ...editingCard, nome: cardName.trim() || editingCard.nome, limite: cardLimit ? parseFloat(cardLimit) : undefined } as any;
+    const atualizado: CartaoCredito = { ...editingCard, nome: cardName.trim() || editingCard.nome, limite: cardLimit ? parseFloat(cardLimit) : undefined, diaVencimento: parseInt(cardDueDay || '15') } as any;
     try {
       await saveCartao(atualizado);
       setCartoes((prev: CartaoCredito[]) => prev.map(c => c.id === atualizado.id ? atualizado : c));
@@ -551,6 +558,8 @@ export default function DividasManager() {
 
   // Mapear compras de cartão como "dividas" para exibição
   const purchasesAsDividas: Divida[] = (comprasCartao as CompraCartao[]).map((c) => {
+    const card = (cartoes as CartaoCredito[]).find(x => x.id === c.cardId);
+    const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
     const valorPagoEstimado = Math.min(c.parcelas, c.parcelasPagas || 0) * c.valorParcela + ((c.parcelasPagas || 0) === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
     return {
       id: `purchase:${c.id}`,
@@ -560,7 +569,7 @@ export default function DividasManager() {
       parcelas: c.parcelas,
       parcelasPagas: c.parcelasPagas || 0,
       valorParcela: c.valorParcela,
-      dataVencimento: `${c.startMonth}-05`,
+      dataVencimento: `${c.startMonth}-${String(dueDay).padStart(2,'0')}`,
       tipo: c.parcelas > 1 ? 'parcelada' : 'total',
     } as Divida;
   });
@@ -572,6 +581,9 @@ export default function DividasManager() {
     });
     return Array.from(map.values());
   })();
+
+  // Mostrar na lista apenas o que tem parcela no mês selecionado
+  const listDividasForMonth: Divida[] = allDividasForView.filter(d => getMonthlyDue(d) > 0);
 
   // Helpers para fatura do cartão
   const purchaseInstallmentValue = (p: CompraCartao, idx: number): number => {
@@ -952,6 +964,10 @@ export default function DividasManager() {
                       <Label>Limite de Crédito (opcional)</Label>
                       <Input type="number" step="0.01" value={cardLimit} onChange={(e) => setCardLimit(e.target.value)} placeholder="0.00" />
                     </div>
+                    <div className="space-y-2">
+                      <Label>Dia de vencimento</Label>
+                      <Input type="number" min="1" max="31" value={cardDueDay} onChange={(e) => setCardDueDay(e.target.value)} />
+                    </div>
                     <DialogFooter>
                       <Button variant="outline" type="button" onClick={() => setIsCardDialogOpen(false)}>Cancelar</Button>
                       <Button type="submit">Criar</Button>
@@ -998,8 +1014,8 @@ export default function DividasManager() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>Começa a cobrar em</Label>
-                        <Input type="date" value={purchaseStartDate} onChange={(e) => setPurchaseStartDate(e.target.value)} required />
+                        <Label>Começa a cobrar em (mês/ano)</Label>
+                        <Input type="month" value={purchaseStartDate.slice(0,7)} onChange={(e) => setPurchaseStartDate(`${e.target.value}-01`)} required />
                       </div>
                       <div className="space-y-2">
                         <Label>Data da compra</Label>
@@ -1100,6 +1116,10 @@ export default function DividasManager() {
               <Label>Limite de Crédito (opcional)</Label>
               <Input type="number" step="0.01" value={cardLimit} onChange={(e) => setCardLimit(e.target.value)} />
             </div>
+            <div className="space-y-2">
+              <Label>Dia de vencimento</Label>
+              <Input type="number" min="1" max="31" value={cardDueDay} onChange={(e) => setCardDueDay(e.target.value)} />
+            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditCardDialogOpen(false)}>Cancelar</Button>
               <Button type="submit">Salvar</Button>
@@ -1136,7 +1156,7 @@ export default function DividasManager() {
         <CardContent>
           {/* Versão mobile - Lista de cards */}
           <div className="md:hidden space-y-3">
-            {allDividasForView.map((divida) => {
+            {listDividasForMonth.map((divida) => {
               const percentualPago = (divida.valorPago / divida.valorTotal) * 100;
               const restante = divida.valorTotal - divida.valorPago;
               const isQuitada = divida.valorPago >= divida.valorTotal;
@@ -1237,7 +1257,7 @@ export default function DividasManager() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {allDividasForView.map((divida) => {
+                {listDividasForMonth.map((divida) => {
                   const percentualPago = (divida.valorPago / divida.valorTotal) * 100;
                   const restante = divida.valorTotal - divida.valorPago;
                   const isQuitada = divida.valorPago >= divida.valorTotal;

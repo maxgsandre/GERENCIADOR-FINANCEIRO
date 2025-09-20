@@ -90,6 +90,7 @@ export interface CartaoCredito {
   nome: string;
   observacao?: string;
   limite?: number;
+  diaVencimento?: number;
 }
 
 export interface CompraCartao {
