@@ -80,7 +80,7 @@ export default function Register({ onToggleMode }: RegisterProps) {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl text-center">Criar Conta</CardTitle>
           <CardDescription className="text-center">
-            Crie sua conta para começar a usar o controle financeiro
+            Crie sua conta e confirme o email para começar a usar o controle financeiro. Vamos enviar um link de verificação para seu email.
           </CardDescription>
           
           {/* Verificar se está em modo demo */}

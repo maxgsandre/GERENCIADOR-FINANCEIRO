@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Separator } from '../ui/separator';
 import { Eye, EyeOff, Mail, Lock, Info } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
 import { isDemoMode } from '../../lib/env';
 
 interface LoginProps {
@@ -21,7 +22,11 @@ export default function Login({ onToggleMode }: LoginProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login } = useAuth();
+  const { login, resetPassword } = useAuth();
+  const [sendingReset, setSendingReset] = useState(false);
+  const [isForgotOpen, setIsForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotError, setForgotError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,6 +155,80 @@ export default function Login({ onToggleMode }: LoginProps) {
             >
               {loading ? 'Entrando...' : 'Entrar'}
             </Button>
+            <div className="text-right">
+              <Dialog open={isForgotOpen} onOpenChange={(o) => {
+                setIsForgotOpen(o);
+                if (o) {
+                  setForgotEmail(email);
+                  setForgotError('');
+                }
+              }}>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="p-0 h-auto text-sm"
+                  >
+                    Esqueci minha senha
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Redefinir senha</DialogTitle>
+                    <DialogDescription>
+                      Informe seu email para enviarmos um link de redefinição.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2">
+                    <Label htmlFor="forgot-email">Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="forgot-email"
+                        type="email"
+                        placeholder="seu@email.com"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        className="pl-10"
+                        required
+                      />
+                    </div>
+                    {forgotError && (
+                      <p className="text-sm text-destructive">{forgotError}</p>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground -mt-1">Você criará a nova senha na próxima tela.</p>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsForgotOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={sendingReset || !forgotEmail}
+                      onClick={async () => {
+                        setForgotError('');
+                        try {
+                          setSendingReset(true);
+                          await resetPassword(forgotEmail);
+                          setIsForgotOpen(false);
+                          alert('Enviamos um link para ' + forgotEmail);
+                        } catch (e: any) {
+                          setForgotError('Não foi possível enviar o email.');
+                        } finally {
+                          setSendingReset(false);
+                        }
+                      }}
+                    >
+                      Enviar link
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           </form>
           
           <Separator />

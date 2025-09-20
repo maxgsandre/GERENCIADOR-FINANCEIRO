@@ -5,7 +5,12 @@ import {
   createUserWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  updatePassword
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 // Modo demo removido
@@ -15,6 +20,9 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  updateName: (name: string) => Promise<void>;
   loading: boolean;
   isDemo: boolean;
 }
@@ -39,6 +47,11 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: name });
+      try {
+        await sendEmailVerification(userCredential.user);
+      } catch (e) {
+        console.warn('Falha ao enviar verificação de email:', e);
+      }
     } catch (error: any) {
       console.error('Erro no registro Firebase:', error);
       throw error;
@@ -58,6 +71,28 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
     await signOut(auth);
   };
 
+  const resetPassword = async (email: string) => {
+    const actionCodeSettings = {
+      url: `${window.location.origin}/?mode=resetPassword`,
+      handleCodeInApp: true,
+    };
+    await sendPasswordResetEmail(auth, email, actionCodeSettings as any);
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    const user = auth.currentUser;
+    if (!user || !user.email) throw new Error('Usuário não autenticado');
+    const credential = EmailAuthProvider.credential(user.email, currentPassword);
+    await reauthenticateWithCredential(user, credential);
+    await updatePassword(user, newPassword);
+  };
+
+  const updateName = async (name: string) => {
+    if (auth.currentUser) {
+      await updateProfile(auth.currentUser, { displayName: name });
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
@@ -75,6 +110,9 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
     login,
     register,
     logout,
+    resetPassword,
+    changePassword,
+    updateName,
     loading,
     isDemo: false
   };
