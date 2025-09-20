@@ -93,6 +93,34 @@ export default function DividasManager() {
     }
   };
 
+  const replanGastosFixosDaCompra = async (compra: CompraCartao) => {
+    const [sy, sm] = compra.startMonth.split('-').map(Number);
+    const expected = new Set<string>();
+    for (let i = 0; i < compra.parcelas; i++) {
+      const { y, m } = addMonths(sy, sm, i);
+      const ym = `${y}-${String(m).padStart(2,'0')}`;
+      expected.add(ym);
+      const valor = getInstallmentValue({
+        id: 'tmp', descricao: '', valorTotal: compra.valorTotal, valorPago: 0, parcelas: compra.parcelas, parcelasPagas: compra.parcelasPagas || 0, valorParcela: compra.valorParcela, dataVencimento: `${compra.startMonth}-${String(compra.startDay || 5).padStart(2,'0')}`, tipo: compra.parcelas > 1 ? 'parcelada' : 'total'
+      } as Divida, i);
+      const gastoId = `cartao:${compra.cardId}:${compra.id}:${ym}`;
+      const cardName = (cartoes as CartaoCredito[]).find(c => c.id === compra.cardId)?.nome || '';
+      const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${cardName}: ${compra.descricao} – ${i+1}/${compra.parcelas}`, valor, categoria: 'Dívidas', diaVencimento: (compra.startDay || 5), pago: i < (compra.parcelasPagas || 0) } as any;
+      await saveGastoFixo(gasto);
+      setGastosFixos((prev: GastoFixo[]) => {
+        const j = prev.findIndex(g => g.id === gastoId);
+        if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
+        return [...prev, gasto];
+      });
+    }
+    const prefix = `cartao:${compra.cardId}:${compra.id}:`;
+    const toRemove = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix)).filter(g => !expected.has(g.id.split(':')[3]));
+    for (const g of toRemove) {
+      await deleteGastoFixo(g.id);
+      setGastosFixos((prev: GastoFixo[]) => prev.filter(x => x.id !== g.id));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -103,35 +131,51 @@ export default function DividasManager() {
       ? (formData.valorParcela ? parseFloat(formData.valorParcela) : parseFloat(recomputeParcela(formData.valorTotal, formData.parcelas) || '0'))
       : parseFloat(formData.valorTotal);
 
-    const novaDivida: Divida = {
-      id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
-      descricao: formData.descricao,
-      valorTotal: parseFloat(formData.valorTotal),
-      valorPago: editingDivida?.valorPago || 0,
-      parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
-      parcelasPagas: editingDivida?.parcelasPagas || 0,
-      valorParcela: formData.tipo === 'parcelada' 
-        ? valorParcelaNum 
-        : parseFloat(formData.valorTotal),
-      dataVencimento: formData.dataVencimento,
-      tipo: formData.tipo,
-    };
+    // Se for uma compra de cartão (id começa com purchase:), atualiza a compra em vez da dívida
+    if (editingDivida?.id && editingDivida.id.startsWith('purchase:')) {
+      const purchaseId = editingDivida.id.replace('purchase:', '');
+      const compraAtual = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
+      if (!compraAtual) return;
+      const updated: CompraCartao = {
+        ...compraAtual,
+        descricao: formData.descricao,
+        valorTotal: parseFloat(formData.valorTotal),
+        parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
+        valorParcela: formData.tipo === 'parcelada' ? valorParcelaNum : parseFloat(formData.valorTotal),
+        startMonth: formData.dataVencimento.slice(0,7),
+        startDay: parseInt(formData.dataVencimento.slice(8,10)) || (compraAtual.startDay || 5),
+      } as CompraCartao;
+      await saveCompraCartao(updated);
+      setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === updated.id ? updated : p));
+      try { await replanGastosFixosDaCompra(updated); } catch {}
+    } else {
+      const novaDivida: Divida = {
+        id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
+        descricao: formData.descricao,
+        valorTotal: parseFloat(formData.valorTotal),
+        valorPago: editingDivida?.valorPago || 0,
+        parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
+        parcelasPagas: editingDivida?.parcelasPagas || 0,
+        valorParcela: formData.tipo === 'parcelada' 
+          ? valorParcelaNum 
+          : parseFloat(formData.valorTotal),
+        dataVencimento: formData.dataVencimento,
+        tipo: formData.tipo,
+      };
 
-    await saveDivida(novaDivida);
-    setDividas(prev => {
-      const index = prev.findIndex(d => d.id === novaDivida.id);
-      if (index >= 0) {
-        const clone = [...prev];
-        clone[index] = novaDivida;
-        return clone;
-      }
-      return [...prev, novaDivida];
-    });
+      await saveDivida(novaDivida);
+      setDividas(prev => {
+        const index = prev.findIndex(d => d.id === novaDivida.id);
+        if (index >= 0) {
+          const clone = [...prev];
+          clone[index] = novaDivida;
+          return clone;
+        }
+        return [...prev, novaDivida];
+      });
 
-    // Replanejar gastos fixos vinculados
-    try {
-      await replanGastosFixosDaDivida(novaDivida);
-    } catch {}
+      try { await replanGastosFixosDaDivida(novaDivida); } catch {}
+    }
 
     resetForm();
   };
@@ -289,10 +333,32 @@ export default function DividasManager() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta dívida?')) return;
+    if (!confirm('Tem certeza que deseja excluir este item?')) return;
+    // Caso seja uma compra de cartão mapeada como dívida
+    if (id.startsWith('purchase:')) {
+      const purchaseId = id.replace('purchase:', '');
+      const compra = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
+      if (!compra) return;
+      try {
+        await (context as any).deleteCompraCartao(purchaseId);
+        setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
+        // remover gastos fixos vinculados
+        const prefix = `cartao:${compra.cardId}:${compra.id}:`;
+        const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
+        for (const g of vinculados) {
+          await deleteGastoFixo(g.id);
+        }
+        setGastosFixos((prev: GastoFixo[]) => prev.filter(g => !g.id.startsWith(prefix)));
+      } catch (e) {
+        console.error(e);
+        alert('Não foi possível excluir a compra do cartão.');
+      }
+      return;
+    }
+
+    // Dívida normal
     await deleteDivida(id);
-      setDividas(prev => prev.filter(d => d.id !== id));
-    // Remover gastos fixos vinculados
+    setDividas(prev => prev.filter(d => d.id !== id));
     try {
       const prefix = `divida:${id}:`;
       const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
