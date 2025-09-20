@@ -498,6 +498,17 @@ export default function DividasManager() {
   };
   const selectedYM = useMemo(() => parseYYYYMM(selectedMonth), [selectedMonth]);
 
+  // Datas sem deslocamento de fuso: tratar 'YYYY-MM-DD' como data local
+  const formatDateBR = (s: string) => {
+    if (!s) return '';
+    const [y, m, d] = s.split('-');
+    return `${d}/${m}/${y}`;
+  };
+  const localDateFromYYYYMMDD = (s: string) => {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  };
+
   const getInstallmentValue = (d: Divida, index: number): number => {
     if (d.tipo !== 'parcelada') return d.valorTotal;
     const base = d.valorParcela;
@@ -664,7 +675,7 @@ export default function DividasManager() {
   const proximoMes = new Date(hoje.getTime() + 30 * 24 * 60 * 60 * 1000);
   
   const dividasVencendoSoon = dividas.filter(divida => {
-    const vencimento = new Date(divida.dataVencimento);
+    const vencimento = localDateFromYYYYMMDD(divida.dataVencimento);
     return vencimento >= hoje && vencimento <= proximoMes && divida.valorPago < divida.valorTotal;
   });
 
@@ -1178,7 +1189,7 @@ export default function DividasManager() {
                       </Badge>
                       <div className="flex items-center text-sm text-muted-foreground">
                         <Calendar className="h-4 w-4 mr-1" />
-                        {new Date(divida.dataVencimento).toLocaleDateString('pt-BR')}
+                        {formatDateBR(divida.dataVencimento)}
                       </div>
                       <div className="text-sm text-muted-foreground">Parcela do mês: <span className="font-medium text-foreground">R$ {parcelaMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
                     </div>
@@ -1282,7 +1293,7 @@ export default function DividasManager() {
                       <TableCell>
                         <div className="flex items-center">
                           <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
-                          {new Date(divida.dataVencimento).toLocaleDateString('pt-BR')}
+                          {formatDateBR(divida.dataVencimento)}
                         </div>
                       </TableCell>
                       <TableCell>
