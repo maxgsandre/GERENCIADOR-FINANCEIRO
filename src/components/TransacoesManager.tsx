@@ -55,6 +55,10 @@ export default function TransacoesManager() {
       const novoSaldo = formData.tipo === 'entrada' 
         ? caixaAtual.saldo + novaTransacao.valor
         : caixaAtual.saldo - novaTransacao.valor;
+      if (novoSaldo < 0) {
+        alert('Saldo insuficiente no caixa selecionado. A operação foi bloqueada.');
+        return;
+      }
       await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
     }
 
@@ -141,6 +145,10 @@ export default function TransacoesManager() {
       const saldoAplicado = transacaoAtualizada.tipo === 'entrada' 
         ? caixaNova.saldo + transacaoAtualizada.valor
         : caixaNova.saldo - transacaoAtualizada.valor;
+      if (saldoAplicado < 0) {
+        alert('Saldo insuficiente no caixa selecionado após a edição. A operação foi bloqueada.');
+        return;
+      }
       await saveCaixa({ ...caixaNova, saldo: saldoAplicado });
     }
 
