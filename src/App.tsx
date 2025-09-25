@@ -46,6 +46,7 @@ export interface GastoFixo {
   categoria: string;
   diaVencimento: number;
   pago: boolean;
+  valorPago?: number;
 }
 
 export interface Divida {

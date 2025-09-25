@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, DollarSign, Calendar, CheckCircle, CreditCard } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, CheckCircle, CreditCard } from 'lucide-react';
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 
 export default function DividasManager() {
@@ -78,7 +78,7 @@ export default function DividasManager() {
       expected.add(ym);
       const gastoId = `divida:${d.id}:${ym}`;
       const valor = getInstallmentValue(d, i);
-      const gasto: GastoFixo = { id: gastoId, descricao: `Parcela dívida: ${d.descricao} – ${i+1}/${totalParcelas}`, valor, categoria: 'Dívidas', diaVencimento: sd, pago: i < (d.parcelasPagas || 0) } as any;
+      const gasto: GastoFixo = { id: gastoId, descricao: `Esporádicos: ${d.descricao} – ${i+1}/${totalParcelas}`, valor, categoria: 'Esporádicos', diaVencimento: sd, pago: i < (d.parcelasPagas || 0) } as any;
       await saveGastoFixo(gasto);
       setGastosFixos((prev: GastoFixo[]) => {
         const j = prev.findIndex(g => g.id === gastoId);
@@ -1194,23 +1194,6 @@ export default function DividasManager() {
                     </div>
                     
                     <div className="flex justify-end space-x-1">
-                      {!isQuitada && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            if (divida.id.startsWith('purchase:')) {
-                              const comp = (comprasCartao as CompraCartao[]).find(p => `purchase:${p.id}` === divida.id);
-                              if (comp) handlePagamentoCompra(comp);
-                            } else {
-                              handlePagamento(divida);
-                            }
-                          }}
-                          className="text-green-600 hover:text-green-700"
-                        >
-                          <DollarSign className="h-4 w-4" />
-                        </Button>
-                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1298,23 +1281,6 @@ export default function DividasManager() {
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-1">
-                          {!isQuitada && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                if (divida.id.startsWith('purchase:')) {
-                                  const comp = (comprasCartao as CompraCartao[]).find(p => `purchase:${p.id}` === divida.id);
-                                  if (comp) handlePagamentoCompra(comp);
-                                } else {
-                                  handlePagamento(divida);
-                                }
-                              }}
-                              className="text-green-600 hover:text-green-700"
-                            >
-                              <DollarSign className="h-4 w-4" />
-                            </Button>
-                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1339,9 +1305,9 @@ export default function DividasManager() {
             </Table>
           </div>
           
-          {dividas.length === 0 && (
+          {(dividas.length === 0 && purchasesAsDividas.length === 0) && (
             <div className="text-center py-8">
-              <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">Nenhuma dívida cadastrada</h3>
               <p className="text-muted-foreground mb-4">
                 Comece registrando suas dívidas para melhor controle financeiro.

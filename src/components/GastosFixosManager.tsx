@@ -9,7 +9,7 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign } from 'lucide-react';
 import { FinanceiroContext, GastoFixo, Divida } from '../App';
 import CategoriasManager from './CategoriasManager';
 
@@ -34,6 +34,8 @@ export default function GastosFixosManager() {
   const [gastoSelecionado, setGastoSelecionado] = useState<GastoFixo | null>(null);
   const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
   const [modoPagamento, setModoPagamento] = useState<'pay' | 'refund'>('pay');
+  const [isValorPagoOpen, setIsValorPagoOpen] = useState(false);
+  const [valorPagoInput, setValorPagoInput] = useState('');
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < gastoSelecionado.valor) : false;
 
@@ -58,10 +60,9 @@ export default function GastosFixosManager() {
 
   const filteredGastos = (gastosFixos as GastoFixo[]).filter(includeInSelectedMonth);
   
-  // Consolidar gastos de cartão por cartão (não mostrar parcelas individuais)
+  // Consolidar gastos de cartão por cartão e esporádicos em uma linha
   const gastosConsolidados = (() => {
     const gastosManuais = filteredGastos.filter(g => !g.id.startsWith('cartao:') && !g.id.startsWith('divida:'));
-    const gastosDividas = filteredGastos.filter(g => g.id.startsWith('divida:'));
     
     // Consolidar gastos de cartão por cartão
     const gastosCartao = filteredGastos.filter(g => g.id.startsWith('cartao:'));
@@ -91,7 +92,29 @@ export default function GastosFixosManager() {
       }
     });
     
-    return [...gastosManuais, ...gastosDividas, ...cartoesConsolidados.values()];
+    // Consolidar esporádicos em uma única linha
+    const gastosEsporadicos = filteredGastos.filter(g => g.id.startsWith('divida:'));
+    const esporadicosConsolidados = new Map<string, GastoFixo>();
+    
+    gastosEsporadicos.forEach(gasto => {
+      const esporadicoKey = `esporadicos:${selectedMonth}`;
+      
+      if (esporadicosConsolidados.has(esporadicoKey)) {
+        const existente = esporadicosConsolidados.get(esporadicoKey)!;
+        existente.valor += gasto.valor;
+        existente.pago = existente.pago && gasto.pago; // só é pago se todos forem pagos
+      } else {
+        esporadicosConsolidados.set(esporadicoKey, {
+          ...gasto,
+          id: esporadicoKey,
+          descricao: 'Esporádicos',
+          categoria: 'Esporádicos',
+          diaVencimento: gasto.diaVencimento
+        });
+      }
+    });
+    
+    return [...gastosManuais, ...cartoesConsolidados.values(), ...esporadicosConsolidados.values()];
   })();
   
   const gastosComDataAjustada = gastosConsolidados.map(gasto => {
@@ -219,6 +242,30 @@ export default function GastosFixosManager() {
     if (!confirm('Tem certeza que deseja excluir este gasto fixo?')) return;
     await deleteGastoFixo(id);
       setGastosFixos(prev => prev.filter(g => g.id !== id));
+  };
+
+  const getStatusGasto = (gasto: GastoFixo) => {
+    const valorPago = gasto.valorPago || 0;
+    if (valorPago === 0) return { status: 'Pendente', cor: 'text-gray-500' };
+    if (valorPago >= gasto.valor) return { status: 'Pago', cor: 'text-green-600' };
+    return { status: 'Pago Parcial', cor: 'text-orange-600' };
+  };
+
+  const abrirModalValorPago = (gasto: GastoFixo) => {
+    setGastoSelecionado(gasto);
+    setValorPagoInput(gasto.valorPago?.toString() || '');
+    setIsValorPagoOpen(true);
+  };
+
+  const confirmarValorPago = async () => {
+    if (!gastoSelecionado) return;
+    const valorPago = parseFloat(valorPagoInput) || 0;
+    const gastoAtualizado = { ...gastoSelecionado, valorPago, pago: valorPago >= gastoSelecionado.valor };
+    await saveGastoFixo(gastoAtualizado);
+    setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoSelecionado.id ? gastoAtualizado : g));
+    setIsValorPagoOpen(false);
+    setGastoSelecionado(null);
+    setValorPagoInput('');
   };
 
   const togglePago = (id: string) => {
@@ -546,6 +593,40 @@ export default function GastosFixosManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal valor pago */}
+      <Dialog open={isValorPagoOpen} onOpenChange={setIsValorPagoOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Definir valor pago</DialogTitle>
+            <DialogDescription>
+              {gastoSelecionado?.descricao}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="valorPago">Valor pago</Label>
+              <Input
+                id="valorPago"
+                type="number"
+                step="0.01"
+                value={valorPagoInput}
+                onChange={(e) => setValorPagoInput(e.target.value)}
+                placeholder="0.00"
+                max={gastoSelecionado?.valor}
+              />
+              <p className="text-sm text-muted-foreground">
+                Valor total: R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsValorPagoOpen(false)}>Cancelar</Button>
+            <Button onClick={confirmarValorPago}>Confirmar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">Gastos Fixos</h2>
@@ -853,18 +934,16 @@ export default function GastosFixosManager() {
                 
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => togglePago(gasto.id)}
-                    className={`p-1 rounded-full ${gasto.pago ? 'text-green-600 hover:text-green-700' : 'text-gray-400 hover:text-gray-600'}`}
-                  >
-                      {gasto.pago ? (
-                        <CheckCircle className="h-5 w-5" />
-                      ) : (
-                        <Circle className="h-5 w-5" />
-                      )}
-                    </button>
-                    <span className="text-sm">
-                      {gasto.pago ? 'Pago' : 'Pendente'}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => abrirModalValorPago(gasto)}
+                      className="text-green-600 hover:text-green-700"
+                    >
+                      <DollarSign className="h-4 w-4" />
+                    </Button>
+                    <span className={`text-sm ${getStatusGasto(gasto).cor}`}>
+                      {getStatusGasto(gasto).status}
                     </span>
                   </div>
                   
@@ -919,12 +998,16 @@ export default function GastosFixosManager() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2">
-                        <Switch
-                          checked={gasto.pago}
-                          onCheckedChange={() => togglePago(gasto.id)}
-                        />
-                        <span className="text-sm">
-                          {gasto.pago ? 'Pago' : 'Pendente'}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => abrirModalValorPago(gasto)}
+                          className="text-green-600 hover:text-green-700"
+                        >
+                          <DollarSign className="h-4 w-4" />
+                        </Button>
+                        <span className={`text-sm ${getStatusGasto(gasto).cor}`}>
+                          {getStatusGasto(gasto).status}
                         </span>
                       </div>
                     </TableCell>
