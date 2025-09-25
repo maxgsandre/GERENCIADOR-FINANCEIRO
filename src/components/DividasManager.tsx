@@ -569,7 +569,18 @@ export default function DividasManager() {
   const purchasesAsDividas: Divida[] = (comprasCartao as CompraCartao[]).map((c) => {
     const card = (cartoes as CartaoCredito[]).find(x => x.id === c.cardId);
     const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
-    const valorPagoEstimado = Math.min(c.parcelas, c.parcelasPagas || 0) * c.valorParcela + ((c.parcelasPagas || 0) === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
+    
+    // Verificar se a parcela do mês atual foi paga nos gastos fixos
+    const parcelaDoMesId = `cartao:${c.cardId}:${c.id}:${selectedMonth}`;
+    const parcelaDoMesPaga = (gastosFixos as any[]).find(g => g.id === parcelaDoMesId)?.pago || false;
+    
+    // Calcular parcelas pagas baseado nos gastos fixos
+    const parcelasPagasNosGastosFixos = (gastosFixos as any[]).filter(g => 
+      g.id.startsWith(`cartao:${c.cardId}:${c.id}:`) && g.pago
+    ).length;
+    
+    const parcelasPagasAtualizadas = Math.max(c.parcelasPagas || 0, parcelasPagasNosGastosFixos);
+    const valorPagoEstimado = Math.min(c.parcelas, parcelasPagasAtualizadas) * c.valorParcela + (parcelasPagasAtualizadas === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
     
     // Ajustar data de vencimento para o mês selecionado
     const dataVencimentoAjustada = `${anoSelecionado}-${String(mesSelecionado).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
@@ -580,7 +591,7 @@ export default function DividasManager() {
       valorTotal: c.valorTotal,
       valorPago: valorPagoEstimado,
       parcelas: c.parcelas,
-      parcelasPagas: c.parcelasPagas || 0,
+      parcelasPagas: parcelasPagasAtualizadas,
       valorParcela: c.valorParcela,
       dataVencimento: dataVencimentoAjustada,
       tipo: c.parcelas > 1 ? 'parcelada' : 'total',

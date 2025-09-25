@@ -313,11 +313,26 @@ export default function GastosFixosManager() {
         g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
       );
       
-      // Marcar todas as parcelas como pagas
+      // Marcar todas as parcelas como pagas e sincronizar com compras de cartão
       for (const parcela of parcelasDoCartao) {
         const parcelaPaga = { ...parcela, pago: true };
         await (saveGastoFixo && saveGastoFixo(parcelaPaga));
         setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaPaga : g));
+        
+        // Sincronizar com as compras de cartão nas dívidas
+        const parcelaParts = parcela.id.split(':');
+        const purchaseId = parcelaParts[2];
+        const compra = (context as any).comprasCartao?.find((c: any) => c.id === purchaseId);
+        if (compra) {
+          // Contar parcelas pagas baseado nos gastos fixos
+          const parcelasPagasNosGastosFixos = gastosFixos.filter(g => 
+            g.id.startsWith(`cartao:${compra.cardId}:${compra.id}:`) && g.pago
+          ).length;
+          
+          const compraAtualizada = { ...compra, parcelasPagas: parcelasPagasNosGastosFixos };
+          await (context as any).saveCompraCartao(compraAtualizada);
+          (context as any).setComprasCartao((prev: any[]) => prev.map((c: any) => c.id === compra.id ? compraAtualizada : c));
+        }
       }
     } else {
       // Marcar gasto como pago (comportamento normal)
@@ -397,11 +412,26 @@ export default function GastosFixosManager() {
         g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
       );
       
-      // Desmarcar todas as parcelas
+      // Desmarcar todas as parcelas e sincronizar com compras de cartão
       for (const parcela of parcelasDoCartao) {
         const parcelaNaoPaga = { ...parcela, pago: false };
         await (saveGastoFixo && saveGastoFixo(parcelaNaoPaga));
         setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaNaoPaga : g));
+        
+        // Sincronizar com as compras de cartão nas dívidas
+        const parcelaParts = parcela.id.split(':');
+        const purchaseId = parcelaParts[2];
+        const compra = (context as any).comprasCartao?.find((c: any) => c.id === purchaseId);
+        if (compra) {
+          // Contar parcelas pagas baseado nos gastos fixos
+          const parcelasPagasNosGastosFixos = gastosFixos.filter(g => 
+            g.id.startsWith(`cartao:${compra.cardId}:${compra.id}:`) && g.pago
+          ).length;
+          
+          const compraAtualizada = { ...compra, parcelasPagas: parcelasPagasNosGastosFixos };
+          await (context as any).saveCompraCartao(compraAtualizada);
+          (context as any).setComprasCartao((prev: any[]) => prev.map((c: any) => c.id === compra.id ? compraAtualizada : c));
+        }
       }
     } else {
       // Marcar gasto como não pago (comportamento normal)
