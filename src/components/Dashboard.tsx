@@ -68,7 +68,19 @@ export default function Dashboard() {
     };
   });
 
-  const totalDividasMes = [...dividasDoMes, ...comprasCartaoAsDividas].reduce((sum, d) => sum + (d.valorTotal - d.valorPago), 0);
+  // Função para calcular valor devido no mês (mesma lógica do DividasManager)
+  const getMonthlyDue = (d: any) => {
+    if (d.tipo === 'parcelada') {
+      const [sy, sm] = d.dataVencimento.split('-').slice(0,2).map(Number);
+      const [cy, cm] = selectedMonth.split('-').map(Number);
+      const monthsDiff = (cy - sy) * 12 + (cm - sm);
+      if (monthsDiff < 0 || monthsDiff >= d.parcelas) return 0;
+      return d.valorParcela;
+    }
+    return d.valorTotal - d.valorPago;
+  };
+
+  const totalDividasMes = [...dividasDoMes, ...comprasCartaoAsDividas].reduce((sum, d) => sum + getMonthlyDue(d), 0);
 
   // Calcular gastos fixos do mês selecionado
   const gastosFixosDoMes = gastosFixos.filter(gasto => {
