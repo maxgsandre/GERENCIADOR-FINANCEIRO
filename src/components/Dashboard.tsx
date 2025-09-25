@@ -9,7 +9,7 @@ export default function Dashboard() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, transacoes, gastosFixos, dividas, cofrinhos } = context;
+  const { caixas, transacoes, gastosFixos, dividas, cofrinhos, cartoes, comprasCartao } = context;
 
   // Mês selecionado para exibição
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -39,6 +39,55 @@ export default function Dashboard() {
   const saidasMes = transacoesMesSelecionado
     .filter(t => t.tipo === 'saida')
     .reduce((sum, t) => sum + t.valor, 0);
+
+  // Calcular dívidas do mês selecionado (incluindo compras de cartão)
+  const dividasDoMes = dividas.filter(divida => {
+    const dataVencimento = new Date(divida.dataVencimento);
+    return dataVencimento.getMonth() === (mesSelecionado - 1) && dataVencimento.getFullYear() === anoSelecionado;
+  });
+  
+  // Incluir compras de cartão como dívidas
+  const comprasCartaoAsDividas = (comprasCartao as any[]).map((c) => {
+    const card = (cartoes as any[]).find(x => x.id === c.cardId);
+    const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
+    const valorPagoEstimado = Math.min(c.parcelas, c.parcelasPagas || 0) * c.valorParcela + ((c.parcelasPagas || 0) === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
+    
+    // Ajustar data de vencimento para o mês selecionado
+    const dataVencimentoAjustada = `${anoSelecionado}-${String(mesSelecionado).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
+    
+    return {
+      id: `purchase:${c.id}`,
+      descricao: `Cartão ${(cartoes as any[]).find(x => x.id === c.cardId)?.nome || ''}: ${c.descricao}`,
+      valorTotal: c.valorTotal,
+      valorPago: valorPagoEstimado,
+      parcelas: c.parcelas,
+      parcelasPagas: c.parcelasPagas || 0,
+      valorParcela: c.valorParcela,
+      dataVencimento: dataVencimentoAjustada,
+      tipo: c.parcelas > 1 ? 'parcelada' : 'total',
+    };
+  });
+
+  const totalDividasMes = [...dividasDoMes, ...comprasCartaoAsDividas].reduce((sum, d) => sum + (d.valorTotal - d.valorPago), 0);
+
+  // Calcular gastos fixos do mês selecionado
+  const gastosFixosDoMes = gastosFixos.filter(gasto => {
+    // Gastos fixos manuais são sempre incluídos
+    if (!gasto.id.startsWith('divida:') && !gasto.id.startsWith('cartao:')) {
+      return true;
+    }
+    
+    // Gastos vinculados são filtrados por mês
+    if (gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:')) {
+      const parts = gasto.id.split(':');
+      const ym = parts[parts.length - 1];
+      return ym === selectedMonth;
+    }
+    
+    return true;
+  });
+
+  const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
 
   // Dados para gráfico de barras - distribuição por caixa
   const dadosCaixas = caixas.map(caixa => ({
@@ -77,7 +126,7 @@ export default function Dashboard() {
       </div>
 
       {/* Cards de resumo principais */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm">Total em Caixas</CardTitle>
@@ -116,12 +165,36 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total Dívidas</CardTitle>
+            <CardTitle className="text-sm">Gastos Fixos do Mês</CardTitle>
+            <CreditCard className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">
+              R$ {totalGastosFixosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Total Dívidas do Mês</CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              R$ {totalDividas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {totalDividasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Rendimentos</CardTitle>
+            <PiggyBank className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">
+              R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>
