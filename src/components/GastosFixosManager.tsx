@@ -17,7 +17,7 @@ export default function GastosFixosManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria, caixas, dividas, setDividas, saveDivida, saveTransacao } = context as any;
+  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria, caixas, dividas, setDividas, saveDivida, saveTransacao, cartoes } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
@@ -43,11 +43,81 @@ export default function GastosFixosManager() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  // Gastos fixos são sempre visíveis (recorrentes), mas datas ajustadas pelo mês
+  // Filtrar gastos fixos pelo mês selecionado
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   
-  const gastosComDataAjustada = (gastosFixos as GastoFixo[]).map(gasto => {
-    // Validar se dataVencimento existe e é válida
+  const includeInSelectedMonth = (g: GastoFixo) => {
+    const id = g.id || '';
+    if (id.startsWith('cartao:') || id.startsWith('divida:')) {
+      const parts = id.split(':');
+      const ym = parts[parts.length - 1];
+      return ym === selectedMonth;
+    }
+    return true; // gastos fixos recorrentes (ex.: Aluguel)
+  };
+
+  const filteredGastos = (gastosFixos as GastoFixo[]).filter(includeInSelectedMonth);
+  
+  // Consolidar gastos de cartão por cartão (não mostrar parcelas individuais)
+  const gastosConsolidados = (() => {
+    const gastosManuais = filteredGastos.filter(g => !g.id.startsWith('cartao:') && !g.id.startsWith('divida:'));
+    const gastosDividas = filteredGastos.filter(g => g.id.startsWith('divida:'));
+    
+    // Consolidar gastos de cartão por cartão
+    const gastosCartao = filteredGastos.filter(g => g.id.startsWith('cartao:'));
+    const cartoesConsolidados = new Map<string, GastoFixo>();
+    
+    gastosCartao.forEach(gasto => {
+      const parts = gasto.id.split(':');
+      const cardId = parts[1];
+      const cardKey = `cartao:${cardId}:${selectedMonth}`;
+      
+      if (cartoesConsolidados.has(cardKey)) {
+        const existente = cartoesConsolidados.get(cardKey)!;
+        existente.valor += gasto.valor;
+        existente.pago = existente.pago && gasto.pago; // só é pago se todos forem pagos
+      } else {
+        // Buscar o nome do cartão pelo cardId
+        const nomeCartao = (cartoes as any[]).find(c => c.id === cardId)?.nome || 'Desconhecido';
+        
+        cartoesConsolidados.set(cardKey, {
+          ...gasto,
+          id: cardKey,
+          descricao: `Cartão ${nomeCartao}`,
+          categoria: 'Dívidas',
+          // Usar o dia de vencimento do cartão para a data ajustada
+          diaVencimento: (cartoes as any[]).find(c => c.id === cardId)?.diaVencimento || gasto.diaVencimento
+        });
+      }
+    });
+    
+    return [...gastosManuais, ...gastosDividas, ...cartoesConsolidados.values()];
+  })();
+  
+  const gastosComDataAjustada = gastosConsolidados.map(gasto => {
+    // Para gastos fixos manuais, usar diaVencimento diretamente
+    if (!gasto.id.startsWith('cartao:') && !gasto.id.startsWith('divida:')) {
+      const diaVencimento = gasto.diaVencimento;
+      const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
+      
+      return {
+        ...gasto,
+        dataVencimentoAjustada: novaData.toISOString().split('T')[0]
+      };
+    }
+    
+    // Para gastos de cartão consolidados, usar diaVencimento do cartão
+    if (gasto.id.startsWith('cartao:')) {
+      const diaVencimento = gasto.diaVencimento;
+      const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
+      
+      return {
+        ...gasto,
+        dataVencimentoAjustada: novaData.toISOString().split('T')[0]
+      };
+    }
+    
+    // Para gastos vinculados a dívidas, usar dataVencimento
     if (!gasto.dataVencimento) {
       return {
         ...gasto,
@@ -152,6 +222,56 @@ export default function GastosFixosManager() {
   };
 
   const togglePago = (id: string) => {
+    // Se for um gasto consolidado de cartão, marcar todas as parcelas
+    if (id.startsWith('cartao:') && id.includes(selectedMonth)) {
+      const parts = id.split(':');
+      const cardId = parts[1];
+      
+      // Encontrar todas as parcelas deste cartão no mês selecionado
+      const parcelasDoCartao = gastosFixos.filter(g => 
+        g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
+      );
+      
+      if (parcelasDoCartao.length === 0) return;
+      
+      // Verificar se todas estão pagas
+      const todasPagas = parcelasDoCartao.every(p => p.pago);
+      
+      if (!todasPagas) {
+        // Marcar todas como pagas
+        const totalValor = parcelasDoCartao.reduce((sum, p) => sum + p.valor, 0);
+        const gastoConsolidado = {
+          ...parcelasDoCartao[0],
+          id: id,
+          valor: totalValor,
+          pago: false
+        };
+        
+        setGastoSelecionado(gastoConsolidado);
+        setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+        setModoPagamento('pay');
+        setIsPagamentoOpen(true);
+        return;
+      } else {
+        // Desmarcar todas
+        if (!confirm('Desmarcar pagamento e estornar?')) return;
+        
+        const totalValor = parcelasDoCartao.reduce((sum, p) => sum + p.valor, 0);
+        const gastoConsolidado = {
+          ...parcelasDoCartao[0],
+          id: id,
+          valor: totalValor,
+          pago: true
+        };
+        
+        setGastoSelecionado(gastoConsolidado);
+        setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+        setModoPagamento('refund');
+        setIsPagamentoOpen(true);
+        return;
+      }
+    }
+    
     const gasto = gastosFixos.find(g => g.id === id);
     if (!gasto) return;
     const isLinkedDivida = gasto.id.startsWith('divida:');
@@ -182,10 +302,29 @@ export default function GastosFixosManager() {
   const confirmarPagamentoVinculado = async () => {
     if (!gastoSelecionado || !caixaPagamento) return;
     const gasto = gastoSelecionado;
-    // Marcar gasto como pago
-    const gastoPago = { ...gasto, pago: true };
-    await (saveGastoFixo && saveGastoFixo(gastoPago));
-    setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoPago : g));
+    
+    // Se for um gasto consolidado de cartão, marcar todas as parcelas
+    if (gasto.id.startsWith('cartao:') && gasto.id.includes(selectedMonth)) {
+      const parts = gasto.id.split(':');
+      const cardId = parts[1];
+      
+      // Encontrar todas as parcelas deste cartão no mês selecionado
+      const parcelasDoCartao = gastosFixos.filter(g => 
+        g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
+      );
+      
+      // Marcar todas as parcelas como pagas
+      for (const parcela of parcelasDoCartao) {
+        const parcelaPaga = { ...parcela, pago: true };
+        await (saveGastoFixo && saveGastoFixo(parcelaPaga));
+        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaPaga : g));
+      }
+    } else {
+      // Marcar gasto como pago (comportamento normal)
+      const gastoPago = { ...gasto, pago: true };
+      await (saveGastoFixo && saveGastoFixo(gastoPago));
+      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoPago : g));
+    }
 
     // Extrair dividaId e YYYY-MM do id do gasto: divida:{id}:{YYYY-MM}
     const parts = gasto.id.split(':');
@@ -247,10 +386,29 @@ export default function GastosFixosManager() {
   const confirmarEstornoVinculado = async () => {
     if (!gastoSelecionado || !caixaPagamento) return;
     const gasto = gastoSelecionado;
-    // Marcar gasto como não pago
-    const gastoNaoPago = { ...gasto, pago: false };
-    await (saveGastoFixo && saveGastoFixo(gastoNaoPago));
-    setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoNaoPago : g));
+    
+    // Se for um gasto consolidado de cartão, desmarcar todas as parcelas
+    if (gasto.id.startsWith('cartao:') && gasto.id.includes(selectedMonth)) {
+      const parts = gasto.id.split(':');
+      const cardId = parts[1];
+      
+      // Encontrar todas as parcelas deste cartão no mês selecionado
+      const parcelasDoCartao = gastosFixos.filter(g => 
+        g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
+      );
+      
+      // Desmarcar todas as parcelas
+      for (const parcela of parcelasDoCartao) {
+        const parcelaNaoPaga = { ...parcela, pago: false };
+        await (saveGastoFixo && saveGastoFixo(parcelaNaoPaga));
+        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaNaoPaga : g));
+      }
+    } else {
+      // Marcar gasto como não pago (comportamento normal)
+      const gastoNaoPago = { ...gasto, pago: false };
+      await (saveGastoFixo && saveGastoFixo(gastoNaoPago));
+      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoNaoPago : g));
+    }
 
     // Atualizar dívida (subtrair valor e recalcular parcelasPagas)
     const parts = gasto.id.split(':');
@@ -324,7 +482,9 @@ export default function GastosFixosManager() {
           <DialogHeader>
             <DialogTitle>{modoPagamento === 'pay' ? 'Pagar gasto fixo' : 'Estornar gasto fixo'}</DialogTitle>
             <DialogDescription>
-              {gastoSelecionado?.descricao}
+              {gastoSelecionado?.id.startsWith('cartao:') && gastoSelecionado.id.includes(selectedMonth) 
+                ? `Cartão ${(cartoes as any[]).find(c => c.id === gastoSelecionado.id.split(':')[1])?.nome || 'Desconhecido'}`
+                : gastoSelecionado?.descricao}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -650,7 +810,7 @@ export default function GastosFixosManager() {
                     <p className="text-sm text-muted-foreground">{gasto.categoria}</p>
                     <div className="flex items-center text-sm text-muted-foreground">
                       <Calendar className="h-4 w-4 mr-1" />
-                      {new Date(gasto.dataVencimentoAjustada).toLocaleDateString('pt-BR')}
+                      {gasto.dataVencimentoAjustada ? gasto.dataVencimentoAjustada.split('-').reverse().join('/') : ''}
                     </div>
                   </div>
                   
@@ -721,7 +881,7 @@ export default function GastosFixosManager() {
                     <TableCell>
                       <div className="flex items-center">
                         <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
-                        {new Date(gasto.dataVencimentoAjustada).toLocaleDateString('pt-BR')}
+                        {gasto.dataVencimentoAjustada ? gasto.dataVencimentoAjustada.split('-').reverse().join('/') : ''}
                       </div>
                     </TableCell>
                     <TableCell className="text-right font-medium">

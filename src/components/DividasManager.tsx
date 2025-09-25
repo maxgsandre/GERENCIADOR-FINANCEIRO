@@ -993,10 +993,11 @@ export default function DividasManager() {
               <CardTitle className="text-sm">Cartões de Crédito</CardTitle>
               <CardDescription>As parcelas caem na lista de dívidas do mês</CardDescription>
             </div>
+          </div>
           <div className="mt-2 flex flex-col gap-2 md:ml-auto md:flex-row md:mt-0">
               <Dialog open={isCardDialogOpen} onOpenChange={(o) => { setIsCardDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
                 <DialogTrigger asChild>
-                  <Button size="sm" className="h-8 px-3 md:h-9 md:px-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" /> Novo Cartão</Button>
+                  <Button size="sm" className="h-7 px-2 text-xs"><Plus className="h-3 w-3 mr-1" /> Novo Cartão</Button>
                 </DialogTrigger>
                 <DialogContent aria-describedby={undefined}>
                   <DialogHeader>
@@ -1025,7 +1026,7 @@ export default function DividasManager() {
 
               <Dialog open={isPurchaseDialogOpen} onOpenChange={(o) => { setIsPurchaseDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
                 <DialogTrigger asChild>
-                  <Button size="sm" variant="secondary" className="h-8 px-3 md:h-9 md:px-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" /> Nova Compra</Button>
+                  <Button size="sm" variant="secondary" className="h-7 px-2 text-xs"><Plus className="h-3 w-3 mr-1" /> Nova Compra</Button>
                 </DialogTrigger>
                 <DialogContent aria-describedby={undefined}>
                   <DialogHeader>
@@ -1077,7 +1078,6 @@ export default function DividasManager() {
                 </DialogContent>
               </Dialog>
             </div>
-          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
