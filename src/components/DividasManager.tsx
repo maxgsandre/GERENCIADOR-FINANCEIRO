@@ -591,11 +591,27 @@ export default function DividasManager() {
   });
   // Ajustar datas das dívidas normais para o mês selecionado
   const dividasComDataAjustada = dividas.map(divida => {
+    // Validar se dataVencimento existe e é válida
+    if (!divida.dataVencimento) {
+      return divida;
+    }
+    
     const dataOriginal = new Date(divida.dataVencimento);
     const diaVencimento = dataOriginal.getDate();
     
+    // Validar se a data é válida
+    if (isNaN(diaVencimento) || diaVencimento < 1 || diaVencimento > 31) {
+      return divida;
+    }
+    
     // Criar nova data com o dia original mas mês/ano selecionado
     const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
+    
+    // Validar se a nova data é válida
+    if (isNaN(novaData.getTime())) {
+      return divida;
+    }
+    
     const dataVencimentoAjustada = novaData.toISOString().split('T')[0];
     
     return {

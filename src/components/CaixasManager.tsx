@@ -237,11 +237,35 @@ export default function CaixasManager() {
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   
   const receitasComDataAjustada = receitasPrevistas.map(receita => {
+    // Validar se dataVencimento existe e é válida
+    if (!receita.dataVencimento) {
+      return {
+        ...receita,
+        dataVencimentoAjustada: receita.dataVencimento
+      };
+    }
+    
     const dataOriginal = new Date(receita.dataVencimento);
     const diaVencimento = dataOriginal.getDate();
     
+    // Validar se a data é válida
+    if (isNaN(diaVencimento) || diaVencimento < 1 || diaVencimento > 31) {
+      return {
+        ...receita,
+        dataVencimentoAjustada: receita.dataVencimento
+      };
+    }
+    
     // Criar nova data com o dia original mas mês/ano selecionado
     const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
+    
+    // Validar se a nova data é válida
+    if (isNaN(novaData.getTime())) {
+      return {
+        ...receita,
+        dataVencimentoAjustada: receita.dataVencimento
+      };
+    }
     
     return {
       ...receita,
