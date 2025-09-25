@@ -938,7 +938,6 @@ export default function DividasManager() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Cartões de Crédito</CardTitle>
-              <CardDescription>As parcelas caem na lista de dívidas do mês</CardDescription>
             </div>
           </div>
           <div className="mt-2 flex flex-col gap-2 md:ml-auto md:flex-row md:mt-0">
