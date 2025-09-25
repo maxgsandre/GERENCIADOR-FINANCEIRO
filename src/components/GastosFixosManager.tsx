@@ -43,17 +43,21 @@ export default function GastosFixosManager() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  const includeInSelectedMonth = (g: GastoFixo) => {
-    const id = g.id || '';
-    if (id.startsWith('cartao:') || id.startsWith('divida:')) {
-      const parts = id.split(':');
-      const ym = parts[parts.length - 1];
-      return ym === selectedMonth;
-    }
-    return true; // gastos fixos recorrentes (ex.: Aluguel)
-  };
-
-  const filteredGastos = (gastosFixos as GastoFixo[]).filter(includeInSelectedMonth);
+  // Gastos fixos são sempre visíveis (recorrentes), mas datas ajustadas pelo mês
+  const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
+  
+  const gastosComDataAjustada = (gastosFixos as GastoFixo[]).map(gasto => {
+    const dataOriginal = new Date(gasto.dataVencimento);
+    const diaVencimento = dataOriginal.getDate();
+    
+    // Criar nova data com o dia original mas mês/ano selecionado
+    const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
+    
+    return {
+      ...gasto,
+      dataVencimentoAjustada: novaData.toISOString().split('T')[0]
+    };
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,7 +124,7 @@ export default function GastosFixosManager() {
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este gasto fixo?')) return;
     await deleteGastoFixo(id);
-    setGastosFixos(prev => prev.filter(g => g.id !== id));
+      setGastosFixos(prev => prev.filter(g => g.id !== id));
   };
 
   const togglePago = (id: string) => {
@@ -192,8 +196,14 @@ export default function GastosFixosManager() {
       }
     }
 
-    // Lançar saída no caixa
+    // Atualizar saldo do caixa (bloqueio de negativo) e lançar saída
     try {
+      const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
+      if (caixa) {
+        const novoSaldo = caixa.saldo - gasto.valor;
+        if (novoSaldo < 0) { alert('Saldo insuficiente no caixa selecionado.'); return; }
+        await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
+      }
       await (saveTransacao && saveTransacao({
         id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
         caixaId: caixaPagamento,
@@ -232,8 +242,13 @@ export default function GastosFixosManager() {
       }
     }
 
-    // Lançar entrada de estorno no caixa
+    // Atualizar saldo do caixa e lançar entrada de estorno
     try {
+      const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
+      if (caixa) {
+        const novoSaldo = caixa.saldo + gasto.valor;
+        await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
+      }
       await (saveTransacao && saveTransacao({
         id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
         caixaId: caixaPagamento,
@@ -250,19 +265,19 @@ export default function GastosFixosManager() {
     setGastoSelecionado(null);
   };
 
-  // Calcular totais (considerando filtro de mês para parcelas geradas)
-  const totalPagos = filteredGastos
+  // Calcular totais (gastos fixos são sempre visíveis)
+  const totalPagos = gastosComDataAjustada
     .filter(g => g.pago)
     .reduce((sum, g) => sum + g.valor, 0);
 
-  const totalPendentes = filteredGastos
+  const totalPendentes = gastosComDataAjustada
     .filter(g => !g.pago)
     .reduce((sum, g) => sum + g.valor, 0);
 
   // Verificar vencimentos próximos (próximos 7 dias) que ainda não foram pagos
   const hoje = new Date();
   const diaAtual = hoje.getDate();
-  const proximosVencimentos = filteredGastos
+  const proximosVencimentos = gastosComDataAjustada
     .filter(g => !g.pago)
     .filter(g => {
       const diasAteVencimento = g.diaVencimento - diaAtual;
@@ -271,7 +286,7 @@ export default function GastosFixosManager() {
     .sort((a, b) => a.diaVencimento - b.diaVencimento);
 
   // Gastos por categoria (todos os gastos)
-  const gastosPorCategoria = filteredGastos
+  const gastosPorCategoria = gastosComDataAjustada
     .reduce((acc, gasto) => {
       acc[gasto.categoria] = (acc[gasto.categoria] || 0) + gasto.valor;
       return acc;
@@ -468,14 +483,14 @@ export default function GastosFixosManager() {
                 </Select>
               </div>
               
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="pago"
-                    checked={formData.pago}
-                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, pago: checked }))}
-                  />
-                  <Label htmlFor="pago">Gasto já pago neste mês</Label>
-                </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="pago"
+                  checked={formData.pago}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, pago: checked }))}
+                />
+                <Label htmlFor="pago">Gasto já pago neste mês</Label>
+              </div>
               
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={resetForm}>
@@ -493,7 +508,7 @@ export default function GastosFixosManager() {
       {/* Cards de resumo */}
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-muted-foreground">Mês</div>
-        <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px] border rounded h-9 px-2 bg-background" />
+        <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px]" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         <Card>
@@ -603,7 +618,7 @@ export default function GastosFixosManager() {
         <CardContent>
           {/* Versão mobile - Lista de cards */}
           <div className="md:hidden space-y-3">
-            {filteredGastos.map((gasto) => (
+            {gastosComDataAjustada.map((gasto) => (
               <div key={gasto.id} className={`border rounded-lg p-3 space-y-3`}>
                 <div className="flex justify-between items-start">
                   <div className="space-y-1 flex-1">
@@ -611,7 +626,7 @@ export default function GastosFixosManager() {
                     <p className="text-sm text-muted-foreground">{gasto.categoria}</p>
                     <div className="flex items-center text-sm text-muted-foreground">
                       <Calendar className="h-4 w-4 mr-1" />
-                      Dia {gasto.diaVencimento}
+                      {new Date(gasto.dataVencimentoAjustada).toLocaleDateString('pt-BR')}
                     </div>
                   </div>
                   
@@ -623,7 +638,7 @@ export default function GastosFixosManager() {
                 </div>
                 
                 <div className="flex justify-between items-center">
-                <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2">
                   <button
                     onClick={() => togglePago(gasto.id)}
                     className={`p-1 rounded-full ${gasto.pago ? 'text-green-600 hover:text-green-700' : 'text-gray-400 hover:text-gray-600'}`}
@@ -675,14 +690,14 @@ export default function GastosFixosManager() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredGastos.map((gasto) => (
+                {gastosComDataAjustada.map((gasto) => (
                   <TableRow key={gasto.id}>
                     <TableCell className="font-medium">{gasto.descricao}</TableCell>
                     <TableCell>{gasto.categoria}</TableCell>
                     <TableCell>
                       <div className="flex items-center">
                         <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
-                        Dia {gasto.diaVencimento}
+                        {new Date(gasto.dataVencimentoAjustada).toLocaleDateString('pt-BR')}
                       </div>
                     </TableCell>
                     <TableCell className="text-right font-medium">

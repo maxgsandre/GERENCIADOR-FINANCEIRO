@@ -567,11 +567,16 @@ export default function DividasManager() {
   const monthlyRemaining = Math.max(0, monthlyTotal - monthlyPaid);
   const monthlyCount = dividas.filter(d => getMonthlyDue(d) > 0).length;
 
-  // Mapear compras de cartão como "dividas" para exibição
+  // Mapear compras de cartão como "dividas" para exibição com datas ajustadas
+  const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   const purchasesAsDividas: Divida[] = (comprasCartao as CompraCartao[]).map((c) => {
     const card = (cartoes as CartaoCredito[]).find(x => x.id === c.cardId);
     const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
     const valorPagoEstimado = Math.min(c.parcelas, c.parcelasPagas || 0) * c.valorParcela + ((c.parcelasPagas || 0) === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
+    
+    // Ajustar data de vencimento para o mês selecionado
+    const dataVencimentoAjustada = `${anoSelecionado}-${String(mesSelecionado).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
+    
     return {
       id: `purchase:${c.id}`,
       descricao: `Cartão ${(cartoes as CartaoCredito[]).find(x => x.id === c.cardId)?.nome || ''}: ${c.descricao}`,
@@ -580,14 +585,29 @@ export default function DividasManager() {
       parcelas: c.parcelas,
       parcelasPagas: c.parcelasPagas || 0,
       valorParcela: c.valorParcela,
-      dataVencimento: `${c.startMonth}-${String(dueDay).padStart(2,'0')}`,
+      dataVencimento: dataVencimentoAjustada,
       tipo: c.parcelas > 1 ? 'parcelada' : 'total',
     } as Divida;
   });
+  // Ajustar datas das dívidas normais para o mês selecionado
+  const dividasComDataAjustada = dividas.map(divida => {
+    const dataOriginal = new Date(divida.dataVencimento);
+    const diaVencimento = dataOriginal.getDate();
+    
+    // Criar nova data com o dia original mas mês/ano selecionado
+    const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
+    const dataVencimentoAjustada = novaData.toISOString().split('T')[0];
+    
+    return {
+      ...divida,
+      dataVencimento: dataVencimentoAjustada
+    };
+  });
+
   // Unificar e deduplicar por id (evita warnings de keys duplicadas)
   const allDividasForView: Divida[] = (() => {
     const map = new Map<string, Divida>();
-    [...dividas, ...purchasesAsDividas].forEach((d) => {
+    [...dividasComDataAjustada, ...purchasesAsDividas].forEach((d) => {
       if (!map.has(d.id)) map.set(d.id, d);
     });
     return Array.from(map.values());

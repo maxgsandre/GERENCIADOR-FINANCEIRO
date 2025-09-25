@@ -45,6 +45,12 @@ export default function CaixasManager() {
     setSelectedCaixaId,
     goToTab,
   } = context;
+
+  // Mês selecionado para exibição
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCofrinhoDialogOpen, setIsCofrinhoDialogOpen] = useState(false);
@@ -225,6 +231,24 @@ export default function CaixasManager() {
   };
 
   const totalGeral = caixas.reduce((sum, caixa) => sum + caixa.saldo, 0);
+  
+  // Receitas previstas são recorrentes (como gastos fixos) - sempre mostram todas
+  // Mas as datas de vencimento são ajustadas para o mês selecionado
+  const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
+  
+  const receitasComDataAjustada = receitasPrevistas.map(receita => {
+    const dataOriginal = new Date(receita.dataVencimento);
+    const diaVencimento = dataOriginal.getDate();
+    
+    // Criar nova data com o dia original mas mês/ano selecionado
+    const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
+    
+    return {
+      ...receita,
+      dataVencimentoAjustada: novaData.toISOString().split('T')[0]
+    };
+  });
+  
   const totalReceitasPrevistas = receitasPrevistas.reduce((sum, receita) => sum + receita.valor, 0);
   const totalReceitasRecebidas = receitasPrevistas.filter(r => r.recebido).reduce((sum, receita) => sum + receita.valor, 0);
   const totalReceitasAReceber = totalReceitasPrevistas - totalReceitasRecebidas;
@@ -318,8 +342,16 @@ export default function CaixasManager() {
       {/* Card com total geral */}
       <Card>
         <CardHeader>
-          <CardTitle>Total Geral</CardTitle>
-          <CardDescription>Soma de todas as caixas</CardDescription>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle>Total Geral</CardTitle>
+              <CardDescription>Soma de todas as caixas</CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="text-sm text-muted-foreground">Mês</div>
+              <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px]" />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-green-600">
@@ -433,7 +465,7 @@ export default function CaixasManager() {
           </div>
 
           <div className="space-y-3">
-            {receitasPrevistas.map((receita) => (
+            {receitasComDataAjustada.map((receita) => (
               <div key={receita.id} className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center space-x-3">
                   <button
@@ -453,7 +485,7 @@ export default function CaixasManager() {
                       {receita.descricao}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Vencimento: {new Date(receita.dataVencimento).toLocaleDateString('pt-BR')}
+                      Vencimento: {new Date(receita.dataVencimentoAjustada).toLocaleDateString('pt-BR')}
                     </p>
                   </div>
                 </div>
@@ -482,7 +514,7 @@ export default function CaixasManager() {
               </div>
             ))}
             
-            {receitasPrevistas.length === 0 && (
+            {receitasComDataAjustada.length === 0 && (
               <div className="text-center py-8">
                 <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-medium mb-2">Nenhuma receita cadastrada</h3>

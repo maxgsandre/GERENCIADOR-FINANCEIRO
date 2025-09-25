@@ -1,5 +1,6 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { FinanceiroContext } from '../App';
 import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent } from 'lucide-react';
@@ -10,6 +11,12 @@ export default function Dashboard() {
 
   const { caixas, transacoes, gastosFixos, dividas, cofrinhos } = context;
 
+  // Mês selecionado para exibição
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
   // Calcular totais
   const totalCaixas = caixas.reduce((sum, caixa) => sum + caixa.saldo, 0);
   const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => sum + cofrinho.saldo, 0);
@@ -17,20 +24,19 @@ export default function Dashboard() {
   const totalDividas = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
   const totalGastosFixos = gastosFixos.reduce((sum, gasto) => sum + gasto.valor, 0);
 
-  // Entradas e saídas do mês atual
-  const mesAtual = new Date().getMonth();
-  const anoAtual = new Date().getFullYear();
+  // Entradas e saídas do mês selecionado
+  const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   
-  const transacoesMesAtual = transacoes.filter(t => {
+  const transacoesMesSelecionado = transacoes.filter(t => {
     const dataTransacao = new Date(t.data);
-    return dataTransacao.getMonth() === mesAtual && dataTransacao.getFullYear() === anoAtual;
+    return dataTransacao.getMonth() === (mesSelecionado - 1) && dataTransacao.getFullYear() === anoSelecionado;
   });
 
-  const entradasMes = transacoesMesAtual
+  const entradasMes = transacoesMesSelecionado
     .filter(t => t.tipo === 'entrada')
     .reduce((sum, t) => sum + t.valor, 0);
 
-  const saidasMes = transacoesMesAtual
+  const saidasMes = transacoesMesSelecionado
     .filter(t => t.tipo === 'saida')
     .reduce((sum, t) => sum + t.valor, 0);
 
@@ -56,6 +62,20 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Seletor de mês */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold">Dashboard</h2>
+          <p className="text-muted-foreground">
+            Visão geral das suas finanças
+          </p>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="text-sm text-muted-foreground">Mês</div>
+          <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px]" />
+        </div>
+      </div>
+
       {/* Cards de resumo principais */}
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <Card>
@@ -111,7 +131,7 @@ export default function Dashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Resumo Financeiro</CardTitle>
-          <CardDescription>Informações principais (cofrinhos separados)</CardDescription>
+          <CardDescription>Informações principais</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
