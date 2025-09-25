@@ -107,8 +107,8 @@ export default function Dashboard() {
     saldo: caixa.saldo,
   }));
 
-  // Dados para gráfico de pizza - gastos por categoria
-  const gastosPorCategoria = gastosFixos
+  // Dados para gráfico de pizza - gastos por categoria (apenas do mês filtrado)
+  const gastosPorCategoria = gastosFixosDoMes
     .reduce((acc, gasto) => {
       acc[gasto.categoria] = (acc[gasto.categoria] || 0) + gasto.valor;
       return acc;
@@ -276,17 +276,18 @@ export default function Dashboard() {
             <CardDescription>Distribuição dos gastos mensais</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
                   data={dadosGastos}
                   cx="50%"
                   cy="50%"
-                  labelLine={false}
+                  labelLine={true}
                   label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
+                  paddingAngle={1}
                 >
                   {dadosGastos.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={cores[index % cores.length]} />
@@ -297,6 +298,42 @@ export default function Dashboard() {
                 />
               </PieChart>
             </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Gráfico de barras - Gastos por categoria */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Gastos por Categoria</CardTitle>
+            <CardDescription>Valores em reais por categoria</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <ResponsiveContainer width={Math.max(400, dadosGastos.length * 80)} height={300}>
+                <BarChart data={dadosGastos}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fontSize: 12 }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip 
+                    formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
+                  />
+                  <Bar dataKey="value">
+                    {dadosGastos.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={cores[index % cores.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
       </div>
