@@ -42,9 +42,6 @@ export default function DividasManager() {
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
   const [isEditCardDialogOpen, setIsEditCardDialogOpen] = useState(false);
-  const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
-  const [invoiceCard, setInvoiceCard] = useState<CartaoCredito | null>(null);
-  const [invoiceCaixaId, setInvoiceCaixaId] = useState<string | null>(null);
   const [cardName, setCardName] = useState('');
   const [cardLimit, setCardLimit] = useState('');
   const [cardDueDay, setCardDueDay] = useState('15');
@@ -649,57 +646,7 @@ export default function DividasManager() {
       }, 0);
   };
 
-  const openInvoiceDialog = (card: CartaoCredito) => {
-    setInvoiceCard(card);
-    setInvoiceCaixaId(caixas && caixas.length > 0 ? caixas[0].id : null);
-    setIsInvoiceDialogOpen(true);
-  };
 
-  const confirmPayInvoice = async () => {
-    if (!invoiceCard || !invoiceCaixaId) return;
-    const total = cardInvoiceTotalForSelectedMonth(invoiceCard.id);
-    if (total <= 0) { alert('Não há parcelas para este mês.'); return; }
-    const caixa = (caixas || []).find((x: any) => x.id === invoiceCaixaId);
-    if (caixa && caixa.saldo < total) { alert('Saldo insuficiente no caixa selecionado.'); return; }
-
-    // Atualizar compras e gastos fixos deste mês
-    for (const p of (comprasCartao as CompraCartao[]).filter(pp => pp.cardId === invoiceCard.id)) {
-      const [sy, sm] = p.startMonth.split('-').map(Number);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-      if (idx < 0 || idx >= p.parcelas) continue;
-      const novasPagas = Math.max(p.parcelasPagas || 0, idx + 1);
-      if (novasPagas !== (p.parcelasPagas || 0)) {
-        const updated: CompraCartao = { ...p, parcelasPagas: novasPagas } as any;
-        await saveCompraCartao(updated);
-        setComprasCartao((prev: CompraCartao[]) => prev.map(x => x.id === updated.id ? updated : x));
-      }
-      const ym = `${selectedYM.y}-${String(selectedYM.m).padStart(2,'0')}`;
-      const gastoId = `cartao:${p.cardId}:${p.id}:${ym}`;
-      const existente = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
-      if (existente && !existente.pago) {
-        const atualizadoGasto: GastoFixo = { ...existente, pago: true } as any;
-        await saveGastoFixo(atualizadoGasto);
-        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? atualizadoGasto : g));
-      }
-    }
-
-    // Lançar uma única saída para a fatura
-    try {
-      await (saveTransacao && saveTransacao({
-        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
-        caixaId: invoiceCaixaId,
-        tipo: 'saida',
-        valor: total,
-        descricao: `Pagamento fatura: Cartão ${invoiceCard.nome} (${String(selectedYM.m).padStart(2,'0')}/${selectedYM.y})`,
-        categoria: 'Dívidas',
-        data: new Date().toISOString().slice(0,10),
-        hora: new Date().toTimeString().slice(0,5)
-      }));
-    } catch {}
-
-    setIsInvoiceDialogOpen(false);
-    setInvoiceCard(null);
-  };
 
   // Calcular totais
   const totalDividas = dividas.reduce((sum, d) => sum + d.valorTotal, 0);
@@ -1092,7 +1039,20 @@ export default function DividasManager() {
                     <div className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> <span className="font-medium">{c.nome}</span></div>
                     <div className="flex items-center gap-2 flex-wrap md:justify-end">
                       <div className="text-sm whitespace-nowrap">Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                      <button className="px-3 h-8 md:h-9 text-sm rounded border" onClick={() => openInvoiceDialog(c)}>Pagar fatura</button>
+                      <div className="text-sm whitespace-nowrap">
+                        {(() => {
+                          // Verificar se todas as parcelas do cartão no mês estão pagas
+                          const parcelasDoCartao = (gastosFixos as any[]).filter(g => 
+                            g.id.startsWith(`cartao:${c.id}:`) && g.id.endsWith(selectedMonth)
+                          );
+                          const todasPagas = parcelasDoCartao.length > 0 && parcelasDoCartao.every(p => p.pago);
+                          return todasPagas ? (
+                            <span className="text-green-600 font-medium">✓ Fatura paga</span>
+                          ) : (
+                            <span className="text-orange-600 font-medium">⏳ Pendente</span>
+                          );
+                        })()}
+                      </div>
                       <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
                         <button title="Editar" onClick={() => openEditCard(c)} className="p-2 text-muted-foreground hover:text-foreground">
                           <Edit className="h-4 w-4" />
@@ -1122,33 +1082,6 @@ export default function DividasManager() {
           </div>
         </CardContent>
       </Card>
-      {/* Pagar fatura */}
-      <Dialog open={isInvoiceDialogOpen} onOpenChange={setIsInvoiceDialogOpen}>
-        <DialogContent aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>Pagar fatura do cartão</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="text-sm">Cartão: <strong>{invoiceCard?.nome}</strong></div>
-            <div className="text-sm">Mês: <strong>{String(selectedYM.m).padStart(2,'0')}/{selectedYM.y}</strong></div>
-            <div className="text-sm">Total: <strong>R$ {invoiceCard ? cardInvoiceTotalForSelectedMonth(invoiceCard.id).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'}</strong></div>
-            {caixas && caixas.length > 0 && (
-              <div className="space-y-2">
-                <Label>Caixa para pagamento</Label>
-                <select className="w-full border rounded h-9 px-2 bg-background" value={invoiceCaixaId || ''} onChange={(e) => setInvoiceCaixaId(e.target.value)}>
-                  {caixas.map((c: any) => (
-                    <option key={c.id} value={c.id}>{c.nome} — Saldo R$ {c.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsInvoiceDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={confirmPayInvoice} disabled={!invoiceCard || !invoiceCaixaId}>Pagar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Editar Cartão */}
       <Dialog open={isEditCardDialogOpen} onOpenChange={setIsEditCardDialogOpen}>
