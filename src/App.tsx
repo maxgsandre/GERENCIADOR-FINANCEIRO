@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetTrigger } from './components/ui/sheet';
 import { Button } from './components/ui/button';
 import { Alert, AlertDescription } from './components/ui/alert';
 import { useIsMobile } from './components/ui/use-mobile';
+import { useTheme } from 'next-themes';
 import { Home, Wallet, ArrowUpDown, CreditCard, TrendingDown, Menu, Info } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import CaixasManager from './components/CaixasManager';
@@ -170,6 +171,7 @@ function AppContent() {
     }
   });
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const { theme, resolvedTheme } = useTheme();
   const isMobile = useIsMobile();
   const { currentUser, isDemo, loading } = useAuth();
   
@@ -537,7 +539,7 @@ function AppContent() {
                 </SheetTrigger>
                 <SheetContent side="right" className="w-80">
                 <div className="py-4">
-                  <div className="flex items-center px-4 mb-4">
+                  <div className="flex items-center px-4 mb-1">
                     {/* Remove ícone antigo e nome, exibe apenas a logo PNG */}
                     <img src={logoPng} alt="Logo" className="h-6" />
                   </div>
@@ -611,7 +613,7 @@ function AppContent() {
           <Sidebar>
             <SidebarContent>
               <SidebarGroup>
-                <div className="px-4 py-2">
+                <div className="px-4 py-0">
                   <img src={logoPng} alt="Logo" className="h-6" />
                 </div>
                 <SidebarGroupContent>
@@ -665,7 +667,7 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={true} storageKey="theme">
       <AuthProvider>
         <AppContent />
       </AuthProvider>

@@ -490,7 +490,7 @@ export default function CaixasManager() {
 
           <div className="space-y-3">
             {receitasComDataAjustada.map((receita) => (
-              <div key={receita.id} className="flex items-center justify-between p-4 border rounded-lg">
+              <div key={receita.id} className="flex items-center justify-between p-4 border rounded-lg bg-gray-50 dark:bg-gray-800">
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={() => toggleReceitaRecebida(receita)}

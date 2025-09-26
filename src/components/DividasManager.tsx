@@ -690,7 +690,7 @@ export default function DividasManager() {
               Nova Dívida
             </Button>
           </DialogTrigger>
-          <DialogContent aria-describedby={undefined}>
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>
                 {editingDivida ? 'Editar Dívida' : 'Nova Dívida'}
@@ -811,7 +811,7 @@ export default function DividasManager() {
 
       {/* Dialog de pagamento */}
       <Dialog open={isPagamentoOpen} onOpenChange={(o) => { setIsPagamentoOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Registrar Pagamento</DialogTitle>
             <DialogDescription>
@@ -956,9 +956,12 @@ export default function DividasManager() {
                 <DialogTrigger asChild>
                   <Button size="sm" className="h-7 px-2 text-xs"><Plus className="h-3 w-3 mr-1" /> Novo Cartão</Button>
                 </DialogTrigger>
-                <DialogContent aria-describedby={undefined}>
+                <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Novo Cartão</DialogTitle>
+                    <DialogDescription>
+                      Adicione um novo cartão de crédito para controle de dívidas.
+                    </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleCreateCard} className="space-y-4">
                     <div className="space-y-2">
@@ -985,9 +988,12 @@ export default function DividasManager() {
                 <DialogTrigger asChild>
                   <Button size="sm" variant="secondary" className="h-7 px-2 text-xs"><Plus className="h-3 w-3 mr-1" /> Nova Compra</Button>
                 </DialogTrigger>
-                <DialogContent aria-describedby={undefined}>
+                <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Nova Compra no Cartão</DialogTitle>
+                    <DialogDescription>
+                      Registre uma nova compra parcelada ou à vista no cartão selecionado.
+                    </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleCreatePurchase} className="space-y-4">
                     <div className="space-y-2">
@@ -1095,9 +1101,12 @@ export default function DividasManager() {
 
       {/* Editar Cartão */}
       <Dialog open={isEditCardDialogOpen} onOpenChange={setIsEditCardDialogOpen}>
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar Cartão</DialogTitle>
+            <DialogDescription>
+              Edite as informações do cartão de crédito selecionado.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveEditCard} className="space-y-4">
             <div className="space-y-2">
