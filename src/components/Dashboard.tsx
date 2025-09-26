@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { FinanceiroContext } from '../App';
-import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, DollarSign, ArrowUpCircle, ArrowDownCircle, Target } from 'lucide-react';
 
 export default function Dashboard() {
   const context = useContext(FinanceiroContext);
@@ -215,35 +215,76 @@ export default function Dashboard() {
       {/* Resumo financeiro */}
       <Card>
         <CardHeader>
-          <CardTitle>Resumo Financeiro</CardTitle>
-          <CardDescription>Informações principais</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5 text-blue-600" />
+            Resumo Financeiro
+          </CardTitle>
+          <CardDescription>Visão geral das suas finanças</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Gastos Fixos Mensais</p>
-              <p className="text-lg font-medium">
-                R$ {totalGastosFixos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-orange-600" />
+                <p className="text-sm text-muted-foreground">Gastos Fixos do Mês</p>
+              </div>
+              <p className="text-xl font-semibold text-orange-600">
+                R$ {totalGastosFixosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Saldo Líquido (Caixas - Dívidas)</p>
-              <p className={`text-lg font-medium ${(totalCaixas - totalDividas) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <ArrowUpCircle className="h-4 w-4 text-green-600" />
+                <p className="text-sm text-muted-foreground">Entradas do Mês</p>
+              </div>
+              <p className="text-xl font-semibold text-green-600">
+                R$ {entradasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <ArrowDownCircle className="h-4 w-4 text-red-600" />
+                <p className="text-sm text-muted-foreground">Saídas do Mês</p>
+              </div>
+              <p className="text-xl font-semibold text-red-600">
+                R$ {saidasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-blue-600" />
+                <p className="text-sm text-muted-foreground">Saldo Líquido</p>
+              </div>
+              <p className={`text-xl font-semibold ${(totalCaixas - totalDividas) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 R$ {(totalCaixas - totalDividas).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Total em Cofrinhos</p>
-              <p className="text-lg font-medium text-blue-600">
-                R$ {totalCofrinhos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Balanço do Mês</p>
-              <p className={`text-lg font-medium ${(entradasMes - saidasMes) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+          </div>
+          
+          {/* Balanço do mês destacado */}
+          <div className="mt-6 pt-4 border-t">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Balanço do Mês</span>
+              </div>
+              <p className={`text-2xl font-bold ${(entradasMes - saidasMes) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 R$ {(entradasMes - saidasMes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
+            {(entradasMes - saidasMes) >= 0 && (
+              <p className="text-sm text-green-600 mt-1">
+                ✅ Você economizou este mês!
+              </p>
+            )}
+            {(entradasMes - saidasMes) < 0 && (
+              <p className="text-sm text-red-600 mt-1">
+                ⚠️ Gastos superaram as entradas
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
