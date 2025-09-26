@@ -246,7 +246,7 @@ export default function GastosFixosManager() {
 
   const getStatusGasto = (gasto: GastoFixo) => {
     const valorPago = gasto.valorPago || 0;
-    if (valorPago === 0) return { status: 'Pendente', cor: 'text-gray-500' };
+    if (valorPago === 0) return { status: 'Pendente', cor: 'text-red-600' };
     if (valorPago >= gasto.valor) return { status: 'Pago', cor: 'text-green-600' };
     return { status: 'Pago Parcial', cor: 'text-orange-600' };
   };
