@@ -108,7 +108,7 @@ export default function DividasManager() {
       } as Divida, i);
       const gastoId = `cartao:${compra.cardId}:${compra.id}:${ym}`;
       const cardName = (cartoes as CartaoCredito[]).find(c => c.id === compra.cardId)?.nome || '';
-      const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${cardName}: ${compra.descricao} – ${i+1}/${compra.parcelas}`, valor, categoria: 'Dívidas', diaVencimento: day, pago: i < (compra.parcelasPagas || 0) } as any;
+      const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${cardName}: ${compra.descricao} – ${i+1}/${compra.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: day, pago: i < (compra.parcelasPagas || 0) } as any;
       await saveGastoFixo(gasto);
       setGastosFixos((prev: GastoFixo[]) => {
         const j = prev.findIndex(g => g.id === gastoId);
@@ -260,7 +260,7 @@ export default function DividasManager() {
           id: 'tmp', descricao: '', valorTotal: p.valorTotal, valorPago: 0, parcelas: p.parcelas, parcelasPagas: 0, valorParcela: p.valorParcela, dataVencimento: `${startMonth}-${String(startDay).padStart(2,'0')}`, tipo: p.parcelas > 1 ? 'parcelada' : 'total'
         } as Divida, i);
         const gastoId = `cartao:${p.cardId}:${p.id}:${ym}`;
-        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${(cartoes as CartaoCredito[]).find(c => c.id === p.cardId)?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Dívidas', diaVencimento: startDay, pago: false } as any;
+        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${(cartoes as CartaoCredito[]).find(c => c.id === p.cardId)?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: startDay, pago: false } as any;
         await saveGastoFixo(gasto);
         setGastosFixos((prev: GastoFixo[]) => {
           const j = prev.findIndex(g => g.id === gastoId);

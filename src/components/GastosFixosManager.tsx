@@ -85,7 +85,7 @@ export default function GastosFixosManager() {
           ...gasto,
           id: cardKey,
           descricao: `Cartão ${nomeCartao}`,
-          categoria: 'Dívidas',
+          categoria: 'Cartão de Crédito',
           // Usar o dia de vencimento do cartão para a data ajustada
           diaVencimento: (cartoes as any[]).find(c => c.id === cardId)?.diaVencimento || gasto.diaVencimento
         });

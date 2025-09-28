@@ -88,7 +88,7 @@ export default function CreditCardsManager() {
         const ym = `${y}-${String(m).padStart(2,'0')}`;
         const valor = getInstallmentValue(p.valorTotal, p.valorParcela, p.parcelas, i);
         const gastoId = `cartao:${p.cardId}:${p.id}:${ym}`;
-        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${selectedCard?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Dívidas', diaVencimento: 5, pago: false } as any;
+        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${selectedCard?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: 5, pago: false } as any;
         await saveGastoFixo(gasto);
         setGastosFixos((prev: GastoFixo[]) => {
           const j = prev.findIndex(g => g.id === gastoId);
