@@ -15,7 +15,7 @@ export default function DividasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveTransacao, gastosFixos, setGastosFixos, saveGastoFixo, deleteGastoFixo, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao } = context as any;
+  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveCaixa, transacoes, saveTransacao, deleteTransacao, gastosFixos, setGastosFixos, saveGastoFixo, deleteGastoFixo, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const scrollBeforeDialogRef = useRef<number>(0);
@@ -277,24 +277,26 @@ export default function DividasManager() {
   const handleDeleteCard = async (cardId: string) => {
     if (!confirm('Excluir este cartão e suas compras?')) return;
     try {
+      // Estornar transações de todas as compras deste cartão
+      const compras = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
+      for (const c of compras) {
+        await estornarTransacoesDaCompra(c.descricao);
+      }
+
       // remover gastos fixos vinculados
       const prefix = `cartao:${cardId}:`;
       const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
       for (const g of vinculados) {
         await deleteGastoFixo(g.id);
       }
-      setGastosFixos((prev: GastoFixo[]) => prev.filter(g => !g.id.startsWith(prefix)));
 
       // remover compras deste cartão
-      const compras = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
       for (const c of compras) {
         await (context as any).deleteCompraCartao(c.id);
       }
-      setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.cardId !== cardId));
 
       // remover cartão
       await (context as any).deleteCartao(cardId);
-      setCartoes((prev: CartaoCredito[]) => prev.filter(c => c.id !== cardId));
     } catch (e) {
       console.error(e);
       alert('Não foi possível excluir o cartão.');
@@ -339,6 +341,58 @@ export default function DividasManager() {
     setIsDialogOpen(true);
   };
 
+  // Função para estornar transações relacionadas a uma dívida
+  const estornarTransacoesDaDivida = async (dividaId: string) => {
+    try {
+      // Buscar transações relacionadas a esta dívida
+      const transacoesRelacionadas = (transacoes as any[]).filter(t => 
+        t.descricao.includes(`Pagamento dívida:`) && 
+        t.descricao.includes(dividaId)
+      );
+      
+      // Estornar cada transação encontrada
+      for (const transacao of transacoesRelacionadas) {
+        // Atualizar saldo do caixa (adicionar de volta o valor)
+        const caixa = (caixas as any[]).find(c => c.id === transacao.caixaId);
+        if (caixa) {
+          const novoSaldo = caixa.saldo + transacao.valor;
+          await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
+        }
+        
+        // Excluir a transação
+        await (deleteTransacao && deleteTransacao(transacao.id));
+      }
+    } catch (error) {
+      console.error('Erro ao estornar transações:', error);
+    }
+  };
+
+  // Função para estornar transações relacionadas a uma compra de cartão
+  const estornarTransacoesDaCompra = async (compraId: string) => {
+    try {
+      // Buscar transações relacionadas a esta compra
+      const transacoesRelacionadas = (transacoes as any[]).filter(t => 
+        t.descricao.includes(`Pagamento cartão:`) && 
+        t.descricao.includes(compraId)
+      );
+      
+      // Estornar cada transação encontrada
+      for (const transacao of transacoesRelacionadas) {
+        // Atualizar saldo do caixa (adicionar de volta o valor)
+        const caixa = (caixas as any[]).find(c => c.id === transacao.caixaId);
+        if (caixa) {
+          const novoSaldo = caixa.saldo + transacao.valor;
+          await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
+        }
+        
+        // Excluir a transação
+        await (deleteTransacao && deleteTransacao(transacao.id));
+      }
+    } catch (error) {
+      console.error('Erro ao estornar transações da compra:', error);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este item?')) return;
     // Caso seja uma compra de cartão mapeada como dívida
@@ -347,15 +401,19 @@ export default function DividasManager() {
       const compra = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
       if (!compra) return;
       try {
+        // Estornar transações relacionadas primeiro
+        await estornarTransacoesDaCompra(compra.descricao);
+        
         await (context as any).deleteCompraCartao(purchaseId);
         setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
+        
         // remover gastos fixos vinculados
         const prefix = `cartao:${compra.cardId}:${compra.id}:`;
         const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
+        
         for (const g of vinculados) {
           await deleteGastoFixo(g.id);
         }
-        setGastosFixos((prev: GastoFixo[]) => prev.filter(g => !g.id.startsWith(prefix)));
       } catch (e) {
         console.error(e);
         alert('Não foi possível excluir a compra do cartão.');
@@ -364,16 +422,22 @@ export default function DividasManager() {
     }
 
     // Dívida normal
-    await deleteDivida(id);
-      setDividas(prev => prev.filter(d => d.id !== id));
     try {
+      // Estornar transações relacionadas primeiro
+      await estornarTransacoesDaDivida(id);
+      
+      await deleteDivida(id);
+      setDividas(prev => prev.filter(d => d.id !== id));
+      
       const prefix = `divida:${id}:`;
       const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
       for (const g of vinculados) {
         await deleteGastoFixo(g.id);
+      }
+    } catch (e) {
+      console.error('Erro ao excluir dívida:', e);
+      alert('Não foi possível excluir a dívida.');
     }
-      setGastosFixos((prev: GastoFixo[]) => prev.filter(g => !g.id.startsWith(prefix)));
-    } catch {}
   };
 
   const handlePagamento = (divida: Divida) => {
@@ -1151,7 +1215,7 @@ export default function DividasManager() {
         <CardHeader>
           <CardTitle>Lista de Dívidas</CardTitle>
           <CardDescription>
-            {dividas.length} dívida(s) registrada(s)
+            {dividas.length + purchasesAsDividas.length} dívida(s) registrada(s)
           </CardDescription>
         </CardHeader>
         <CardContent>

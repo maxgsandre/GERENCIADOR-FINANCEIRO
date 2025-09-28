@@ -4,10 +4,9 @@ import logoPng from './assets/logo.png';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from './components/ui/sidebar';
 import { Sheet, SheetContent, SheetTrigger } from './components/ui/sheet';
 import { Button } from './components/ui/button';
-import { Alert, AlertDescription } from './components/ui/alert';
 import { useIsMobile } from './components/ui/use-mobile';
 import { useTheme } from 'next-themes';
-import { Home, Wallet, ArrowUpDown, CreditCard, TrendingDown, Menu, Info } from 'lucide-react';
+import { Home, Wallet, ArrowUpDown, CreditCard, TrendingDown, Menu } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import CaixasManager from './components/CaixasManager';
 import TransacoesManager from './components/TransacoesManager';
@@ -19,7 +18,6 @@ import LoadingSpinner from './components/LoadingSpinner';
 import Logo from './components/Logo';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import * as firebaseService from './services/firebaseService';
-import { localStorageService, initializeLocalStorage } from './services/localStorageService';
 
 // Types para os dados financeiros
 export interface Caixa {
@@ -173,7 +171,7 @@ function AppContent() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { theme, resolvedTheme } = useTheme();
   const isMobile = useIsMobile();
-  const { currentUser, isDemo, loading } = useAuth();
+  const { currentUser, loading } = useAuth();
   
   // Estados para dados financeiros - sempre declarar todos os hooks
   const [caixas, setCaixas] = useState<Caixa[]>([]);
@@ -191,245 +189,143 @@ function AppContent() {
   useEffect(() => {
     if (!currentUser) return;
 
-    if (isDemo) {
-      // Modo demo: usar localStorage
-      initializeLocalStorage();
-      
-      // Carregar dados do localStorage
-      setCaixas(localStorageService.getCaixas());
-      setTransacoes(localStorageService.getTransacoes());
-      setGastosFixos(localStorageService.getGastosFixos());
-      setDividas(localStorageService.getDividas());
-      setCartoes(localStorageService.getCreditCards());
-      setComprasCartao(localStorageService.getCreditCardPurchases());
-      setCofrinhos(localStorageService.getCofrinhos());
-      setCategorias(localStorageService.getCategorias());
-      setReceitasPrevistas(localStorageService.getReceitasPrevistas());
-    } else {
-      // Modo Firebase: configurar listeners
-      firebaseService.createUserDocument(currentUser);
+    // Configurar listeners do Firebase
+    firebaseService.createUserDocument(currentUser);
 
-      const unsubscribeCaixas = firebaseService.subscribeToCaixas(currentUser.uid, setCaixas);
-      const unsubscribeTransacoes = firebaseService.subscribeToTransacoes(currentUser.uid, setTransacoes);
-      const unsubscribeGastosFixos = firebaseService.subscribeToGastosFixos(currentUser.uid, setGastosFixos);
-      const unsubscribeDividas = firebaseService.subscribeToDividas(currentUser.uid, setDividas);
-      const unsubscribeCofrinhos = firebaseService.subscribeToCofrinhos(currentUser.uid, setCofrinhos);
-      const unsubscribeCategorias = firebaseService.subscribeToCategorias(currentUser.uid, setCategorias);
-      const unsubscribeReceitasPrevistas = firebaseService.subscribeToReceitasPrevistas(currentUser.uid, setReceitasPrevistas);
-      const unsubscribeCards = (firebaseService as any).subscribeToCreditCards ? (firebaseService as any).subscribeToCreditCards(currentUser.uid, setCartoes) : () => {};
-      const unsubscribePurchases = (firebaseService as any).subscribeToCreditCardPurchases ? (firebaseService as any).subscribeToCreditCardPurchases(currentUser.uid, setComprasCartao) : () => {};
+    const unsubscribeCaixas = firebaseService.subscribeToCaixas(currentUser.uid, setCaixas);
+    const unsubscribeTransacoes = firebaseService.subscribeToTransacoes(currentUser.uid, setTransacoes);
+    const unsubscribeGastosFixos = firebaseService.subscribeToGastosFixos(currentUser.uid, setGastosFixos);
+    const unsubscribeDividas = firebaseService.subscribeToDividas(currentUser.uid, setDividas);
+    const unsubscribeCofrinhos = firebaseService.subscribeToCofrinhos(currentUser.uid, setCofrinhos);
+    const unsubscribeCategorias = firebaseService.subscribeToCategorias(currentUser.uid, setCategorias);
+    const unsubscribeReceitasPrevistas = firebaseService.subscribeToReceitasPrevistas(currentUser.uid, setReceitasPrevistas);
+    const unsubscribeCards = (firebaseService as any).subscribeToCreditCards ? (firebaseService as any).subscribeToCreditCards(currentUser.uid, setCartoes) : () => {};
+    const unsubscribePurchases = (firebaseService as any).subscribeToCreditCardPurchases ? (firebaseService as any).subscribeToCreditCardPurchases(currentUser.uid, setComprasCartao) : () => {};
 
-      // Cleanup function
-      return () => {
-        unsubscribeCaixas();
-        unsubscribeTransacoes();
-        unsubscribeGastosFixos();
-        unsubscribeDividas();
-        unsubscribeCofrinhos();
-        unsubscribeCategorias();
-        unsubscribeReceitasPrevistas();
-        unsubscribeCards();
-        unsubscribePurchases();
-      };
-    }
-  }, [currentUser, isDemo]);
+    // Cleanup function
+    return () => {
+      unsubscribeCaixas();
+      unsubscribeTransacoes();
+      unsubscribeGastosFixos();
+      unsubscribeDividas();
+      unsubscribeCofrinhos();
+      unsubscribeCategorias();
+      unsubscribeReceitasPrevistas();
+      unsubscribeCards();
+      unsubscribePurchases();
+    };
+  }, [currentUser]);
 
   // Funções para integração com Firebase ou localStorage
   const saveCaixa = async (caixa: Caixa) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveCaixa(caixa);
-        setCaixas(localStorageService.getCaixas());
-      } else {
-        await firebaseService.saveCaixa(currentUser.uid, caixa);
-      }
+      await firebaseService.saveCaixa(currentUser.uid, caixa);
     }
   };
 
   const deleteCaixa = async (caixaId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteCaixa(caixaId);
-        setCaixas(localStorageService.getCaixas());
-      } else {
-        await firebaseService.deleteCaixa(currentUser.uid, caixaId);
-      }
+      await firebaseService.deleteCaixa(currentUser.uid, caixaId);
     }
   };
 
   const saveTransacao = async (transacao: Transacao) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveTransacao(transacao);
-        setTransacoes(localStorageService.getTransacoes());
-      } else {
-        await firebaseService.saveTransacao(currentUser.uid, transacao);
-      }
+      await firebaseService.saveTransacao(currentUser.uid, transacao);
     }
   };
 
   const deleteTransacao = async (transacaoId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteTransacao(transacaoId);
-        setTransacoes(localStorageService.getTransacoes());
-      } else {
-        await firebaseService.deleteTransacao(currentUser.uid, transacaoId);
-      }
+      await firebaseService.deleteTransacao(currentUser.uid, transacaoId);
     }
   };
 
   const saveGastoFixo = async (gastoFixo: GastoFixo) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveGastoFixo(gastoFixo);
-        setGastosFixos(localStorageService.getGastosFixos());
-      } else {
-        await firebaseService.saveGastoFixo(currentUser.uid, gastoFixo);
-      }
+      await firebaseService.saveGastoFixo(currentUser.uid, gastoFixo);
     }
   };
 
   const deleteGastoFixo = async (gastoFixoId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteGastoFixo(gastoFixoId);
-        setGastosFixos(localStorageService.getGastosFixos());
-      } else {
-        await firebaseService.deleteGastoFixo(currentUser.uid, gastoFixoId);
-      }
+      await firebaseService.deleteGastoFixo(currentUser.uid, gastoFixoId);
+      // Atualizar estado local imediatamente para melhor UX
+      setGastosFixos(prev => prev.filter(g => g.id !== gastoFixoId));
     }
   };
 
   const saveDivida = async (divida: Divida) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveDivida(divida);
-        setDividas(localStorageService.getDividas());
-      } else {
-        await firebaseService.saveDivida(currentUser.uid, divida);
-      }
+      await firebaseService.saveDivida(currentUser.uid, divida);
     }
   };
 
   const deleteDivida = async (dividaId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteDivida(dividaId);
-        setDividas(localStorageService.getDividas());
-      } else {
-        await firebaseService.deleteDivida(currentUser.uid, dividaId);
-      }
+      await firebaseService.deleteDivida(currentUser.uid, dividaId);
     }
   };
 
   const saveCofrinho = async (cofrinho: Cofrinho) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveCofrinho(cofrinho);
-        setCofrinhos(localStorageService.getCofrinhos());
-      } else {
-        await firebaseService.saveCofrinho(currentUser.uid, cofrinho);
-      }
+      await firebaseService.saveCofrinho(currentUser.uid, cofrinho);
     }
   };
 
   const deleteCofrinho = async (cofrinhoId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteCofrinho(cofrinhoId);
-        setCofrinhos(localStorageService.getCofrinhos());
-      } else {
-        await firebaseService.deleteCofrinho(currentUser.uid, cofrinhoId);
-      }
+      await firebaseService.deleteCofrinho(currentUser.uid, cofrinhoId);
     }
   };
 
   const saveCategoria = async (categoria: Categoria) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveCategoria(categoria);
-        setCategorias(localStorageService.getCategorias());
-      } else {
-        await firebaseService.saveCategoria(currentUser.uid, categoria);
-      }
+      await firebaseService.saveCategoria(currentUser.uid, categoria);
     }
   };
 
   const deleteCategoria = async (categoriaId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteCategoria(categoriaId);
-        setCategorias(localStorageService.getCategorias());
-      } else {
-        await firebaseService.deleteCategoria(currentUser.uid, categoriaId);
-      }
+      await firebaseService.deleteCategoria(currentUser.uid, categoriaId);
     }
   };
 
   const saveReceitaPrevista = async (receita: ReceitaPrevista) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveReceitaPrevista(receita);
-        setReceitasPrevistas(localStorageService.getReceitasPrevistas());
-      } else {
-        await firebaseService.saveReceitaPrevista(currentUser.uid, receita);
-      }
+      await firebaseService.saveReceitaPrevista(currentUser.uid, receita);
     }
   };
 
   const deleteReceitaPrevista = async (receitaId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteReceitaPrevista(receitaId);
-        setReceitasPrevistas(localStorageService.getReceitasPrevistas());
-      } else {
-        await firebaseService.deleteReceitaPrevista(currentUser.uid, receitaId);
-      }
+      await firebaseService.deleteReceitaPrevista(currentUser.uid, receitaId);
     }
   };
 
   const saveCartao = async (card: CartaoCredito) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveCreditCard(card);
-        setCartoes(localStorageService.getCreditCards());
-      } else {
-        await (firebaseService as any).saveCreditCard(currentUser.uid, card);
-      }
+      await (firebaseService as any).saveCreditCard(currentUser.uid, card);
     }
   };
 
   const deleteCartao = async (cardId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteCreditCard(cardId);
-        setCartoes(localStorageService.getCreditCards());
-      } else {
-        await (firebaseService as any).deleteCreditCard(currentUser.uid, cardId);
-      }
+      await (firebaseService as any).deleteCreditCard(currentUser.uid, cardId);
     }
   };
 
   const saveCompraCartao = async (purchase: CompraCartao) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.saveCreditCardPurchase(purchase);
-        setComprasCartao(localStorageService.getCreditCardPurchases());
-      } else {
-        await (firebaseService as any).saveCreditCardPurchase(currentUser.uid, purchase);
-      }
+      await (firebaseService as any).saveCreditCardPurchase(currentUser.uid, purchase);
     }
   };
 
   const deleteCompraCartao = async (purchaseId: string) => {
     if (currentUser) {
-      if (isDemo) {
-        localStorageService.deleteCreditCardPurchase(purchaseId);
-        setComprasCartao(localStorageService.getCreditCardPurchases());
-      } else {
-        await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId);
-      }
+      await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId);
+      // Atualizar estado local imediatamente para melhor UX
+      setComprasCartao(prev => prev.filter(p => p.id !== purchaseId));
     }
   };
 
@@ -566,15 +462,6 @@ function AppContent() {
             </div>
           </header>
           
-          {/* Banner de modo demo */}
-          {isDemo && (
-            <Alert className="mx-4 mt-4">
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Modo Demo:</strong> Seus dados estão sendo salvos localmente. Para persistência permanente, configure o Firebase.
-              </AlertDescription>
-            </Alert>
-          )}
           
           {/* Conteúdo principal */}
           <main className="flex-1 overflow-auto p-4">
@@ -647,15 +534,6 @@ function AppContent() {
             </header>
             
             <div className="flex-1 overflow-auto p-6">
-              {/* Banner de modo demo */}
-              {isDemo && (
-                <Alert className="mb-6">
-                  <Info className="h-4 w-4" />
-                  <AlertDescription>
-                    <strong>Modo Demo:</strong> Seus dados estão sendo salvos localmente. Para persistência permanente, configure o Firebase seguindo as instruções no arquivo FIREBASE_SETUP.md.
-                  </AlertDescription>
-                </Alert>
-              )}
               {renderContent()}
             </div>
           </main>

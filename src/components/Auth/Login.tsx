@@ -8,7 +8,6 @@ import { Separator } from '../ui/separator';
 import { Eye, EyeOff, Mail, Lock, Info } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
-import { isDemoMode } from '../../lib/env';
 
 interface LoginProps {
   onToggleMode: () => void;
@@ -62,13 +61,8 @@ export default function Login({ onToggleMode }: LoginProps) {
             setError('Erro ao fazer login. Tente novamente.');
         }
       } else {
-        // Erros do modo demo sem código
         const message = error.message || 'Erro ao fazer login. Tente novamente.';
-        if (message.includes('Email ou senha incorretos')) {
-          setError('Email ou senha incorretos. No modo demo, use demo@teste.com / demo123 ou crie uma nova conta.');
-        } else {
-          setError(message);
-        }
+        setError(message);
       }
     } finally {
       setLoading(false);
@@ -85,15 +79,6 @@ export default function Login({ onToggleMode }: LoginProps) {
             Entre com sua conta para acessar seu controle financeiro
           </CardDescription>
           
-          {/* Verificar se está em modo demo */}
-          {isDemoMode() && (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription className="text-sm">
-                <strong>Modo Demo:</strong> Use <code className="bg-muted px-1 py-0.5 rounded text-xs">demo@teste.com</code> / <code className="bg-muted px-1 py-0.5 rounded text-xs">demo123</code> ou crie qualquer conta para testar.
-              </AlertDescription>
-            </Alert>
-          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (

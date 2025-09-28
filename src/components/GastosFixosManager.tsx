@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -17,7 +17,7 @@ export default function GastosFixosManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria, caixas, dividas, setDividas, saveDivida, saveTransacao, cartoes } = context as any;
+  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria, caixas, setCaixas, saveCaixa, dividas, setDividas, saveDivida, saveTransacao, deleteTransacao, transacoes, cartoes } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
@@ -37,6 +37,28 @@ export default function GastosFixosManager() {
   const [isValorPagoOpen, setIsValorPagoOpen] = useState(false);
   const [valorPagoInput, setValorPagoInput] = useState('');
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
+  
+  
+  // Monitora exclusão de transações de gastos fixos (versão simplificada)
+  useEffect(() => {
+    if (!transacoes || !Array.isArray(transacoes)) return;
+    
+    const transacoesGastosFixos = (transacoes as any[]).filter(t => 
+      t.descricao && t.descricao.includes('Gasto fixo pago:')
+    );
+    
+    // Para cada gasto fixo, verifica se ainda tem transação correspondente
+    (gastosFixos as GastoFixo[]).forEach(gasto => {
+      const descricaoEsperada = `Gasto fixo pago: ${gasto.descricao}`;
+      const temTransacao = transacoesGastosFixos.some(t => t.descricao === descricaoEsperada);
+      
+      // Se o gasto tem valorPago > 0 mas não tem transação correspondente, reverte
+      if (gasto.valorPago && gasto.valorPago > 0 && !temTransacao) {
+        console.log('Revertendo pagamento para:', gasto.descricao);
+        reverterPagamentoGastoFixo(gasto.id);
+      }
+    });
+  }, [transacoes]); // Só executa quando transacoes mudam
   const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < gastoSelecionado.valor) : false;
 
   // Mês selecionado para exibição (filtrar parcelas geradas por mês)
@@ -76,6 +98,7 @@ export default function GastosFixosManager() {
       if (cartoesConsolidados.has(cardKey)) {
         const existente = cartoesConsolidados.get(cardKey)!;
         existente.valor += gasto.valor;
+        existente.valorPago = (existente.valorPago || 0) + (gasto.valorPago || 0);
         existente.pago = existente.pago && gasto.pago; // só é pago se todos forem pagos
       } else {
         // Buscar o nome do cartão pelo cardId
@@ -102,6 +125,7 @@ export default function GastosFixosManager() {
       if (esporadicosConsolidados.has(esporadicoKey)) {
         const existente = esporadicosConsolidados.get(esporadicoKey)!;
         existente.valor += gasto.valor;
+        existente.valorPago = (existente.valorPago || 0) + (gasto.valorPago || 0);
         existente.pago = existente.pago && gasto.pago; // só é pago se todos forem pagos
       } else {
         esporadicosConsolidados.set(esporadicoKey, {
@@ -179,14 +203,29 @@ export default function GastosFixosManager() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.descricao || !formData.valor || !formData.categoria || !formData.diaVencimento) return;
+    if (!formData.descricao || !formData.valor || !formData.categoria || !formData.diaVencimento) {
+      alert('Por favor, preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    const valorNumerico = parseFloat(formData.valor);
+    if (isNaN(valorNumerico) || valorNumerico <= 0) {
+      alert('Por favor, insira um valor válido maior que zero.');
+      return;
+    }
+
+    const diaVencimentoNumerico = parseInt(formData.diaVencimento);
+    if (isNaN(diaVencimentoNumerico) || diaVencimentoNumerico < 1 || diaVencimentoNumerico > 31) {
+      alert('Por favor, insira um dia de vencimento válido (1-31).');
+      return;
+    }
 
     const novoGasto: GastoFixo = {
       id: editingGasto?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
       descricao: formData.descricao,
-      valor: parseFloat(formData.valor),
+      valor: valorNumerico,
       categoria: formData.categoria,
-      diaVencimento: parseInt(formData.diaVencimento),
+      diaVencimento: diaVencimentoNumerico,
       pago: formData.pago,
     };
 
@@ -253,7 +292,6 @@ export default function GastosFixosManager() {
     
     if (!confirm('Tem certeza que deseja excluir este gasto fixo?')) return;
     await deleteGastoFixo(id);
-    setGastosFixos(prev => prev.filter(g => g.id !== id));
   };
 
   const getStatusGasto = (gasto: GastoFixo) => {
@@ -266,15 +304,93 @@ export default function GastosFixosManager() {
   const abrirModalValorPago = (gasto: GastoFixo) => {
     setGastoSelecionado(gasto);
     setValorPagoInput(gasto.valorPago?.toString() || '');
+    setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
     setIsValorPagoOpen(true);
   };
 
+  // Função para reverter pagamento quando transação é excluída
+  const reverterPagamentoGastoFixo = async (gastoId: string) => {
+    try {
+      const gasto = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
+      if (!gasto) {
+        console.log('Gasto não encontrado:', gastoId);
+        return;
+      }
+
+      console.log('Revertendo pagamento do gasto:', gasto.descricao, 'de', gasto.valorPago, 'para 0');
+      const gastoAtualizado = { ...gasto, valorPago: 0, pago: false };
+      await saveGastoFixo(gastoAtualizado);
+      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? gastoAtualizado : g));
+      console.log('Pagamento revertido com sucesso');
+    } catch (error) {
+      console.error('Erro ao reverter pagamento:', error);
+    }
+  };
+
   const confirmarValorPago = async () => {
-    if (!gastoSelecionado) return;
+    if (!gastoSelecionado || !caixaPagamento) return;
     const valorPago = parseFloat(valorPagoInput) || 0;
-    const gastoAtualizado = { ...gastoSelecionado, valorPago, pago: valorPago >= gastoSelecionado.valor };
-    await saveGastoFixo(gastoAtualizado);
-    setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoSelecionado.id ? gastoAtualizado : g));
+    
+    if (valorPago <= 0) {
+      alert('Valor deve ser maior que zero.');
+      return;
+    }
+    
+    // Verificar saldo do caixa
+    const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
+    if (caixa && caixa.saldo < valorPago) {
+      alert('Saldo insuficiente no caixa selecionado.');
+      return;
+    }
+    
+    // Verificar se é um gasto consolidado (cartão ou esporádicos)
+    // Gastos consolidados têm IDs como: cartao:cardId:mes ou esporadicos:mes
+    const isGastoConsolidado = (gastoSelecionado.id.startsWith('cartao:') && gastoSelecionado.id.includes(':')) || 
+                              gastoSelecionado.id.startsWith('esporadicos:');
+    
+    if (isGastoConsolidado) {
+      // Para gastos consolidados, não salvar no Firebase - apenas atualizar as parcelas individuais
+      
+      // Atualizar saldo do caixa e salvar transação
+      if (caixa) {
+        const novoSaldo = caixa.saldo - valorPago;
+        await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
+        
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'saida',
+          valor: valorPago,
+          descricao: `Gasto fixo pago: ${gastoSelecionado.descricao}`,
+          categoria: gastoSelecionado.categoria || 'Outros',
+          data: new Date().toISOString().slice(0,10),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+      }
+    } else {
+      // Para gastos manuais normais, salvar normalmente
+      const gastoAtualizado = { ...gastoSelecionado, valorPago, pago: valorPago >= gastoSelecionado.valor };
+      await saveGastoFixo(gastoAtualizado);
+      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoSelecionado.id ? gastoAtualizado : g));
+      
+      // Atualizar saldo do caixa e salvar transação
+      if (caixa) {
+        const novoSaldo = caixa.saldo - valorPago;
+        await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
+        
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'saida',
+          valor: valorPago,
+          descricao: `Gasto fixo pago: ${gastoSelecionado.descricao}`,
+          categoria: gastoSelecionado.categoria || 'Outros',
+          data: new Date().toISOString().slice(0,10),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+      }
+    }
+    
     setIsValorPagoOpen(false);
     setGastoSelecionado(null);
     setValorPagoInput('');
@@ -631,6 +747,28 @@ export default function GastosFixosManager() {
                 Valor total: R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="caixaPagamento">Caixa para débito</Label>
+              <Select value={caixaPagamento || ''} onValueChange={setCaixaPagamento}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o caixa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {caixas?.map((caixa: any) => (
+                    <SelectItem key={caixa.id} value={caixa.id}>
+                      {caixa.nome} - R$ {caixa.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {caixaPagamento && (() => {
+                const caixa = caixas?.find((c: any) => c.id === caixaPagamento);
+                const valorPago = parseFloat(valorPagoInput) || 0;
+                return caixa && valorPago > caixa.saldo ? (
+                  <p className="text-sm text-red-600">Saldo insuficiente no caixa selecionado</p>
+                ) : null;
+              })()}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsValorPagoOpen(false)}>Cancelar</Button>
@@ -686,8 +824,15 @@ export default function GastosFixosManager() {
                     id="valor"
                     type="number"
                     step="0.01"
+                    min="0"
                     value={formData.valor}
-                    onChange={(e) => setFormData(prev => ({ ...prev, valor: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Permitir apenas números e ponto decimal
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setFormData(prev => ({ ...prev, valor: value }));
+                      }
+                    }}
                     placeholder="0.00"
                     required
                   />
