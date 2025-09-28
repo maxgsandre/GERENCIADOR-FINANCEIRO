@@ -7,7 +7,6 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Separator } from '../ui/separator';
 import { Eye, EyeOff, Mail, Lock, User, Info } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { isDemoMode } from '../../lib/env';
 
 interface RegisterProps {
   onToggleMode: () => void;
@@ -66,7 +65,6 @@ export default function Register({ onToggleMode }: RegisterProps) {
             setError('Erro ao criar conta. Tente novamente.');
         }
       } else {
-        // Erros do modo demo
         setError(error.message || 'Erro ao criar conta. Tente novamente.');
       }
     } finally {
@@ -83,15 +81,6 @@ export default function Register({ onToggleMode }: RegisterProps) {
             Crie sua conta e confirme o email para começar a usar o controle financeiro. Vamos enviar um link de verificação para seu email.
           </CardDescription>
           
-          {/* Verificar se está em modo demo */}
-          {isDemoMode() && (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription className="text-sm">
-                <strong>Modo Demo:</strong> Crie qualquer conta para testar. Os dados são salvos localmente no navegador.
-              </AlertDescription>
-            </Alert>
-          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (

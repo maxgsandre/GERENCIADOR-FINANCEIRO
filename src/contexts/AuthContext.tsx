@@ -16,7 +16,7 @@ import { auth } from '../lib/firebase';
 // Modo demo removido
 
 interface AuthContextType {
-  currentUser: any; // User para Firebase, MockUser para modo demo
+  currentUser: any; // User do Firebase
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -24,7 +24,6 @@ interface AuthContextType {
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   updateName: (name: string) => Promise<void>;
   loading: boolean;
-  isDemo: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -113,8 +112,7 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
     resetPassword,
     changePassword,
     updateName,
-    loading,
-    isDemo: false
+    loading
   };
 
   return (

@@ -1,17 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
-import { getEnvVar, isDevelopment } from './env';
 
 // Configuração do Firebase
-// Para usar configurações reais, substitua pelos valores do seu projeto Firebase
 const firebaseConfig = {
-  apiKey: getEnvVar('VITE_FIREBASE_API_KEY', 'demo-api-key-for-development'),
-  authDomain: getEnvVar('VITE_FIREBASE_AUTH_DOMAIN', 'demo-project.firebaseapp.com'),
-  projectId: getEnvVar('VITE_FIREBASE_PROJECT_ID', 'demo-project'),
-  storageBucket: getEnvVar('VITE_FIREBASE_STORAGE_BUCKET', 'demo-project.appspot.com'),
-  messagingSenderId: getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID', '123456789'),
-  appId: getEnvVar('VITE_FIREBASE_APP_ID', '1:123456789:web:abcdef123456')
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize Firebase
@@ -25,9 +23,10 @@ export const db = getFirestore(app);
 
 // Para desenvolvimento com emuladores (opcional)
 try {
-  const useEmulator = getEnvVar('VITE_USE_FIREBASE_EMULATOR', 'false') === 'true';
+  const useEmulator = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true';
+  const isDevelopment = import.meta.env.DEV;
   
-  if (isDevelopment() && useEmulator) {
+  if (isDevelopment && useEmulator) {
     connectAuthEmulator(auth, 'http://localhost:9099');
     connectFirestoreEmulator(db, 'localhost', 8080);
   }
