@@ -162,7 +162,7 @@ export default function TransacoesManager() {
     const passaTipoFiltro = filtroTipo === 'todos' || transacao.tipo === filtroTipo;
 
     let passaPeriodo = true;
-    const dataTransacao = new Date(transacao.data);
+    const dataTransacao = new Date(transacao.data + 'T00:00:00');
     if (filtroDe) {
       const ini = new Date(filtroDe);
       passaPeriodo = passaPeriodo && dataTransacao >= ini;
@@ -549,7 +549,7 @@ export default function TransacoesManager() {
                         {transacao.tipo === 'entrada' ? 'Entrada' : 'Saída'}
                       </Badge>
                       <span className="text-sm text-muted-foreground">
-                        {new Date(transacao.data).toLocaleDateString('pt-BR')} às {transacao.hora}
+                        {new Date(transacao.data + 'T00:00:00').toLocaleDateString('pt-BR')} às {transacao.hora}
                       </span>
                     </div>
                     
@@ -591,7 +591,7 @@ export default function TransacoesManager() {
                     <TableRow key={transacao.id}>
                       <TableCell>
                         <div>
-                          <div>{new Date(transacao.data).toLocaleDateString('pt-BR')}</div>
+                          <div>{new Date(transacao.data + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
                           <div className="text-sm text-muted-foreground">{transacao.hora}</div>
                         </div>
                       </TableCell>

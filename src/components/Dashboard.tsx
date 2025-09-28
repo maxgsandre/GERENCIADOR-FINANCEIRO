@@ -28,7 +28,7 @@ export default function Dashboard() {
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   
   const transacoesMesSelecionado = transacoes.filter(t => {
-    const dataTransacao = new Date(t.data);
+    const dataTransacao = new Date(t.data + 'T00:00:00');
     return dataTransacao.getMonth() === (mesSelecionado - 1) && dataTransacao.getFullYear() === anoSelecionado;
   });
 

@@ -41,26 +41,47 @@ export default function GastosFixosManager() {
   
   // Função para verificar e reverter gastos fixos sem transação correspondente
   const verificarEReverterGastosFixos = () => {
-    if (!transacoes || !Array.isArray(transacoes)) return;
+    if (!transacoes || !Array.isArray(transacoes)) {
+      console.log('🔍 DEBUG: Transações não disponíveis ou não é array');
+      return;
+    }
     
     const transacoesGastosFixos = (transacoes as any[]).filter(t => 
       t.descricao && t.descricao.includes('Gasto fixo pago:')
     );
     
-    console.log('Verificando gastos fixos...');
-    console.log('Transações de gastos fixos encontradas:', transacoesGastosFixos.length);
+    console.log('🔍 DEBUG: Verificando gastos fixos...');
+    console.log('🔍 DEBUG: Total de transações:', transacoes.length);
+    console.log('🔍 DEBUG: Transações de gastos fixos encontradas:', transacoesGastosFixos.length);
+    console.log('🔍 DEBUG: Lista de transações de gastos fixos:', transacoesGastosFixos.map(t => t.descricao));
     
+    // Função para obter descrição da transação baseada no tipo de gasto
+    const getDescricaoTransacao = (gasto: GastoFixo) => {
+      // Para gastos de cartão, usar apenas nome do cartão
+      if (gasto.id.startsWith('cartao:') || gasto.descricao.startsWith('Cartão ')) {
+        const nomeCartao = gasto.descricao.split(':')[0]; // "Cartão Neon"
+        return `Gasto fixo pago: ${nomeCartao}`;
+      }
+      return `Gasto fixo pago: ${gasto.descricao}`;
+    };
+
     // Para cada gasto fixo com valorPago > 0, verificar se ainda tem transação correspondente
     (gastosFixos as GastoFixo[]).forEach(gasto => {
       if (gasto.valorPago && gasto.valorPago > 0) {
-        const descricaoEsperada = `Gasto fixo pago: ${gasto.descricao}`;
+        const descricaoEsperada = getDescricaoTransacao(gasto);
         const temTransacao = transacoesGastosFixos.some(t => t.descricao === descricaoEsperada);
         
-        console.log(`Gasto: ${gasto.descricao}, Tem transação: ${temTransacao}`);
+        console.log(`🔍 DEBUG: Gasto: ${gasto.descricao}`);
+        console.log(`🔍 DEBUG: - Descrição esperada: ${descricaoEsperada}`);
+        console.log(`🔍 DEBUG: - Tem transação: ${temTransacao}`);
+        console.log(`🔍 DEBUG: - Valor pago: ${gasto.valorPago}`);
+        console.log(`🔍 DEBUG: - Status pago: ${gasto.pago}`);
         
         if (!temTransacao) {
-          console.log('Revertendo pagamento para:', gasto.descricao);
+          console.log('⚠️ DEBUG: Revertendo pagamento para:', gasto.descricao);
           reverterPagamentoGastoFixo(gasto.id);
+        } else {
+          console.log('✅ DEBUG: Gasto mantido como pago:', gasto.descricao);
         }
       }
     });
@@ -68,12 +89,20 @@ export default function GastosFixosManager() {
 
   // Monitora mudanças nas transações e verifica gastos fixos
   useEffect(() => {
+    console.log('🔄 DEBUG: useEffect disparado - transações mudaram');
+    console.log('🔄 DEBUG: Transações disponíveis:', transacoes?.length || 0);
+    console.log('🔄 DEBUG: Gastos fixos disponíveis:', gastosFixos?.length || 0);
+    
     // Aguardar um pouco para garantir que as transações foram atualizadas
     const timeoutId = setTimeout(() => {
+      console.log('⏰ DEBUG: Executando verificação após timeout');
       verificarEReverterGastosFixos();
     }, 100);
     
-    return () => clearTimeout(timeoutId);
+    return () => {
+      console.log('🧹 DEBUG: Limpando timeout');
+      clearTimeout(timeoutId);
+    };
   }, [transacoes]); // Executa quando transacoes mudam
   const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < gastoSelecionado.valor) : false;
 
@@ -382,7 +411,8 @@ export default function GastosFixosManager() {
     
     // Verificar se é um gasto consolidado (cartão ou esporádicos)
     // Gastos consolidados têm IDs como: cartao:cardId:mes ou esporadicos:mes
-    const isGastoConsolidado = (gastoSelecionado.id.startsWith('cartao:') && gastoSelecionado.id.includes(':')) || 
+    // NÃO são consolidados: divida:... (são parcelas individuais de dívidas)
+    const isGastoConsolidado = (gastoSelecionado.id.startsWith('cartao:') && gastoSelecionado.id.includes(':') && !gastoSelecionado.id.startsWith('divida:')) || 
                               gastoSelecionado.id.startsWith('esporadicos:');
     
     if (isGastoConsolidado) {
