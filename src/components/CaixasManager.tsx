@@ -225,9 +225,40 @@ export default function CaixasManager() {
     }
   };
 
+  const [isReceitaPagamentoOpen, setIsReceitaPagamentoOpen] = useState(false);
+  const [receitaSelecionada, setReceitaSelecionada] = useState<ReceitaPrevista | null>(null);
+  const [caixaReceita, setCaixaReceita] = useState<string | null>(null);
+
   const toggleReceitaRecebida = async (receita: ReceitaPrevista) => {
-    const receitaAtualizada = { ...receita, recebido: !receita.recebido };
+    if (!receita.recebido) {
+      // Se está marcando como recebida, abrir modal para selecionar caixa
+      setReceitaSelecionada(receita);
+      setIsReceitaPagamentoOpen(true);
+    } else {
+      // Se está desmarcando, apenas atualizar sem caixa
+      const receitaAtualizada = { ...receita, recebido: false };
+      await saveReceitaPrevista(receitaAtualizada);
+    }
+  };
+
+  const confirmarReceitaPagamento = async () => {
+    if (!receitaSelecionada || !caixaReceita) return;
+
+    const caixaSelecionado = caixas.find(c => c.id === caixaReceita);
+    if (!caixaSelecionado) return;
+
+    // Atualizar saldo do caixa
+    const novoSaldo = caixaSelecionado.saldo + receitaSelecionada.valor;
+    await saveCaixa({ ...caixaSelecionado, saldo: novoSaldo });
+
+    // Marcar receita como recebida
+    const receitaAtualizada = { ...receitaSelecionada, recebido: true };
     await saveReceitaPrevista(receitaAtualizada);
+
+    // Fechar modal e limpar estados
+    setIsReceitaPagamentoOpen(false);
+    setReceitaSelecionada(null);
+    setCaixaReceita(null);
   };
 
   const totalGeral = caixas.reduce((sum, caixa) => sum + caixa.saldo, 0);
@@ -843,6 +874,53 @@ export default function CaixasManager() {
           </Card>
         )}
       </div>
+
+      {/* Modal de seleção de caixa para receita */}
+      <Dialog open={isReceitaPagamentoOpen} onOpenChange={setIsReceitaPagamentoOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Receber receita</DialogTitle>
+            <DialogDescription>
+              Selecione o caixa onde a receita será creditada: {receitaSelecionada?.descricao}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {caixas && caixas.length > 0 && (
+              <div className="space-y-2">
+                <Label>Selecionar Caixa</Label>
+                <select 
+                  className="w-full border rounded h-9 px-2 bg-background" 
+                  value={caixaReceita || ''} 
+                  onChange={(e) => setCaixaReceita(e.target.value)}
+                >
+                  <option value="" disabled>Selecione um caixa</option>
+                  {caixas.map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome} - Saldo: R$ {c.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {receitaSelecionada && (
+              <div className="text-sm text-muted-foreground">
+                Valor: R$ {receitaSelecionada.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsReceitaPagamentoOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={confirmarReceitaPagamento}
+              disabled={!caixaReceita}
+            >
+              Confirmar Recebimento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

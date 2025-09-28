@@ -9,7 +9,7 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign, Lock } from 'lucide-react';
 import { FinanceiroContext, GastoFixo, Divida } from '../App';
 import CategoriasManager from './CategoriasManager';
 
@@ -227,6 +227,12 @@ export default function GastosFixosManager() {
   };
 
   const handleEdit = (gasto: GastoFixo) => {
+    // Verificar se é um gasto vinculado a dívida ou cartão
+    if (gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:')) {
+      alert('Este gasto está vinculado a uma dívida. Para editá-lo, modifique a dívida correspondente na seção "Dívidas".');
+      return;
+    }
+    
     setEditingGasto(gasto);
     setFormData({
       descricao: gasto.descricao,
@@ -239,9 +245,15 @@ export default function GastosFixosManager() {
   };
 
   const handleDelete = async (id: string) => {
+    // Verificar se é um gasto vinculado a dívida ou cartão
+    if (id.startsWith('divida:') || id.startsWith('cartao:')) {
+      alert('Este gasto está vinculado a uma dívida. Para excluí-lo, remova a dívida correspondente na seção "Dívidas".');
+      return;
+    }
+    
     if (!confirm('Tem certeza que deseja excluir este gasto fixo?')) return;
     await deleteGastoFixo(id);
-      setGastosFixos(prev => prev.filter(g => g.id !== id));
+    setGastosFixos(prev => prev.filter(g => g.id !== id));
   };
 
   const getStatusGasto = (gasto: GastoFixo) => {
@@ -939,6 +951,7 @@ export default function GastosFixosManager() {
                       size="sm"
                       onClick={() => abrirModalValorPago(gasto)}
                       className="text-green-600 hover:text-green-700"
+                      title="Definir valor pago"
                     >
                       <DollarSign className="h-4 w-4" />
                     </Button>
@@ -952,16 +965,26 @@ export default function GastosFixosManager() {
                       variant="ghost"
                       size="sm"
                       onClick={() => handleEdit(gasto)}
+                      title={gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? 'Gasto vinculado a dívida - edite na seção Dívidas' : 'Editar gasto'}
                     >
-                      <Edit className="h-4 w-4" />
+                      {gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? (
+                        <Lock className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Edit className="h-4 w-4" />
+                      )}
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleDelete(gasto.id)}
-                      className="text-red-600 hover:text-red-700"
+                      className={gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? "text-muted-foreground" : "text-red-600 hover:text-red-700"}
+                      title={gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? 'Gasto vinculado a dívida - exclua na seção Dívidas' : 'Excluir gasto'}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? (
+                        <Lock className="h-4 w-4" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -1003,6 +1026,7 @@ export default function GastosFixosManager() {
                           size="sm"
                           onClick={() => abrirModalValorPago(gasto)}
                           className="text-green-600 hover:text-green-700"
+                          title="Definir valor pago"
                         >
                           <DollarSign className="h-4 w-4" />
                         </Button>
@@ -1017,16 +1041,26 @@ export default function GastosFixosManager() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleEdit(gasto)}
+                          title={gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? 'Gasto vinculado a dívida - edite na seção Dívidas' : 'Editar gasto'}
                         >
-                          <Edit className="h-4 w-4" />
+                          {gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? (
+                            <Lock className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Edit className="h-4 w-4" />
+                          )}
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDelete(gasto.id)}
-                          className="text-red-600 hover:text-red-700"
+                          className={gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? "text-muted-foreground" : "text-red-600 hover:text-red-700"}
+                          title={gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? 'Gasto vinculado a dívida - exclua na seção Dívidas' : 'Excluir gasto'}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? (
+                            <Lock className="h-4 w-4" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
                     </TableCell>
