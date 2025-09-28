@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -17,7 +17,7 @@ export default function GastosFixosManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria, caixas, setCaixas, saveCaixa, dividas, setDividas, saveDivida, saveTransacao, deleteTransacao, transacoes, cartoes } = context as any;
+  const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria, caixas, setCaixas, saveCaixa, dividas, setDividas, saveDivida, saveTransacao, deleteTransacao, transacoes, cartoes, comprasCartao, saveCompraCartao } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
@@ -39,26 +39,42 @@ export default function GastosFixosManager() {
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   
   
-  // Monitora exclusão de transações de gastos fixos (versão simplificada)
-  useEffect(() => {
+  // Função para verificar e reverter gastos fixos sem transação correspondente
+  const verificarEReverterGastosFixos = () => {
     if (!transacoes || !Array.isArray(transacoes)) return;
     
     const transacoesGastosFixos = (transacoes as any[]).filter(t => 
       t.descricao && t.descricao.includes('Gasto fixo pago:')
     );
     
-    // Para cada gasto fixo, verifica se ainda tem transação correspondente
+    console.log('Verificando gastos fixos...');
+    console.log('Transações de gastos fixos encontradas:', transacoesGastosFixos.length);
+    
+    // Para cada gasto fixo com valorPago > 0, verificar se ainda tem transação correspondente
     (gastosFixos as GastoFixo[]).forEach(gasto => {
-      const descricaoEsperada = `Gasto fixo pago: ${gasto.descricao}`;
-      const temTransacao = transacoesGastosFixos.some(t => t.descricao === descricaoEsperada);
-      
-      // Se o gasto tem valorPago > 0 mas não tem transação correspondente, reverte
-      if (gasto.valorPago && gasto.valorPago > 0 && !temTransacao) {
-        console.log('Revertendo pagamento para:', gasto.descricao);
-        reverterPagamentoGastoFixo(gasto.id);
+      if (gasto.valorPago && gasto.valorPago > 0) {
+        const descricaoEsperada = `Gasto fixo pago: ${gasto.descricao}`;
+        const temTransacao = transacoesGastosFixos.some(t => t.descricao === descricaoEsperada);
+        
+        console.log(`Gasto: ${gasto.descricao}, Tem transação: ${temTransacao}`);
+        
+        if (!temTransacao) {
+          console.log('Revertendo pagamento para:', gasto.descricao);
+          reverterPagamentoGastoFixo(gasto.id);
+        }
       }
     });
-  }, [transacoes]); // Só executa quando transacoes mudam
+  };
+
+  // Monitora mudanças nas transações e verifica gastos fixos
+  useEffect(() => {
+    // Aguardar um pouco para garantir que as transações foram atualizadas
+    const timeoutId = setTimeout(() => {
+      verificarEReverterGastosFixos();
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [transacoes]); // Executa quando transacoes mudam
   const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < gastoSelecionado.valor) : false;
 
   // Mês selecionado para exibição (filtrar parcelas geradas por mês)
@@ -308,6 +324,27 @@ export default function GastosFixosManager() {
     setIsValorPagoOpen(true);
   };
 
+  // Função para atualizar progresso das compras de cartão
+  const atualizarProgressoComprasCartao = async (cardId: string) => {
+    try {
+      // Encontrar todas as compras deste cartão
+      const comprasDoCartao = (comprasCartao as any[]).filter(compra => compra.cardId === cardId);
+      
+      for (const compra of comprasDoCartao) {
+        // Contar parcelas pagas para esta compra
+        const parcelasPagas = (gastosFixos as GastoFixo[]).filter(gasto => 
+          gasto.id.startsWith(`cartao:${cardId}:${compra.id}:`) && gasto.pago
+        ).length;
+        
+        // Atualizar a compra com o novo progresso
+        const compraAtualizada = { ...compra, parcelasPagas };
+        await (saveCompraCartao && (saveCompraCartao as any)(compraAtualizada));
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar progresso das compras:', error);
+    }
+  };
+
   // Função para reverter pagamento quando transação é excluída
   const reverterPagamentoGastoFixo = async (gastoId: string) => {
     try {
@@ -349,7 +386,7 @@ export default function GastosFixosManager() {
                               gastoSelecionado.id.startsWith('esporadicos:');
     
     if (isGastoConsolidado) {
-      // Para gastos consolidados, não salvar no Firebase - apenas atualizar as parcelas individuais
+      // Para gastos consolidados, atualizar as parcelas individuais e sincronizar com compras de cartão
       
       // Atualizar saldo do caixa e salvar transação
       if (caixa) {
@@ -366,6 +403,26 @@ export default function GastosFixosManager() {
           data: new Date().toISOString().slice(0,10),
           hora: new Date().toTimeString().slice(0,5)
         }));
+      }
+
+      // Sincronizar com compras de cartão se for gasto de cartão
+      if (gastoSelecionado.id.startsWith('cartao:')) {
+        const parts = gastoSelecionado.id.split(':');
+        const cardId = parts[1];
+        
+        // Encontrar todas as parcelas deste cartão no mês selecionado
+        const parcelasDoCartao = (gastosFixos as GastoFixo[]).filter(g => 
+          g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
+        );
+        
+        // Atualizar cada parcela individual
+        for (const parcela of parcelasDoCartao) {
+          const parcelaAtualizada = { ...parcela, valorPago: parcela.valor, pago: true };
+          await saveGastoFixo(parcelaAtualizada);
+        }
+        
+        // Atualizar progresso das compras de cartão
+        await atualizarProgressoComprasCartao(cardId);
       }
     } else {
       // Para gastos manuais normais, salvar normalmente
@@ -488,27 +545,15 @@ export default function GastosFixosManager() {
         g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
       );
       
-      // Marcar todas as parcelas como pagas e sincronizar com compras de cartão
+      // Marcar todas as parcelas como pagas
       for (const parcela of parcelasDoCartao) {
-        const parcelaPaga = { ...parcela, pago: true };
+        const parcelaPaga = { ...parcela, pago: true, valorPago: parcela.valor };
         await (saveGastoFixo && saveGastoFixo(parcelaPaga));
         setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaPaga : g));
-        
-        // Sincronizar com as compras de cartão nas dívidas
-        const parcelaParts = parcela.id.split(':');
-        const purchaseId = parcelaParts[2];
-        const compra = (context as any).comprasCartao?.find((c: any) => c.id === purchaseId);
-        if (compra) {
-          // Contar parcelas pagas baseado nos gastos fixos
-          const parcelasPagasNosGastosFixos = gastosFixos.filter(g => 
-            g.id.startsWith(`cartao:${compra.cardId}:${compra.id}:`) && g.pago
-          ).length;
-          
-          const compraAtualizada = { ...compra, parcelasPagas: parcelasPagasNosGastosFixos };
-          await (context as any).saveCompraCartao(compraAtualizada);
-          (context as any).setComprasCartao((prev: any[]) => prev.map((c: any) => c.id === compra.id ? compraAtualizada : c));
-        }
       }
+      
+      // Sincronizar progresso das compras de cartão
+      await atualizarProgressoComprasCartao(cardId);
     } else {
       // Marcar gasto como pago (comportamento normal)
       const gastoPago = { ...gasto, pago: true };
@@ -589,25 +634,13 @@ export default function GastosFixosManager() {
       
       // Desmarcar todas as parcelas e sincronizar com compras de cartão
       for (const parcela of parcelasDoCartao) {
-        const parcelaNaoPaga = { ...parcela, pago: false };
+        const parcelaNaoPaga = { ...parcela, pago: false, valorPago: 0 };
         await (saveGastoFixo && saveGastoFixo(parcelaNaoPaga));
         setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaNaoPaga : g));
-        
-        // Sincronizar com as compras de cartão nas dívidas
-        const parcelaParts = parcela.id.split(':');
-        const purchaseId = parcelaParts[2];
-        const compra = (context as any).comprasCartao?.find((c: any) => c.id === purchaseId);
-        if (compra) {
-          // Contar parcelas pagas baseado nos gastos fixos
-          const parcelasPagasNosGastosFixos = gastosFixos.filter(g => 
-            g.id.startsWith(`cartao:${compra.cardId}:${compra.id}:`) && g.pago
-          ).length;
-          
-          const compraAtualizada = { ...compra, parcelasPagas: parcelasPagasNosGastosFixos };
-          await (context as any).saveCompraCartao(compraAtualizada);
-          (context as any).setComprasCartao((prev: any[]) => prev.map((c: any) => c.id === compra.id ? compraAtualizada : c));
-        }
       }
+      
+      // Sincronizar progresso das compras de cartão
+      await atualizarProgressoComprasCartao(cardId);
     } else {
       // Marcar gasto como não pago (comportamento normal)
       const gastoNaoPago = { ...gasto, pago: false };
@@ -784,6 +817,14 @@ export default function GastosFixosManager() {
             Gerencie seus gastos recorrentes mensais
           </p>
         </div>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={verificarEReverterGastosFixos}
+          className="text-xs"
+        >
+          Verificar Status
+        </Button>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
@@ -1115,7 +1156,7 @@ export default function GastosFixosManager() {
                       {gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? (
                         <Lock className="h-4 w-4 text-muted-foreground" />
                       ) : (
-                        <Edit className="h-4 w-4" />
+                      <Edit className="h-4 w-4" />
                       )}
                     </Button>
                     <Button
@@ -1128,7 +1169,7 @@ export default function GastosFixosManager() {
                       {gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? (
                         <Lock className="h-4 w-4" />
                       ) : (
-                        <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" />
                       )}
                     </Button>
                   </div>
@@ -1191,7 +1232,7 @@ export default function GastosFixosManager() {
                           {gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? (
                             <Lock className="h-4 w-4 text-muted-foreground" />
                           ) : (
-                            <Edit className="h-4 w-4" />
+                          <Edit className="h-4 w-4" />
                           )}
                         </Button>
                         <Button
@@ -1204,7 +1245,7 @@ export default function GastosFixosManager() {
                           {gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:') ? (
                             <Lock className="h-4 w-4" />
                           ) : (
-                            <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4" />
                           )}
                         </Button>
                       </div>
