@@ -37,6 +37,9 @@ export default function DividasManager() {
     valorParcela: '',
     dataVencimento: '',
     tipo: 'parcelada' as 'parcelada' | 'total',
+    emAndamento: false,
+    parcelaAtual: '',
+    dataUltimoPagamento: ''
   });
   // Cartões - dialogs e formulários
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
@@ -156,13 +159,17 @@ export default function DividasManager() {
       setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === updated.id ? updated : p));
       try { await replanGastosFixosDaCompra(updated); } catch {}
     } else {
+    // Calcular parcelas pagas e valor pago se for dívida em andamento
+    const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (editingDivida?.parcelasPagas || 0);
+    const valorPago = formData.emAndamento ? valorParcelaNum * parcelasPagas : (editingDivida?.valorPago || 0);
+
     const novaDivida: Divida = {
         id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
       descricao: formData.descricao,
       valorTotal: parseFloat(formData.valorTotal),
-      valorPago: editingDivida?.valorPago || 0,
+      valorPago: valorPago,
       parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
-      parcelasPagas: editingDivida?.parcelasPagas || 0,
+      parcelasPagas: parcelasPagas,
       valorParcela: formData.tipo === 'parcelada' 
           ? valorParcelaNum 
         : parseFloat(formData.valorTotal),
@@ -195,6 +202,9 @@ export default function DividasManager() {
       valorParcela: '',
       dataVencimento: '',
       tipo: 'parcelada',
+      emAndamento: false,
+      parcelaAtual: '',
+      dataUltimoPagamento: ''
     });
     setEditingDivida(null);
     setIsDialogOpen(false);
@@ -340,6 +350,9 @@ export default function DividasManager() {
       valorParcela: divida.valorParcela.toString(),
       dataVencimento: new Date(divida.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
       tipo: divida.tipo,
+      emAndamento: divida.parcelasPagas > 0,
+      parcelaAtual: divida.parcelasPagas > 0 ? (divida.parcelasPagas + 1).toString() : '',
+      dataUltimoPagamento: ''
     });
     setIsDialogOpen(true);
   };
@@ -847,7 +860,6 @@ export default function DividasManager() {
                       placeholder="0.00"
                       required
                     />
-                    <p className="text-xs text-muted-foreground">O sistema sugere automaticamente com base no total e parcelas. Você pode ajustar se desejar.</p>
                   </div>
                 </div>
               )}
@@ -862,6 +874,63 @@ export default function DividasManager() {
                   required
                 />
               </div>
+
+              {/* Checkbox para dívida em andamento */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="emAndamento"
+                  checked={formData.emAndamento}
+                  onChange={(e) => setFormData(prev => ({ ...prev, emAndamento: e.target.checked }))}
+                  className="rounded border-gray-300"
+                />
+                <Label htmlFor="emAndamento" className="text-sm font-medium">
+                  Esta dívida já está em andamento
+                </Label>
+              </div>
+
+              {/* Campos condicionais para dívida em andamento */}
+              {formData.emAndamento && (
+                <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="parcelaAtual">Parcela Atual</Label>
+                      <Input
+                        id="parcelaAtual"
+                        type="number"
+                        min="1"
+                        max={formData.parcelas || 999}
+                        value={formData.parcelaAtual}
+                        onChange={(e) => setFormData(prev => ({ ...prev, parcelaAtual: e.target.value }))}
+                        placeholder="Ex: 17"
+                        required={formData.emAndamento}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="dataUltimoPagamento">Data do Último Pagamento</Label>
+                      <Input
+                        id="dataUltimoPagamento"
+                        type="date"
+                        value={formData.dataUltimoPagamento}
+                        onChange={(e) => setFormData(prev => ({ ...prev, dataUltimoPagamento: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Resumo calculado */}
+                  {formData.parcelaAtual && formData.valorParcela && (
+                    <div className="p-3 dark:bg-blue-900/20 rounded-lg dark:border dark:border-blue-800">
+                      <h4 className="text-sm font-medium mb-2">Resumo Calculado:</h4>
+                      <div className="text-sm space-y-1">
+                        <p>Parcelas pagas: {Math.max(0, parseInt(formData.parcelaAtual) - 1)}</p>
+                        <p>Valor já pago: R$ {((parseInt(formData.parcelaAtual) - 1) * parseFloat(formData.valorParcela || '0')).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        <p>Parcelas restantes: {parseInt(formData.parcelas || '0') - Math.max(0, parseInt(formData.parcelaAtual) - 1)}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={resetForm}>
