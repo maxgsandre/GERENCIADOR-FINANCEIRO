@@ -58,6 +58,7 @@ export interface Divida {
   valorParcela: number;
   dataVencimento: string;
   tipo: 'parcelada' | 'total';
+  categoria?: string;
 }
 
 export interface Cofrinho {

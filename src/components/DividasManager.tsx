@@ -3,8 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
@@ -15,7 +15,7 @@ export default function DividasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveCaixa, transacoes, saveTransacao, deleteTransacao, gastosFixos, setGastosFixos, saveGastoFixo, deleteGastoFixo, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao } = context as any;
+  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveCaixa, transacoes, saveTransacao, deleteTransacao, gastosFixos, setGastosFixos, saveGastoFixo, deleteGastoFixo, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao, categorias = [] } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const scrollBeforeDialogRef = useRef<number>(0);
@@ -37,6 +37,7 @@ export default function DividasManager() {
     valorParcela: '',
     dataVencimento: '',
     tipo: 'parcelada' as 'parcelada' | 'total',
+    categoria: 'Esporádicos',
     emAndamento: false,
     parcelaAtual: '',
     dataUltimoPagamento: ''
@@ -84,7 +85,7 @@ export default function DividasManager() {
       expected.add(ym);
       const gastoId = `divida:${d.id}:${ym}`;
       const valor = getInstallmentValue(d, i);
-      const gasto: GastoFixo = { id: gastoId, descricao: `${d.descricao} – ${i+1}/${totalParcelas}`, valor, categoria: 'Esporádicos', diaVencimento: sd, dataVencimento: `${y}-${String(m).padStart(2, '0')}-${String(sd).padStart(2, '0')}`, pago: i < (d.parcelasPagas || 0) } as any;
+      const gasto: GastoFixo = { id: gastoId, descricao: d.descricao, valor, categoria: (d as any).categoria || 'Esporádicos', diaVencimento: sd, dataVencimento: `${y}-${String(m).padStart(2, '0')}-${String(sd).padStart(2, '0')}`, pago: i < (d.parcelasPagas || 0) } as any;
       await saveGastoFixo(gasto);
       setGastosFixos((prev: GastoFixo[]) => {
         const j = prev.findIndex(g => g.id === gastoId);
@@ -175,7 +176,8 @@ export default function DividasManager() {
         : parseFloat(formData.valorTotal),
       dataVencimento: new Date(formData.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
       tipo: formData.tipo,
-    };
+      categoria: formData.categoria,
+    } as any;
 
       await saveDivida(novaDivida);
       setDividas(prev => {
@@ -202,6 +204,7 @@ export default function DividasManager() {
       valorParcela: '',
       dataVencimento: '',
       tipo: 'parcelada',
+      categoria: 'Esporádicos',
       emAndamento: false,
       parcelaAtual: '',
       dataUltimoPagamento: ''
@@ -350,6 +353,7 @@ export default function DividasManager() {
       valorParcela: divida.valorParcela.toString(),
       dataVencimento: new Date(divida.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
       tipo: divida.tipo,
+      categoria: (divida as any).categoria || 'Esporádicos',
       emAndamento: divida.parcelasPagas > 0,
       parcelaAtual: divida.parcelasPagas > 0 ? (divida.parcelasPagas + 1).toString() : '',
       dataUltimoPagamento: ''
@@ -808,6 +812,25 @@ export default function DividasManager() {
                     <SelectContent>
                       <SelectItem value="parcelada">Parcelada</SelectItem>
                       <SelectItem value="total">Valor Total</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="categoria">Categoria</Label>
+                  <Select 
+                    value={formData.categoria} 
+                    onValueChange={(value) => setFormData(prev => ({ ...prev, categoria: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categorias.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.nome}>
+                          {cat.nome}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
