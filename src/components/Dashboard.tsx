@@ -9,7 +9,7 @@ export default function Dashboard() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, transacoes, gastosFixos, dividas, cofrinhos, cartoes, comprasCartao } = context;
+  const { caixas, transacoes, gastosFixos, dividas, cofrinhos, cartoes, comprasCartao, receitasPrevistas } = context;
 
   // Mês selecionado para exibição
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -22,7 +22,6 @@ export default function Dashboard() {
   const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => sum + cofrinho.saldo, 0);
   const totalRendimentoMensal = cofrinhos.reduce((sum, cofrinho) => sum + cofrinho.rendimentoMensal, 0);
   const totalDividas = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
-  const totalGastosFixos = gastosFixos.reduce((sum, gasto) => sum + gasto.valor, 0);
 
   // Entradas e saídas do mês selecionado
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
@@ -39,6 +38,32 @@ export default function Dashboard() {
   const saidasMes = transacoesMesSelecionado
     .filter(t => t.tipo === 'saida')
     .reduce((sum, t) => sum + t.valor, 0);
+
+  // Calcular total de receitas previstas
+  const totalReceitasPrevistas = receitasPrevistas.reduce((sum, receita) => sum + receita.valor, 0);
+
+  // Calcular gastos fixos do mês selecionado
+  const gastosFixosDoMes = gastosFixos.filter(gasto => {
+    // Gastos fixos manuais são sempre incluídos
+    if (!gasto.id.startsWith('divida:') && !gasto.id.startsWith('cartao:')) {
+      return true;
+    }
+    
+    // Gastos vinculados são filtrados por mês
+    if (gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:')) {
+      const parts = gasto.id.split(':');
+      const ym = parts[parts.length - 1];
+      return ym === selectedMonth;
+    }
+    
+    return true;
+  });
+
+  // Calcular total de gastos fixos do mês selecionado
+  const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
+
+  // Calcular previsão de déficit/superávit
+  const previsaoDeficitSuperavit = totalReceitasPrevistas - totalGastosFixosMes;
 
   // Calcular dívidas do mês selecionado (incluindo compras de cartão)
   const dividasDoMes = dividas.filter(divida => {
@@ -89,24 +114,6 @@ export default function Dashboard() {
 
   const totalDividasMes = [...dividasDoMes, ...comprasCartaoAsDividas].reduce((sum, d) => sum + getMonthlyDue(d), 0);
 
-  // Calcular gastos fixos do mês selecionado
-  const gastosFixosDoMes = gastosFixos.filter(gasto => {
-    // Gastos fixos manuais são sempre incluídos
-    if (!gasto.id.startsWith('divida:') && !gasto.id.startsWith('cartao:')) {
-      return true;
-    }
-    
-    // Gastos vinculados são filtrados por mês
-    if (gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:')) {
-      const parts = gasto.id.split(':');
-      const ym = parts[parts.length - 1];
-      return ym === selectedMonth;
-    }
-    
-    return true;
-  });
-
-  const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
 
   // Dados para gráfico de barras - distribuição por caixa
   const dadosCaixas = caixas.map(caixa => ({
@@ -232,8 +239,18 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="space-y-3">
               <div className="flex items-center gap-2">
+                <ArrowUpCircle className="h-4 w-4 text-green-600" />
+                <p className="text-sm text-muted-foreground">Total de Receitas Previstas</p>
+              </div>
+              <p className="text-xl font-semibold text-green-600">
+                R$ {totalReceitasPrevistas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
                 <CreditCard className="h-4 w-4 text-orange-600" />
-                <p className="text-sm text-muted-foreground">Gastos Fixos do Mês</p>
+                <p className="text-sm text-muted-foreground">Gastos Totais do Mês</p>
               </div>
               <p className="text-xl font-semibold text-orange-600">
                 R$ {totalGastosFixosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -242,21 +259,11 @@ export default function Dashboard() {
             
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <ArrowUpCircle className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-muted-foreground">Entradas do Mês</p>
+                <TrendingUp className="h-4 w-4 text-blue-600" />
+                <p className="text-sm text-muted-foreground">Previsão de Déficit/Superávit</p>
               </div>
-              <p className="text-xl font-semibold text-green-600">
-                R$ {entradasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <ArrowDownCircle className="h-4 w-4 text-red-600" />
-                <p className="text-sm text-muted-foreground">Saídas do Mês</p>
-              </div>
-              <p className="text-xl font-semibold text-red-600">
-                R$ {saidasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <p className={`text-xl font-semibold ${previsaoDeficitSuperavit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                R$ {previsaoDeficitSuperavit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
@@ -265,8 +272,8 @@ export default function Dashboard() {
                 <DollarSign className="h-4 w-4 text-blue-600" />
                 <p className="text-sm text-muted-foreground">Saldo Líquido</p>
               </div>
-              <p className={`text-xl font-semibold ${(totalCaixas - totalDividas) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                R$ {(totalCaixas - totalDividas).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <p className={`text-xl font-semibold ${(entradasMes - saidasMes) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                R$ {(entradasMes - saidasMes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>
