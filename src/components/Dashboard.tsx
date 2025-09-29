@@ -112,7 +112,16 @@ export default function Dashboard() {
     return d.valorTotal - d.valorPago;
   };
 
-  const totalDividasMes = [...dividasDoMes, ...comprasCartaoAsDividas].reduce((sum, d) => sum + getMonthlyDue(d), 0);
+  // Calcular valor restante total a pagar de todas as dívidas
+  const totalDividasRestante = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
+  
+  // Calcular valor restante das compras de cartão
+  const totalComprasCartaoRestante = comprasCartao.reduce((sum, compra) => {
+    const valorPago = (compra.parcelasPagas || 0) * compra.valorParcela;
+    return sum + (compra.valorTotal - valorPago);
+  }, 0);
+  
+  const totalDividasMes = totalDividasRestante + totalComprasCartaoRestante;
 
 
   // Dados para gráfico de barras - distribuição por caixa
@@ -203,7 +212,7 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total Dívidas do Mês</CardTitle>
+            <CardTitle className="text-sm">Total de Dívidas Pendentes</CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
