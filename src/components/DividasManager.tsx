@@ -794,7 +794,7 @@ export default function DividasManager() {
                   id="descricao"
                   value={formData.descricao}
                   onChange={(e) => setFormData(prev => ({ ...prev, descricao: e.target.value }))}
-                  placeholder="Ex: Cartão de crédito, Empréstimo, etc."
+                  placeholder="Ex: Financiamento, Empréstimo, Outros."
                   required
                 />
               </div>
