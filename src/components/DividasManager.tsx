@@ -58,6 +58,11 @@ export default function DividasManager() {
   const [purchaseStartDate, setPurchaseStartDate] = useState(() => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+  
+  // Estados para dívida em andamento na compra
+  const [purchaseEmAndamento, setPurchaseEmAndamento] = useState(false);
+  const [purchaseParcelaAtual, setPurchaseParcelaAtual] = useState('');
+  const [purchaseDataUltimoPagamento, setPurchaseDataUltimoPagamento] = useState('');
 
   // Calcula automaticamente o valor da parcela quando total/parcelas mudarem.
   const recomputeParcela = (totalStr: string, parcelasStr: string) => {
@@ -252,6 +257,10 @@ export default function DividasManager() {
     const startMonth = purchaseStartDate.slice(0,7);
     const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
     const startDay = selectedCard?.diaVencimento || 5;
+    
+    // Calcular parcelas pagas se for dívida em andamento
+    const parcelasPagas = purchaseEmAndamento ? Math.max(0, parseInt(purchaseParcelaAtual) - 1) : 0;
+    
     const p: CompraCartao = {
       id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(),
       cardId: selectedCardId,
@@ -261,7 +270,7 @@ export default function DividasManager() {
       valorParcela: parseFloat(purchaseValorParcela),
       startMonth,
       dataCompra: purchaseDate,
-      parcelasPagas: 0,
+      parcelasPagas: parcelasPagas,
       startDay,
     } as any;
     await saveCompraCartao(p);
@@ -276,7 +285,7 @@ export default function DividasManager() {
           id: 'tmp', descricao: '', valorTotal: p.valorTotal, valorPago: 0, parcelas: p.parcelas, parcelasPagas: 0, valorParcela: p.valorParcela, dataVencimento: `${startMonth}-${String(startDay).padStart(2,'0')}`, tipo: p.parcelas > 1 ? 'parcelada' : 'total'
         } as Divida, i);
         const gastoId = `cartao:${p.cardId}:${p.id}:${ym}`;
-        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${(cartoes as CartaoCredito[]).find(c => c.id === p.cardId)?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: startDay, pago: false } as any;
+        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${(cartoes as CartaoCredito[]).find(c => c.id === p.cardId)?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: startDay, pago: i < parcelasPagas } as any;
         await saveGastoFixo(gasto);
         setGastosFixos((prev: GastoFixo[]) => {
           const j = prev.findIndex(g => g.id === gastoId);
@@ -288,6 +297,7 @@ export default function DividasManager() {
 
     setIsPurchaseDialogOpen(false);
     setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); setPurchaseStartDate(`${selectedMonth}-05`);
+    setPurchaseEmAndamento(false); setPurchaseParcelaAtual(''); setPurchaseDataUltimoPagamento('');
   };
 
   const handleDeleteCard = async (cardId: string) => {
@@ -1192,8 +1202,70 @@ export default function DividasManager() {
                         <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
                       </div>
                     </div>
+
+                    {/* Checkbox para compra em andamento */}
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="purchaseEmAndamento"
+                        checked={purchaseEmAndamento}
+                        onChange={(e) => setPurchaseEmAndamento(e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      <Label htmlFor="purchaseEmAndamento" className="text-sm font-medium">
+                        Esta compra já está em andamento
+                      </Label>
+                    </div>
+
+                    {/* Campos condicionais para compra em andamento */}
+                    {purchaseEmAndamento && (
+                      <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="purchaseParcelaAtual">Parcela Atual</Label>
+                            <Input
+                              id="purchaseParcelaAtual"
+                              type="number"
+                              min="1"
+                              max={purchaseParcelas || 999}
+                              value={purchaseParcelaAtual}
+                              onChange={(e) => setPurchaseParcelaAtual(e.target.value)}
+                              placeholder="Ex: 17"
+                              required={purchaseEmAndamento}
+                            />
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label htmlFor="purchaseDataUltimoPagamento">Data do Último Pagamento</Label>
+                            <Input
+                              id="purchaseDataUltimoPagamento"
+                              type="date"
+                              value={purchaseDataUltimoPagamento}
+                              onChange={(e) => setPurchaseDataUltimoPagamento(e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Resumo calculado */}
+                        {purchaseParcelaAtual && purchaseValorParcela && (
+                          <div className="p-3 dark:bg-blue-900/20 rounded-lg dark:border dark:border-blue-800">
+                            <h4 className="text-sm font-medium mb-2">Resumo Calculado:</h4>
+                            <div className="text-sm space-y-1">
+                              <p>Parcelas pagas: {Math.max(0, parseInt(purchaseParcelaAtual) - 1)}</p>
+                              <p>Valor já pago: R$ {((parseInt(purchaseParcelaAtual) - 1) * parseFloat(purchaseValorParcela || '0')).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                              <p>Parcelas restantes: {parseInt(purchaseParcelas || '0') - Math.max(0, parseInt(purchaseParcelaAtual) - 1)}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <DialogFooter>
-                      <Button variant="outline" type="button" onClick={() => setIsPurchaseDialogOpen(false)}>Cancelar</Button>
+                      <Button variant="outline" type="button" onClick={() => {
+                        setIsPurchaseDialogOpen(false);
+                        setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); 
+                        setPurchaseStartDate(`${selectedMonth}-05`); setPurchaseDate(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
+                        setPurchaseEmAndamento(false); setPurchaseParcelaAtual(''); setPurchaseDataUltimoPagamento('');
+                      }}>Cancelar</Button>
                       <Button type="submit">Adicionar</Button>
                     </DialogFooter>
                   </form>
