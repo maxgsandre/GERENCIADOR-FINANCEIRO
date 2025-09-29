@@ -51,8 +51,8 @@ export default function DividasManager() {
   const [purchaseValorTotal, setPurchaseValorTotal] = useState('');
   const [purchaseParcelas, setPurchaseParcelas] = useState('1');
   const [purchaseValorParcela, setPurchaseValorParcela] = useState('');
-  const [purchaseStartDate, setPurchaseStartDate] = useState(() => new Date().toISOString().slice(0,10));
-  const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().slice(0,10));
+  const [purchaseStartDate, setPurchaseStartDate] = useState(() => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
+  const [purchaseDate, setPurchaseDate] = useState(() => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
 
   // Calcula automaticamente o valor da parcela quando total/parcelas mudarem.
@@ -69,7 +69,10 @@ export default function DividasManager() {
   };
 
   const replanGastosFixosDaDivida = async (d: Divida) => {
-    const [sy, sm, sd] = d.dataVencimento.split('-').map(Number);
+    const dataCorrigida = new Date(d.dataVencimento + 'T00:00:00');
+    const sy = dataCorrigida.getFullYear();
+    const sm = dataCorrigida.getMonth() + 1;
+    const sd = dataCorrigida.getDate();
     const expected = new Set<string>();
     const totalParcelas = d.tipo === 'parcelada' ? d.parcelas : 1;
     for (let i = 0; i < totalParcelas; i++) {
@@ -78,7 +81,7 @@ export default function DividasManager() {
       expected.add(ym);
       const gastoId = `divida:${d.id}:${ym}`;
       const valor = getInstallmentValue(d, i);
-      const gasto: GastoFixo = { id: gastoId, descricao: `Esporádicos: ${d.descricao} – ${i+1}/${totalParcelas}`, valor, categoria: 'Esporádicos', diaVencimento: sd, pago: i < (d.parcelasPagas || 0) } as any;
+      const gasto: GastoFixo = { id: gastoId, descricao: `${d.descricao} – ${i+1}/${totalParcelas}`, valor, categoria: 'Esporádicos', diaVencimento: sd, dataVencimento: `${y}-${String(m).padStart(2, '0')}-${String(sd).padStart(2, '0')}`, pago: i < (d.parcelasPagas || 0) } as any;
       await saveGastoFixo(gasto);
       setGastosFixos((prev: GastoFixo[]) => {
         const j = prev.findIndex(g => g.id === gastoId);
@@ -146,7 +149,7 @@ export default function DividasManager() {
         valorTotal: parseFloat(formData.valorTotal),
         parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
         valorParcela: formData.tipo === 'parcelada' ? valorParcelaNum : parseFloat(formData.valorTotal),
-        startMonth: formData.dataVencimento.slice(0,7),
+        startMonth: new Date(formData.dataVencimento + 'T00:00:00').toISOString().slice(0,7),
         startDay: (cardForPurchase?.diaVencimento || compraAtual.startDay || 5),
       } as CompraCartao;
       await saveCompraCartao(updated);
@@ -163,7 +166,7 @@ export default function DividasManager() {
       valorParcela: formData.tipo === 'parcelada' 
           ? valorParcelaNum 
         : parseFloat(formData.valorTotal),
-      dataVencimento: formData.dataVencimento,
+      dataVencimento: new Date(formData.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
       tipo: formData.tipo,
     };
 
@@ -335,7 +338,7 @@ export default function DividasManager() {
       valorTotal: divida.valorTotal.toString(),
       parcelas: divida.parcelas.toString(),
       valorParcela: divida.valorParcela.toString(),
-      dataVencimento: divida.dataVencimento,
+      dataVencimento: new Date(divida.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
       tipo: divida.tipo,
     });
     setIsDialogOpen(true);
@@ -487,7 +490,7 @@ export default function DividasManager() {
           valor: valorPagamento,
           descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
           categoria: 'Dívidas',
-          data: new Date().toISOString().slice(0,10),
+          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
           hora: new Date().toTimeString().slice(0,5)
         }));
       } catch {}
@@ -524,7 +527,7 @@ export default function DividasManager() {
           valor: valorPagamento,
           descricao: `Pagamento cartão: ${compra.descricao}`,
           categoria: 'Dívidas',
-          data: new Date().toISOString().slice(0,10),
+          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
           hora: new Date().toTimeString().slice(0,5)
         }));
       } catch {}
@@ -668,7 +671,7 @@ export default function DividasManager() {
       return divida;
     }
     
-    const dataOriginal = new Date(divida.dataVencimento);
+    const dataOriginal = new Date(divida.dataVencimento + 'T00:00:00');
     const diaVencimento = dataOriginal.getDate();
     
     // Validar se a data é válida
@@ -1243,7 +1246,7 @@ export default function DividasManager() {
                       </Badge>
                       <div className="flex items-center text-sm text-muted-foreground">
                         <Calendar className="h-4 w-4 mr-1" />
-                        {formatDateBR(divida.dataVencimento)}
+                        {new Date(divida.dataVencimento + 'T00:00:00').toLocaleDateString('pt-BR')}
                       </div>
                       <div className="text-sm text-muted-foreground">Parcela do mês: <span className="font-medium text-foreground">R$ {parcelaMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
                     </div>
@@ -1330,7 +1333,7 @@ export default function DividasManager() {
                       <TableCell>
                         <div className="flex items-center">
                           <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
-                          {formatDateBR(divida.dataVencimento)}
+                          {new Date(divida.dataVencimento + 'T00:00:00').toLocaleDateString('pt-BR')}
                         </div>
                       </TableCell>
                       <TableCell>

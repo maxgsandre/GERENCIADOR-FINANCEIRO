@@ -160,30 +160,11 @@ export default function GastosFixosManager() {
       }
     });
     
-    // Consolidar esporádicos em uma única linha
-    const gastosEsporadicos = filteredGastos.filter(g => g.id.startsWith('divida:'));
-    const esporadicosConsolidados = new Map<string, GastoFixo>();
+    // Mostrar dívidas manuais separadamente (não consolidar)
+    const gastosDividas = filteredGastos.filter(g => g.id.startsWith('divida:'));
+    // Usar diretamente os gastos individuais sem consolidação
     
-    gastosEsporadicos.forEach(gasto => {
-      const esporadicoKey = `esporadicos:${selectedMonth}`;
-      
-      if (esporadicosConsolidados.has(esporadicoKey)) {
-        const existente = esporadicosConsolidados.get(esporadicoKey)!;
-        existente.valor += gasto.valor;
-        existente.valorPago = (existente.valorPago || 0) + (gasto.valorPago || 0);
-        existente.pago = existente.pago && gasto.pago; // só é pago se todos forem pagos
-      } else {
-        esporadicosConsolidados.set(esporadicoKey, {
-          ...gasto,
-          id: esporadicoKey,
-          descricao: 'Esporádicos',
-          categoria: 'Esporádicos',
-          diaVencimento: gasto.diaVencimento
-        });
-      }
-    });
-    
-    return [...gastosManuais, ...cartoesConsolidados.values(), ...esporadicosConsolidados.values()];
+    return [...gastosManuais, ...cartoesConsolidados.values(), ...gastosDividas];
   })();
   
   const gastosComDataAjustada = gastosConsolidados.map(gasto => {
@@ -217,7 +198,7 @@ export default function GastosFixosManager() {
       };
     }
     
-    const dataOriginal = new Date(gasto.dataVencimento);
+    const dataOriginal = new Date(gasto.dataVencimento + 'T00:00:00');
     const diaVencimento = dataOriginal.getDate();
     
     // Validar se a data é válida
@@ -241,7 +222,7 @@ export default function GastosFixosManager() {
     
     return {
       ...gasto,
-      dataVencimentoAjustada: novaData.toISOString().split('T')[0]
+      dataVencimentoAjustada: novaData.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-')
     };
   });
 
