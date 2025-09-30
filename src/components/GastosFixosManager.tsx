@@ -1084,7 +1084,7 @@ export default function GastosFixosManager() {
         <CardHeader>
           <CardTitle>Lista de Gastos Fixos</CardTitle>
           <CardDescription>
-            {gastosFixos.length} gasto(s) cadastrado(s)
+            {gastosComDataAjustada.length} gasto(s) cadastrado(s)
           </CardDescription>
         </CardHeader>
         <CardContent>
