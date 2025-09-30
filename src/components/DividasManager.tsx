@@ -107,12 +107,9 @@ export default function DividasManager() {
   };
 
   const replanGastosFixosDaCompra = async (compra: CompraCartao) => {
-    console.log('🔍 DEBUG - replanGastosFixosDaCompra chamada com:', compra);
-    
     const [sy, sm] = compra.startMonth.split('-').map(Number);
     const card = (cartoes as CartaoCredito[]).find(x => x.id === compra.cardId);
     const day = card?.diaVencimento || compra.startDay || 5;
-    console.log('🔍 DEBUG - Parâmetros calculados:', { sy, sm, day, cardName: card?.nome });
     
     const expected = new Set<string>();
     const totalParcelas = compra.parcelas;
@@ -120,10 +117,8 @@ export default function DividasManager() {
     // Primeiro, remover TODOS os gastos antigos desta compra
     const prefix = `cartao:${compra.cardId}:${compra.id}:`;
     const gastosAntigos = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
-    console.log('🔍 DEBUG - Removendo TODOS os gastos antigos:', gastosAntigos);
     
     for (const g of gastosAntigos) {
-      console.log('🔍 DEBUG - Removendo gasto antigo:', g.id);
       await deleteGastoFixo(g.id);
       setGastosFixos((prev: GastoFixo[]) => prev.filter(x => x.id !== g.id));
     }
@@ -140,8 +135,6 @@ export default function DividasManager() {
       const cardName = (cartoes as CartaoCredito[]).find(c => c.id === compra.cardId)?.nome || '';
       const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${cardName}: ${compra.descricao} – ${i+1}/${compra.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: day, pago: i < (compra.parcelasPagas || 0) } as any;
       
-      console.log(`🔍 DEBUG - Criando gasto fixo ${i+1}/${compra.parcelas}:`, gasto);
-      
       await saveGastoFixo(gasto);
       setGastosFixos((prev: GastoFixo[]) => {
         const j = prev.findIndex(g => g.id === gastoId);
@@ -149,8 +142,6 @@ export default function DividasManager() {
         return [...prev, gasto];
       });
     }
-    
-    console.log('✅ DEBUG - replanGastosFixosDaCompra concluída');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -165,28 +156,18 @@ export default function DividasManager() {
 
     // Se for uma compra de cartão (id começa com purchase:), atualiza a compra em vez da dívida
     if (editingDivida?.id && editingDivida.id.startsWith('purchase:')) {
-      console.log('🔍 DEBUG - handleSubmit: Editando compra de cartão');
       const purchaseId = editingDivida.id.replace('purchase:', '');
-      console.log('🔍 DEBUG - Purchase ID extraído:', purchaseId);
       
       const compraAtual = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
-      console.log('🔍 DEBUG - Compra atual encontrada:', compraAtual);
       
       if (!compraAtual) {
-        console.log('❌ DEBUG - Compra atual NÃO encontrada!');
         return;
       }
       
       const cardForPurchase = (cartoes as CartaoCredito[]).find(c => c.id === compraAtual.cardId);
-      console.log('🔍 DEBUG - Cartão da compra:', cardForPurchase);
       
       // Calcular parcelas pagas se for dívida em andamento
       const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (compraAtual.parcelasPagas || 0);
-      console.log('🔍 DEBUG - Parcelas pagas calculadas:', { 
-        emAndamento: formData.emAndamento, 
-        parcelaAtual: formData.parcelaAtual, 
-        parcelasPagas 
-      });
       
       const updated: CompraCartao = {
         ...compraAtual,
@@ -196,23 +177,17 @@ export default function DividasManager() {
         valorParcela: formData.tipo === 'parcelada' ? valorParcelaNum : parseFloat(formData.valorTotal),
         startMonth: new Date(formData.dataVencimento + 'T00:00:00').toISOString().slice(0,7),
         startDay: (cardForPurchase?.diaVencimento || compraAtual.startDay || 5),
-        parcelasPagas: parcelasPagas, // ← ADICIONADO
+        parcelasPagas: parcelasPagas,
       } as CompraCartao;
       
-      console.log('🔍 DEBUG - Compra atualizada que será salva:', updated);
-      
       await saveCompraCartao(updated);
-      console.log('✅ DEBUG - Compra salva no Firebase');
       
       setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === updated.id ? updated : p));
-      console.log('✅ DEBUG - Estado local atualizado');
       
       try { 
-        console.log('🔍 DEBUG - Chamando replanGastosFixosDaCompra...');
-        await replanGastosFixosDaCompra(updated); 
-        console.log('✅ DEBUG - replanGastosFixosDaCompra concluído');
+        await replanGastosFixosDaCompra(updated);
       } catch (error) {
-        console.log('❌ DEBUG - Erro em replanGastosFixosDaCompra:', error);
+        console.error('Erro em replanGastosFixosDaCompra:', error);
       }
     } else {
     // Calcular parcelas pagas e valor pago se for dívida em andamento
@@ -404,23 +379,14 @@ export default function DividasManager() {
   };
 
   const handleEdit = (divida: Divida) => {
-    console.log('🔍 DEBUG - handleEdit chamado com:', {
-      dividaId: divida.id,
-      dividaDescricao: divida.descricao,
-      isPurchase: divida.id.startsWith('purchase:'),
-      dividaCompleta: divida
-    });
-
     try { scrollBeforeDialogRef.current = window.scrollY || 0; } catch {}
     setEditingDivida(divida);
     
     // Se for compra de cartão, buscar dados originais
     if (divida.id.startsWith('purchase:')) {
       const purchaseId = divida.id.replace('purchase:', '');
-      console.log('🔍 DEBUG - Buscando compra original com ID:', purchaseId);
       
       const compraOriginal = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
-      console.log('🔍 DEBUG - Compra original encontrada:', compraOriginal);
       
       if (compraOriginal) {
         const formDataToSet = {
@@ -436,17 +402,15 @@ export default function DividasManager() {
           dataUltimoPagamento: ''
         };
         
-        console.log('🔍 DEBUG - FormData que será definido (compra original):', formDataToSet);
         setFormData(formDataToSet);
       } else {
-        console.log('⚠️ DEBUG - Compra original NÃO encontrada, usando dados da dívida mapeada');
-        setFormData({
-          descricao: divida.descricao,
-          valorTotal: divida.valorTotal.toString(),
-          parcelas: divida.parcelas.toString(),
-          valorParcela: divida.valorParcela.toString(),
+    setFormData({
+      descricao: divida.descricao,
+      valorTotal: divida.valorTotal.toString(),
+      parcelas: divida.parcelas.toString(),
+      valorParcela: divida.valorParcela.toString(),
           dataVencimento: new Date(divida.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
-          tipo: divida.tipo,
+      tipo: divida.tipo,
           categoria: (divida as any).categoria || 'Esporádicos',
           emAndamento: divida.parcelasPagas > 0,
           parcelaAtual: divida.parcelasPagas > 0 ? (divida.parcelasPagas + 1).toString() : '',
@@ -454,7 +418,6 @@ export default function DividasManager() {
         });
       }
     } else {
-      console.log('🔍 DEBUG - Dívida manual normal, usando dados da dívida');
       setFormData({
         descricao: divida.descricao,
         valorTotal: divida.valorTotal.toString(),
