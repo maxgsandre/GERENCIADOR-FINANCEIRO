@@ -848,24 +848,24 @@ export default function GastosFixosManager() {
         </div>
         
         <div className="flex items-center">
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm}>
-                <Plus className="h-4 w-4 mr-2" />
-                Novo Gasto Fixo
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>
-                  {editingGasto ? 'Editar Gasto Fixo' : 'Novo Gasto Fixo'}
-                </DialogTitle>
-                <DialogDescription>
-                  {editingGasto 
-                    ? 'Edite as informações do gasto fixo selecionado.'
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={resetForm}>
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Gasto Fixo
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {editingGasto ? 'Editar Gasto Fixo' : 'Novo Gasto Fixo'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingGasto 
+                  ? 'Edite as informações do gasto fixo selecionado.'
                     : 'Adicione um novo gasto que se repete mensalmente.'}
-                </DialogDescription>
-              </DialogHeader>
+              </DialogDescription>
+            </DialogHeader>
             
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -1017,14 +1017,7 @@ export default function GastosFixosManager() {
             </form>
           </DialogContent>
         </Dialog>
-          <Button 
-            variant="destructive" 
-            onClick={limparGastosFixosAutomaticos}
-            className="ml-2"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Limpar Gastos Automáticos
-          </Button>
+          {/* Botão de limpeza removido a pedido do usuário */}
         </div>
       </div>
 

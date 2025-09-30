@@ -8,14 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Calendar, CheckCircle, CreditCard } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, CheckCircle, CreditCard, DollarSign } from 'lucide-react';
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 
 export default function DividasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveCaixa, transacoes, saveTransacao, deleteTransacao, gastosFixos, setGastosFixos, saveGastoFixo, deleteGastoFixo, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao, categorias = [] } = context as any;
+  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveCaixa, transacoes, saveTransacao, deleteTransacao, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao, categorias = [] } = context as any;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const scrollBeforeDialogRef = useRef<number>(0);
@@ -238,25 +238,6 @@ export default function DividasManager() {
     } as any;
     await saveCompraCartao(p);
 
-    // gerar gastos fixos vinculados com dia do vencimento do cartão
-    try {
-      const [sy, sm] = startMonth.split('-').map(Number);
-      for (let i = 0; i < p.parcelas; i++) {
-        const { y, m } = addMonths(sy, sm, i);
-        const ym = `${y}-${String(m).padStart(2,'0')}`;
-        const valor = getInstallmentValue({
-          id: 'tmp', descricao: '', valorTotal: p.valorTotal, valorPago: 0, parcelas: p.parcelas, parcelasPagas: 0, valorParcela: p.valorParcela, dataVencimento: `${startMonth}-${String(startDay).padStart(2,'0')}`, tipo: p.parcelas > 1 ? 'parcelada' : 'total'
-        } as Divida, i);
-        const gastoId = `cartao:${p.cardId}:${p.id}:${ym}`;
-        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${(cartoes as CartaoCredito[]).find(c => c.id === p.cardId)?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: startDay, pago: i < parcelasPagas } as any;
-        await saveGastoFixo(gasto);
-        setGastosFixos((prev: GastoFixo[]) => {
-          const j = prev.findIndex(g => g.id === gastoId);
-          if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
-          return [...prev, gasto];
-        });
-      }
-    } catch {}
 
     setIsPurchaseDialogOpen(false);
     setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); setPurchaseStartDate(`${selectedMonth}-05`);
@@ -272,12 +253,6 @@ export default function DividasManager() {
         await estornarTransacoesDaCompra(c.descricao);
       }
 
-      // remover gastos fixos vinculados
-      const prefix = `cartao:${cardId}:`;
-      const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
-      for (const g of vinculados) {
-        await deleteGastoFixo(g.id);
-      }
 
       // remover compras deste cartão
       for (const c of compras) {
@@ -379,7 +354,7 @@ export default function DividasManager() {
       // Buscar transações relacionadas a esta dívida
       const transacoesRelacionadas = (transacoes as any[]).filter(t => 
         t.descricao.includes(`Pagamento dívida:`) && 
-        t.descricao.includes(dividaId)
+        t.descricao.includes(`[dividaId=${dividaId}]`)
       );
       
       // Estornar cada transação encontrada
@@ -405,7 +380,7 @@ export default function DividasManager() {
       // Buscar transações relacionadas a esta compra
       const transacoesRelacionadas = (transacoes as any[]).filter(t => 
         t.descricao.includes(`Pagamento cartão:`) && 
-        t.descricao.includes(compraId)
+        t.descricao.includes(`[compraId=${compraId}]`)
       );
       
       // Estornar cada transação encontrada
@@ -440,12 +415,6 @@ export default function DividasManager() {
         setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
         
         // remover gastos fixos vinculados
-        const prefix = `cartao:${compra.cardId}:${compra.id}:`;
-        const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
-        
-        for (const g of vinculados) {
-          await deleteGastoFixo(g.id);
-        }
       } catch (e) {
         console.error(e);
         alert('Não foi possível excluir a compra do cartão.');
@@ -461,11 +430,6 @@ export default function DividasManager() {
       await deleteDivida(id);
       setDividas(prev => prev.filter(d => d.id !== id));
       
-      const prefix = `divida:${id}:`;
-      const vinculados = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
-      for (const g of vinculados) {
-        await deleteGastoFixo(g.id);
-      }
     } catch (e) {
       console.error('Erro ao excluir dívida:', e);
       alert('Não foi possível excluir a dívida.');
@@ -517,24 +481,19 @@ export default function DividasManager() {
           caixaId: caixaPagamento,
           tipo: 'saida',
           valor: valorPagamento,
-          descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
+          descricao: `Pagamento dívida: ${dividaAtual.descricao} [dividaId=${dividaAtual.id}]`,
           categoria: 'Dívidas',
           data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
           hora: new Date().toTimeString().slice(0,5)
         }));
-      } catch {}
 
-      // marcar gasto fixo do mês como pago, se existir
-      try {
-        const ym = `${selectedYM.y}-${String(selectedYM.m).padStart(2,'0')}`;
-        const gastoId = `divida:${dividaAtual.id}:${ym}`;
-        const existente = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
-        if (existente) {
-          const atualizadoGasto: GastoFixo = { ...existente, pago: true } as any;
-          await (saveGastoFixo && saveGastoFixo(atualizadoGasto));
-          setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? atualizadoGasto : g));
+        // Debitar o caixa
+        const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (cx) {
+          await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
         }
       } catch {}
+
     }
 
     if (compraSelecionada) {
@@ -554,23 +513,19 @@ export default function DividasManager() {
           caixaId: caixaPagamento,
           tipo: 'saida',
           valor: valorPagamento,
-          descricao: `Pagamento cartão: ${compra.descricao}`,
+          descricao: `Pagamento cartão: ${compra.descricao} [compraId=${compra.id}]`,
           categoria: 'Dívidas',
           data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
           hora: new Date().toTimeString().slice(0,5)
         }));
-      } catch {}
 
-      try {
-        const ym = `${selectedYM.y}-${String(selectedYM.m).padStart(2,'0')}`;
-        const gastoId = `cartao:${compra.cardId}:${compra.id}:${ym}`;
-        const existente = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
-        if (existente) {
-          const atualizadoGasto: GastoFixo = { ...existente, pago: true } as any;
-          await (saveGastoFixo && saveGastoFixo(atualizadoGasto));
-          setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? atualizadoGasto : g));
+        // Debitar o caixa
+        const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (cx) {
+          await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
         }
       } catch {}
+
     }
 
     setIsPagamentoOpen(false);
@@ -666,16 +621,8 @@ export default function DividasManager() {
     const card = (cartoes as CartaoCredito[]).find(x => x.id === c.cardId);
     const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
     
-    // Verificar se a parcela do mês atual foi paga nos gastos fixos
-    const parcelaDoMesId = `cartao:${c.cardId}:${c.id}:${selectedMonth}`;
-    const parcelaDoMesPaga = (gastosFixos as any[]).find(g => g.id === parcelaDoMesId)?.pago || false;
-    
-    // Calcular parcelas pagas baseado nos gastos fixos
-    const parcelasPagasNosGastosFixos = (gastosFixos as any[]).filter(g => 
-      g.id.startsWith(`cartao:${c.cardId}:${c.id}:`) && g.pago
-    ).length;
-    
-    const parcelasPagasAtualizadas = Math.max(c.parcelasPagas || 0, parcelasPagasNosGastosFixos);
+    // Usar apenas os dados da compra (não há mais gastos fixos automáticos)
+    const parcelasPagasAtualizadas = c.parcelasPagas || 0;
     const valorPagoEstimado = Math.min(c.parcelas, parcelasPagasAtualizadas) * c.valorParcela + (parcelasPagasAtualizadas === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
     
     // Ajustar data de vencimento para o mês selecionado
@@ -986,7 +933,7 @@ export default function DividasManager() {
           <DialogHeader>
             <DialogTitle>Registrar Pagamento</DialogTitle>
             <DialogDescription>
-              Registre um pagamento para: {dividaSelecionada?.descricao}
+              Registre um pagamento para: {dividaSelecionada?.descricao || compraSelecionada?.descricao}
             </DialogDescription>
           </DialogHeader>
           
@@ -998,6 +945,38 @@ export default function DividasManager() {
               processarPagamento(valor);
             }
           }} className="space-y-4">
+            {/* Informações da parcela e referência */}
+            <div className="rounded border p-3 bg-muted/20 text-sm flex flex-col gap-1">
+              <div>
+                <span className="text-muted-foreground">Referência: </span>
+                <span className="font-medium">{selectedMonth.split('-').reverse().join('/')}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Valor da parcela: </span>
+                <span className="font-medium">
+                  {(() => {
+                    if (dividaSelecionada) {
+                      const valorParcelaMes = getMonthlyDue(dividaSelecionada as any);
+                      return `R$ ${valorParcelaMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                    }
+                    if (compraSelecionada) {
+                      const [sy, sm] = (compraSelecionada.startMonth || selectedMonth).split('-').map(Number);
+                      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+                      const valor = purchaseInstallmentValue(compraSelecionada as any, Math.max(0, Math.min((compraSelecionada.parcelas || 1) - 1, idx)));
+                      return `R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                    }
+                    return '—';
+                  })()}
+                </span>
+              </div>
+            </div>
+            <div className="rounded border p-3 bg-muted/30">
+              <div className="text-sm mb-1">Caixa selecionado</div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">{(caixas.find((c: any) => c.id === caixaPagamento)?.nome) || '—'}</span>
+                <span className="text-muted-foreground">Saldo: R$ {(caixas.find((c: any) => c.id === caixaPagamento)?.saldo || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="valorPagamento">Valor do Pagamento</Label>
               <Input
@@ -1289,18 +1268,7 @@ export default function DividasManager() {
                     <div className="flex items-center gap-2 flex-wrap md:justify-end">
                       <div className="text-sm whitespace-nowrap">Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
                       <div className="text-sm whitespace-nowrap">
-                        {(() => {
-                          // Verificar se todas as parcelas do cartão no mês estão pagas
-                          const parcelasDoCartao = (gastosFixos as any[]).filter(g => 
-                            g.id.startsWith(`cartao:${c.id}:`) && g.id.endsWith(selectedMonth)
-                          );
-                          const todasPagas = parcelasDoCartao.length > 0 && parcelasDoCartao.every(p => p.pago);
-                          return todasPagas ? (
-                            <span className="text-green-600 font-medium">✓ Fatura paga</span>
-                          ) : (
-                            <span className="text-orange-600 font-medium">⏳ Pendente</span>
-                          );
-                        })()}
+                        <span className="text-orange-600 font-medium">⏳ Pendente</span>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
                         <button title="Editar" onClick={() => openEditCard(c)} className="p-2 text-muted-foreground hover:text-foreground">
@@ -1523,6 +1491,15 @@ export default function DividasManager() {
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handlePagamento(divida)}
+                            className="text-green-600 hover:text-green-700"
+                            title="Registrar Pagamento"
+                          >
+                            <DollarSign className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
