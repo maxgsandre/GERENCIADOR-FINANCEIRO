@@ -25,6 +25,8 @@ export default function DividasManager() {
   const [compraSelecionada, setCompraSelecionada] = useState<CompraCartao | null>(null);
   const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [valorPagamentoInput, setValorPagamentoInput] = useState('');
+  const [modoPagamento, setModoPagamento] = useState<'pay' | 'refund'>('pay');
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -130,18 +132,18 @@ export default function DividasManager() {
         const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (editingDivida?.parcelasPagas || 0);
         const valorPago = formData.emAndamento ? valorParcelaNum * parcelasPagas : (editingDivida?.valorPago || 0);
 
-        const novaDivida: Divida = {
+    const novaDivida: Divida = {
           id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
-          descricao: formData.descricao,
-          valorTotal: parseFloat(formData.valorTotal),
+      descricao: formData.descricao,
+      valorTotal: parseFloat(formData.valorTotal),
           valorPago: valorPago,
-          parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
+      parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
           parcelasPagas: parcelasPagas,
-          valorParcela: formData.tipo === 'parcelada' 
+      valorParcela: formData.tipo === 'parcelada' 
             ? valorParcelaNum 
-            : parseFloat(formData.valorTotal),
+        : parseFloat(formData.valorTotal),
           dataVencimento: new Date(formData.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
-          tipo: formData.tipo,
+      tipo: formData.tipo,
           categoria: formData.categoria,
         } as any;
 
@@ -156,9 +158,9 @@ export default function DividasManager() {
           return [...prev, novaDivida];
         });
 
-      }
+    }
 
-      resetForm();
+    resetForm();
     } finally {
       setIsSaving(false);
     }
@@ -202,6 +204,135 @@ export default function DividasManager() {
       }
     }
   }, [isDialogOpen]);
+
+  // Função para verificar e reverter dívidas sem transação correspondente
+  const verificarEReverterDividas = () => {
+    if (!transacoes || !Array.isArray(transacoes) || !dividas || !Array.isArray(dividas)) {
+      return;
+    }
+    
+    const transacoesDividas = (transacoes as any[]).filter(t => 
+      t.descricao && t.descricao.includes('Pagamento dívida:')
+    );
+    
+    // Para cada dívida com pagamento, verificar se tem transação correspondente
+    (dividas as Divida[]).forEach(divida => {
+      const temPagamento = (divida.valorPago || 0) > 0;
+      
+      if (temPagamento) {
+        const descricaoEsperada = `Pagamento dívida: ${divida.descricao}`;
+        
+        // Verificação mais robusta: buscar transações que correspondem à dívida
+        const temTransacao = transacoesDividas.some(t => {
+          // Verificação exata primeiro
+          if (t.descricao === descricaoEsperada) return true;
+          
+          // Verificação por partes da descrição
+          const partesDescricao = divida.descricao.split(' ');
+          const palavrasChave = partesDescricao.filter(p => p.length > 2); // Palavras com mais de 2 caracteres
+          
+          // Se a transação contém pelo menos 2 palavras-chave da dívida
+          const palavrasEncontradas = palavrasChave.filter(palavra => 
+            t.descricao.toLowerCase().includes(palavra.toLowerCase())
+          );
+          
+          return palavrasEncontradas.length >= Math.min(2, palavrasChave.length);
+        });
+        
+        if (!temTransacao) {
+          console.log(`Revertendo dívida sem transação: ${divida.descricao} (ID: ${divida.id})`);
+          console.log('Transações disponíveis:', transacoesDividas.map(t => t.descricao));
+          console.log('Descrição esperada:', descricaoEsperada);
+          
+          // Aguardar mais um pouco antes de reverter (pode ser transação ainda sendo processada)
+          setTimeout(() => {
+            reverterPagamentoDivida(divida.id);
+          }, 2000);
+        }
+      }
+    });
+  };
+
+  // Função para verificar e reverter compras sem transação correspondente
+  const verificarEReverterCompras = () => {
+    if (!transacoes || !Array.isArray(transacoes) || !comprasCartao || !Array.isArray(comprasCartao)) {
+      return;
+    }
+    
+    const transacoesCompras = (transacoes as any[]).filter(t => 
+      t.descricao && t.descricao.includes('Pagamento cartão:')
+    );
+    
+    // Para cada compra com pagamento, verificar se tem transação correspondente
+    (comprasCartao as CompraCartao[]).forEach(compra => {
+      const temPagamento = ((compra as any).valorPago || 0) > 0;
+      
+      if (temPagamento) {
+        const descricaoEsperada = `Pagamento cartão: ${compra.descricao}`;
+        const temTransacao = transacoesCompras.some(t => t.descricao === descricaoEsperada);
+        
+        if (!temTransacao) {
+          console.log(`Revertendo compra sem transação: ${compra.descricao} (ID: ${compra.id})`);
+          reverterPagamentoCompra(compra.id);
+        }
+      }
+    });
+  };
+
+
+  // Função para reverter pagamento de dívida
+  const reverterPagamentoDivida = async (dividaId: string) => {
+    try {
+      const divida = (dividas as Divida[]).find(d => d.id === dividaId);
+      if (!divida) return;
+
+      const dividaAtualizada: Divida = {
+        ...divida,
+        valorPago: 0,
+        parcelasPagas: 0,
+      };
+      
+      await saveDivida(dividaAtualizada);
+      setDividas(prev => prev.map(d => d.id === dividaId ? dividaAtualizada : d));
+    } catch (error) {
+      console.error('Erro ao reverter pagamento da dívida:', error);
+    }
+  };
+
+  // Função para reverter pagamento de compra
+  const reverterPagamentoCompra = async (compraId: string) => {
+    try {
+      const compra = (comprasCartao as CompraCartao[]).find(c => c.id === compraId);
+      if (!compra) return;
+
+      const compraAtualizada = { 
+        ...compra, 
+        valorPago: 0,
+        parcelasPagas: 0 
+      } as CompraCartao;
+      
+      await saveCompraCartao(compraAtualizada);
+      setComprasCartao(prev => prev.map(c => c.id === compraId ? compraAtualizada : c));
+    } catch (error) {
+      console.error('Erro ao reverter pagamento da compra:', error);
+    }
+  };
+
+  // Monitora mudanças nas transações para verificar consistência
+  useEffect(() => {
+    // Aguardar as operações de gravação para evitar falso positivo
+    const timeoutId = setTimeout(() => {
+      // Só executar se não estiver salvando (evitar conflito com operações em andamento)
+      if (!isSaving) {
+        verificarEReverterDividas();
+        verificarEReverterCompras();
+      }
+    }, 5000); // Aumentado para 5 segundos para dar tempo da transação ser salva
+    
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [transacoes, dividas, comprasCartao, isSaving]); // Executa quando transacoes, dividas ou comprasCartao mudam
 
   // CRUD simples de cartões e compras (na própria seção de dívidas)
   const handleCreateCard = async (e: React.FormEvent) => {
@@ -250,7 +381,7 @@ export default function DividasManager() {
       // Estornar transações de todas as compras deste cartão
       const compras = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
       for (const c of compras) {
-        await estornarTransacoesDaCompra(c.descricao);
+        // As transações serão revertidas automaticamente pelo useEffect
       }
 
 
@@ -348,57 +479,7 @@ export default function DividasManager() {
     setIsDialogOpen(true);
   };
 
-  // Função para estornar transações relacionadas a uma dívida
-  const estornarTransacoesDaDivida = async (dividaId: string) => {
-    try {
-      // Buscar transações relacionadas a esta dívida
-      const transacoesRelacionadas = (transacoes as any[]).filter(t => 
-        t.descricao.includes(`Pagamento dívida:`) && 
-        t.descricao.includes(`[dividaId=${dividaId}]`)
-      );
-      
-      // Estornar cada transação encontrada
-      for (const transacao of transacoesRelacionadas) {
-        // Atualizar saldo do caixa (adicionar de volta o valor)
-        const caixa = (caixas as any[]).find(c => c.id === transacao.caixaId);
-        if (caixa) {
-          const novoSaldo = caixa.saldo + transacao.valor;
-          await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
-        }
-        
-        // Excluir a transação
-        await (deleteTransacao && deleteTransacao(transacao.id));
-      }
-    } catch (error) {
-      console.error('Erro ao estornar transações:', error);
-    }
-  };
 
-  // Função para estornar transações relacionadas a uma compra de cartão
-  const estornarTransacoesDaCompra = async (compraId: string) => {
-    try {
-      // Buscar transações relacionadas a esta compra
-      const transacoesRelacionadas = (transacoes as any[]).filter(t => 
-        t.descricao.includes(`Pagamento cartão:`) && 
-        t.descricao.includes(`[compraId=${compraId}]`)
-      );
-      
-      // Estornar cada transação encontrada
-      for (const transacao of transacoesRelacionadas) {
-        // Atualizar saldo do caixa (adicionar de volta o valor)
-        const caixa = (caixas as any[]).find(c => c.id === transacao.caixaId);
-        if (caixa) {
-          const novoSaldo = caixa.saldo + transacao.valor;
-          await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
-        }
-        
-        // Excluir a transação
-        await (deleteTransacao && deleteTransacao(transacao.id));
-      }
-    } catch (error) {
-      console.error('Erro ao estornar transações da compra:', error);
-    }
-  };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este item?')) return;
@@ -408,9 +489,7 @@ export default function DividasManager() {
       const compra = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
       if (!compra) return;
       try {
-        // Estornar transações relacionadas primeiro
-        await estornarTransacoesDaCompra(compra.descricao);
-        
+        // As transações serão revertidas automaticamente pelo useEffect
         await (context as any).deleteCompraCartao(purchaseId);
         setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
         
@@ -424,9 +503,7 @@ export default function DividasManager() {
 
     // Dívida normal
     try {
-      // Estornar transações relacionadas primeiro
-      await estornarTransacoesDaDivida(id);
-      
+      // As transações serão revertidas automaticamente pelo useEffect
       await deleteDivida(id);
       setDividas(prev => prev.filter(d => d.id !== id));
       
@@ -438,7 +515,16 @@ export default function DividasManager() {
 
   const handlePagamento = (divida: Divida) => {
     setDividaSelecionada(divida);
+    setCompraSelecionada(null);
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+    setModoPagamento('pay');
+    // Sugerir valor da parcela do mês automaticamente no campo
+    try {
+      const valorParcelaMes = getMonthlyDue(divida);
+      setValorPagamentoInput(valorParcelaMes > 0 ? String(valorParcelaMes.toFixed(2)).replace('.', ',') : '');
+    } catch { 
+      setValorPagamentoInput(''); 
+    }
     setIsPagamentoOpen(true);
   };
 
@@ -446,7 +532,301 @@ export default function DividasManager() {
     setCompraSelecionada(compra);
     setDividaSelecionada(null);
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+    setModoPagamento('pay');
+    // Sugerir valor da parcela do mês automaticamente no campo
+    try {
+      const [sy, sm] = compra.startMonth.split('-').map(Number);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+      const valor = purchaseInstallmentValue(compra, Math.max(0, Math.min((compra.parcelas || 1) - 1, idx)));
+      setValorPagamentoInput(valor > 0 ? String(valor.toFixed(2)).replace('.', ',') : '');
+    } catch { 
+      setValorPagamentoInput(''); 
+    }
     setIsPagamentoOpen(true);
+  };
+
+  const handleEstorno = (divida: Divida) => {
+    if ((divida.valorPago || 0) === 0) {
+      alert('Não há pagamentos para estornar.');
+      return;
+    }
+    setDividaSelecionada(divida);
+    setCompraSelecionada(null);
+    setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+    setModoPagamento('refund');
+    // Sugerir valor do último pagamento
+    setValorPagamentoInput(String((divida.valorPago || 0).toFixed(2)).replace('.', ','));
+    setIsPagamentoOpen(true);
+  };
+
+  const handleEstornoCompra = (compra: CompraCartao) => {
+    if (((compra as any).valorPago || 0) === 0) {
+      alert('Não há pagamentos para estornar.');
+      return;
+    }
+    setCompraSelecionada(compra);
+    setDividaSelecionada(null);
+    setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+    setModoPagamento('refund');
+    // Sugerir valor do último pagamento
+    setValorPagamentoInput(String(((compra as any).valorPago || 0).toFixed(2)).replace('.', ','));
+    setIsPagamentoOpen(true);
+  };
+
+  const confirmarPagamento = async () => {
+    if (!dividaSelecionada && !compraSelecionada) return;
+    if (!caixaPagamento) { 
+      alert('Selecione um caixa.'); 
+      return; 
+    }
+    
+    const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
+    if (isNaN(valorPagamento) || valorPagamento <= 0) {
+      alert('Valor inválido.');
+      return;
+    }
+
+    const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
+    if (c && c.saldo < valorPagamento) { 
+      alert('Saldo insuficiente no caixa selecionado.'); 
+      return; 
+    }
+
+    setIsSaving(true);
+    
+    try {
+      if (dividaSelecionada) {
+        // Atualizar dívida
+        const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
+        if (!dividaAtual) return;
+
+        const novoValorPago = (dividaAtual.valorPago || 0) + valorPagamento;
+        const parcelaMes = getMonthlyDue(dividaAtual);
+        
+        // Para dívidas não parceladas
+        let novasParcelasPagas = dividaAtual.parcelasPagas || 0;
+        if (dividaAtual.tipo === 'total') {
+          if (novoValorPago >= dividaAtual.valorTotal) {
+            novasParcelasPagas = 1;
+          }
+        } else {
+          // Para dívidas parceladas - lógica baseada no pagamento da parcela do mês
+          const valorPagoMes = getMonthlyPaid(dividaAtual) + valorPagamento;
+          if (valorPagoMes >= parcelaMes && parcelaMes > 0) {
+            novasParcelasPagas = Math.max(novasParcelasPagas, Math.floor(novoValorPago / dividaAtual.valorParcela));
+          }
+        }
+
+        const atualizada: Divida = {
+          ...dividaAtual,
+          valorPago: novoValorPago,
+          parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas),
+        };
+
+        await saveDivida(atualizada);
+        setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
+
+        // Criar transação com descrição limpa (sem ID)
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'saida',
+          valor: valorPagamento,
+          descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
+          categoria: 'Dívidas',
+          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+
+        // Debitar o caixa
+        const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (cx) {
+          await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
+        }
+      }
+
+      if (compraSelecionada) {
+        // Atualizar compra
+        const compra = comprasCartao.find((p: CompraCartao) => p.id === compraSelecionada.id);
+        if (!compra) return;
+
+        const novoValorPago = ((compra as any).valorPago || 0) + valorPagamento;
+        const [sy, sm] = compra.startMonth.split('-').map(Number);
+        const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+        const parcelaMes = idx >= 0 && idx < compra.parcelas ? purchaseInstallmentValue(compra, idx) : 0;
+        
+        // Lógica de pagamento para compras no cartão
+        let novasParcelasPagas = compra.parcelasPagas || 0;
+        if (compra.parcelas === 1) {
+          // Compra à vista
+          if (novoValorPago >= compra.valorTotal) {
+            novasParcelasPagas = 1;
+          }
+        } else {
+          // Compra parcelada
+          const valorPagoMes = (idx < (compra.parcelasPagas || 0) ? parcelaMes : 0) + valorPagamento;
+          if (valorPagoMes >= parcelaMes && parcelaMes > 0) {
+            novasParcelasPagas = Math.max(novasParcelasPagas, idx + 1);
+          }
+        }
+
+        const atualizada = { 
+          ...compra, 
+          valorPago: novoValorPago,
+          parcelasPagas: Math.min(novasParcelasPagas, compra.parcelas) 
+        } as CompraCartao;
+        
+        await saveCompraCartao(atualizada);
+        setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === atualizada.id ? atualizada : p));
+
+        // Criar transação com descrição limpa (sem ID)
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'saida',
+          valor: valorPagamento,
+          descricao: `Pagamento cartão: ${compra.descricao}`,
+          categoria: 'Dívidas',
+          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+
+        // Debitar o caixa
+        const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (cx) {
+          await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
+        }
+      }
+
+    setIsPagamentoOpen(false);
+    setDividaSelecionada(null);
+      setCompraSelecionada(null);
+      setValorPagamentoInput('');
+    } catch (error) {
+      console.error('Erro ao processar pagamento:', error);
+      alert('Erro ao processar pagamento.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const confirmarEstorno = async () => {
+    if (!dividaSelecionada && !compraSelecionada) return;
+    if (!caixaPagamento) { 
+      alert('Selecione um caixa.'); 
+      return; 
+    }
+    
+    const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
+    if (isNaN(valorPagamento) || valorPagamento <= 0) {
+      alert('Valor inválido.');
+      return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+      if (dividaSelecionada) {
+        // Atualizar dívida (reverter pagamento)
+        const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
+        if (!dividaAtual) return;
+
+        const novoValorPago = Math.max(0, (dividaAtual.valorPago || 0) - valorPagamento);
+        
+        // Recalcular parcelas pagas baseado no novo valor pago
+        let novasParcelasPagas = dividaAtual.parcelasPagas || 0;
+        if (dividaAtual.tipo === 'total') {
+          if (novoValorPago < dividaAtual.valorTotal) {
+            novasParcelasPagas = 0;
+          }
+        } else {
+          // Para dívidas parceladas
+          novasParcelasPagas = Math.floor(novoValorPago / dividaAtual.valorParcela);
+        }
+
+        const atualizada: Divida = {
+          ...dividaAtual,
+          valorPago: novoValorPago,
+          parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas),
+        };
+
+        await saveDivida(atualizada);
+        setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
+
+        // Criar transação de estorno
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'entrada',
+          valor: valorPagamento,
+          descricao: `Estorno dívida: ${dividaAtual.descricao}`,
+          categoria: 'Dívidas',
+          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+
+        // Creditar o caixa
+        const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (cx) {
+          await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo + valorPagamento }));
+        }
+      }
+
+      if (compraSelecionada) {
+        // Atualizar compra (reverter pagamento)
+        const compra = comprasCartao.find((p: CompraCartao) => p.id === compraSelecionada.id);
+        if (!compra) return;
+
+        const novoValorPago = Math.max(0, ((compra as any).valorPago || 0) - valorPagamento);
+        
+        // Recalcular parcelas pagas baseado no novo valor pago
+        let novasParcelasPagas = compra.parcelasPagas || 0;
+        if (compra.parcelas === 1) {
+          if (novoValorPago < compra.valorTotal) {
+            novasParcelasPagas = 0;
+          }
+        } else {
+          novasParcelasPagas = Math.floor(novoValorPago / compra.valorParcela);
+        }
+
+        const atualizada = { 
+          ...compra, 
+          valorPago: novoValorPago,
+          parcelasPagas: Math.min(novasParcelasPagas, compra.parcelas) 
+        } as CompraCartao;
+        
+        await saveCompraCartao(atualizada);
+        setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === atualizada.id ? atualizada : p));
+
+        // Criar transação de estorno
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'entrada',
+          valor: valorPagamento,
+          descricao: `Estorno cartão: ${compra.descricao}`,
+          categoria: 'Dívidas',
+          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+
+        // Creditar o caixa
+        const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (cx) {
+          await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo + valorPagamento }));
+        }
+      }
+
+      setIsPagamentoOpen(false);
+      setDividaSelecionada(null);
+      setCompraSelecionada(null);
+      setValorPagamentoInput('');
+    } catch (error) {
+      console.error('Erro ao processar estorno:', error);
+      alert('Erro ao processar estorno.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const processarPagamento = async (valorPagamento: number) => {
@@ -481,7 +861,7 @@ export default function DividasManager() {
           caixaId: caixaPagamento,
           tipo: 'saida',
           valor: valorPagamento,
-          descricao: `Pagamento dívida: ${dividaAtual.descricao} [dividaId=${dividaAtual.id}]`,
+          descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
           categoria: 'Dívidas',
           data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
           hora: new Date().toTimeString().slice(0,5)
@@ -546,6 +926,82 @@ export default function DividasManager() {
   };
   const selectedYM = useMemo(() => parseYYYYMM(selectedMonth), [selectedMonth]);
 
+  const getMonthlyDue = (d: Divida): number => {
+    if (d.tipo === 'parcelada') {
+      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
+      if (idx < 0 || idx >= d.parcelas) return 0;
+      const base = d.valorParcela;
+      const delta = Math.round(d.valorTotal * 100) - Math.round(base * 100) * d.parcelas;
+      const isLast = idx === d.parcelas - 1;
+      const valor = base + (isLast ? delta / 100 : 0);
+      return Math.max(0, valor);
+    }
+    return d.valorTotal;
+  };
+
+  const purchaseInstallmentValue = (compra: CompraCartao, index: number): number => {
+    const base = compra.valorParcela;
+    const delta = Math.round(compra.valorTotal * 100) - Math.round(base * 100) * compra.parcelas;
+    const isLast = index === compra.parcelas - 1;
+    return base + (isLast ? delta / 100 : 0);
+  };
+
+  // Função para determinar status e cores das parcelas baseado no pagamento do mês
+  const getStatusParcela = (divida: Divida) => {
+    const valorPago = divida.valorPago || 0;
+    const valorTotal = divida.valorTotal;
+    const parcelasPagas = divida.parcelasPagas || 0;
+    const totalParcelas = divida.parcelas || 1;
+    
+    // Para dívidas não parceladas
+    if (divida.tipo === 'total') {
+      if (valorPago === 0) return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
+      if (valorPago >= valorTotal) return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
+      return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
+    }
+    
+    // Para dívidas parceladas - verificar se a parcela do mês está paga
+    const parcelaMes = getMonthlyDue(divida);
+    const parcelaMesPaga = getMonthlyPaid(divida);
+    
+    if (parcelaMesPaga >= parcelaMes && parcelaMes > 0) {
+      return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
+    } else if (parcelaMesPaga > 0 && parcelaMesPaga < parcelaMes) {
+      return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
+    } else {
+      return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
+    }
+  };
+
+  const getStatusCompra = (compra: CompraCartao) => {
+    const valorPago = (compra as any).valorPago || 0;
+    const valorTotal = compra.valorTotal;
+    const parcelasPagas = (compra as any).parcelasPagas || 0;
+    const totalParcelas = compra.parcelas || 1;
+    
+    // Para compras não parceladas (à vista)
+    if (totalParcelas === 1) {
+      if (valorPago === 0) return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
+      if (valorPago >= valorTotal) return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
+      return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
+    }
+    
+    // Para compras parceladas - verificar se a parcela do mês está paga
+    const [sy, sm] = compra.startMonth.split('-').map(Number);
+    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+    const parcelaMes = idx >= 0 && idx < compra.parcelas ? purchaseInstallmentValue(compra, idx) : 0;
+    const parcelaMesPaga = idx < (compra.parcelasPagas || 0) ? parcelaMes : 0;
+    
+    if (parcelaMesPaga >= parcelaMes && parcelaMes > 0) {
+      return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
+    } else if (parcelaMesPaga > 0 && parcelaMesPaga < parcelaMes) {
+      return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
+    } else {
+      return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
+    }
+  };
+
   // Datas sem deslocamento de fuso: tratar 'YYYY-MM-DD' como data local
   const formatDateBR = (s: string) => {
     if (!s) return '';
@@ -572,39 +1028,39 @@ export default function DividasManager() {
     return { y: ny, m: nm };
   };
 
-  const getMonthlyDue = (d: Divida): number => {
-    if (d.tipo === 'parcelada') {
-      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
-      if (idx < 0 || idx >= d.parcelas) return 0;
-      const base = d.valorParcela;
-      const delta = Math.round(d.valorTotal * 100) - Math.round(base * 100) * d.parcelas;
-      const isLast = idx === d.parcelas - 1;
-      const valor = base + (isLast ? delta / 100 : 0);
-      return Math.max(0, valor);
-    }
-    // Valor total: conta no mês do vencimento
-    const vencYM = parseYYYYMMDDtoYM(d.dataVencimento);
-    if (vencYM.y === selectedYM.y && vencYM.m === selectedYM.m) {
-      return d.valorTotal;
-    }
-    return 0;
-  };
-
   const getMonthlyPaid = (d: Divida): number => {
     if (d.tipo === 'parcelada') {
       const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
       const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
       if (idx < 0 || idx >= d.parcelas) return 0;
-      const delta = Math.round(d.valorTotal * 100) - Math.round(d.valorParcela * 100) * d.parcelas;
-      const isLast = idx === d.parcelas - 1;
-      const parcelaEsperada = d.valorParcela + (isLast ? delta / 100 : 0);
-      // Considera paga se a competência já está dentro das parcelasPagas
-      return idx < d.parcelasPagas ? parcelaEsperada : 0;
+      
+      // Se a parcela já foi completamente quitada
+      if (idx < (d.parcelasPagas || 0)) {
+        const delta = Math.round(d.valorTotal * 100) - Math.round(d.valorParcela * 100) * d.parcelas;
+        const isLast = idx === d.parcelas - 1;
+        return d.valorParcela + (isLast ? delta / 100 : 0);
+      }
+      
+      // Se a parcela está parcialmente paga
+      if (idx === (d.parcelasPagas || 0)) {
+        const valorPagoTotal = d.valorPago || 0;
+        const parcelasCompletasPagas = (d.parcelasPagas || 0) * d.valorParcela;
+        const valorPagoParcial = Math.max(0, valorPagoTotal - parcelasCompletasPagas);
+        
+        const delta = Math.round(d.valorTotal * 100) - Math.round(d.valorParcela * 100) * d.parcelas;
+        const isLast = idx === d.parcelas - 1;
+        const valorParcelaCompleta = d.valorParcela + (isLast ? delta / 100 : 0);
+        
+        return Math.min(valorPagoParcial, valorParcelaCompleta);
+      }
+      
+      return 0;
     }
+    
+    // Para dívidas não parceladas
     const vencYM = parseYYYYMMDDtoYM(d.dataVencimento);
     if (vencYM.y === selectedYM.y && vencYM.m === selectedYM.m) {
-      return d.valorPago >= d.valorTotal ? d.valorTotal : 0;
+      return d.valorPago || 0;
     }
     return 0;
   };
@@ -684,11 +1140,6 @@ export default function DividasManager() {
   const listDividasForMonth: Divida[] = allDividasForView.filter(d => getMonthlyDue(d) > 0);
 
   // Helpers para fatura do cartão
-  const purchaseInstallmentValue = (p: CompraCartao, idx: number): number => {
-    const delta = Math.round(p.valorTotal * 100) - Math.round(p.valorParcela * 100) * p.parcelas;
-    const isLast = idx === p.parcelas - 1;
-    return p.valorParcela + (isLast ? delta / 100 : 0);
-  };
   const cardInvoiceTotalForSelectedMonth = (cardId: string): number => {
     return (comprasCartao as CompraCartao[])
       .filter(p => p.cardId === cardId)
@@ -718,6 +1169,99 @@ export default function DividasManager() {
 
   return (
     <div className="space-y-6">
+      {/* Modal de pagamento */}
+      <Dialog open={isPagamentoOpen} onOpenChange={setIsPagamentoOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{modoPagamento === 'pay' ? 'Pagar dívida' : 'Estornar dívida'}</DialogTitle>
+            <DialogDescription>
+              {dividaSelecionada?.descricao || compraSelecionada?.descricao}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="valorPagamento">Valor do pagamento</Label>
+              <Input
+                id="valorPagamento"
+                type="text"
+                value={valorPagamentoInput}
+                onChange={(e) => setValorPagamentoInput(e.target.value)}
+                placeholder="0,00"
+              />
+              <p className="text-sm text-muted-foreground">
+                Valor da parcela do mês: R$ {(() => {
+                  if (dividaSelecionada) {
+                    const valor = getMonthlyDue(dividaSelecionada);
+                    return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                  }
+                  if (compraSelecionada) {
+                    const [sy, sm] = compraSelecionada.startMonth.split('-').map(Number);
+                    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+                    const valor = purchaseInstallmentValue(compraSelecionada, Math.max(0, Math.min((compraSelecionada.parcelas || 1) - 1, idx)));
+                    return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                  }
+                  return '0,00';
+                })()}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => {
+                  if (dividaSelecionada) {
+                    const valor = getMonthlyDue(dividaSelecionada);
+                    setValorPagamentoInput(valor.toFixed(2).replace('.', ','));
+                  }
+                  if (compraSelecionada) {
+                    const [sy, sm] = compraSelecionada.startMonth.split('-').map(Number);
+                    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+                    const valor = purchaseInstallmentValue(compraSelecionada, Math.max(0, Math.min((compraSelecionada.parcelas || 1) - 1, idx)));
+                    setValorPagamentoInput(valor.toFixed(2).replace('.', ','));
+                  }
+                }}
+              >
+                Usar valor da parcela
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="caixaPagamento">Caixa para débito</Label>
+              <Select value={caixaPagamento || ''} onValueChange={setCaixaPagamento}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o caixa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {caixas?.map((caixa: any) => (
+                    <SelectItem key={caixa.id} value={caixa.id}>
+                      {caixa.nome} - R$ {caixa.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {caixaPagamento && (() => {
+                const caixa = caixas?.find((c: any) => c.id === caixaPagamento);
+                const valorPago = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
+                return caixa && valorPago > caixa.saldo ? (
+                  <p className="text-sm text-red-600">Saldo insuficiente no caixa selecionado</p>
+                ) : null;
+              })()}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)}>Cancelar</Button>
+            {modoPagamento === 'pay' ? (
+              <Button onClick={confirmarPagamento} disabled={!caixaPagamento || isSaving}>
+                {isSaving ? 'Processando...' : 'Confirmar pagamento'}
+              </Button>
+            ) : (
+              <Button onClick={confirmarEstorno} disabled={!caixaPagamento || isSaving}>
+                {isSaving ? 'Processando...' : 'Confirmar estorno'}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">Gestão de Dívidas</h2>
@@ -1491,15 +2035,15 @@ export default function DividasManager() {
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handlePagamento(divida)}
-                            className="text-green-600 hover:text-green-700"
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handlePagamento(divida)}
+                              className="text-green-600 hover:text-green-700"
                             title="Registrar Pagamento"
-                          >
-                            <DollarSign className="h-4 w-4" />
-                          </Button>
+                            >
+                              <DollarSign className="h-4 w-4" />
+                            </Button>
                           <Button
                             variant="ghost"
                             size="sm"
