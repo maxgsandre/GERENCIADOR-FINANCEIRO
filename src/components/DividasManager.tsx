@@ -24,6 +24,7 @@ export default function DividasManager() {
   const [dividaSelecionada, setDividaSelecionada] = useState<Divida | null>(null);
   const [compraSelecionada, setCompraSelecionada] = useState<CompraCartao | null>(null);
   const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -147,83 +148,91 @@ export default function DividasManager() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (isSaving) return;
+    
     if (!formData.descricao || !formData.valorTotal || !formData.dataVencimento) return;
 
-    // Ajusta parcela automaticamente se for parcelada e não informada
-    let valorParcelaNum = formData.tipo === 'parcelada'
-      ? (formData.valorParcela ? parseFloat(formData.valorParcela) : parseFloat(recomputeParcela(formData.valorTotal, formData.parcelas) || '0'))
-      : parseFloat(formData.valorTotal);
+    setIsSaving(true);
+    
+    try {
+      // Ajusta parcela automaticamente se for parcelada e não informada
+      let valorParcelaNum = formData.tipo === 'parcelada'
+        ? (formData.valorParcela ? parseFloat(formData.valorParcela) : parseFloat(recomputeParcela(formData.valorTotal, formData.parcelas) || '0'))
+        : parseFloat(formData.valorTotal);
 
-    // Se for uma compra de cartão (id começa com purchase:), atualiza a compra em vez da dívida
-    if (editingDivida?.id && editingDivida.id.startsWith('purchase:')) {
-      const purchaseId = editingDivida.id.replace('purchase:', '');
-      
-      const compraAtual = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
-      
-      if (!compraAtual) {
-        return;
-      }
-      
-      const cardForPurchase = (cartoes as CartaoCredito[]).find(c => c.id === compraAtual.cardId);
-      
-      // Calcular parcelas pagas se for dívida em andamento
-      const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (compraAtual.parcelasPagas || 0);
-      
-      const updated: CompraCartao = {
-        ...compraAtual,
-        descricao: formData.descricao,
-        valorTotal: parseFloat(formData.valorTotal),
-        parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
-        valorParcela: formData.tipo === 'parcelada' ? valorParcelaNum : parseFloat(formData.valorTotal),
-        startMonth: new Date(formData.dataVencimento + 'T00:00:00').toISOString().slice(0,7),
-        startDay: (cardForPurchase?.diaVencimento || compraAtual.startDay || 5),
-        parcelasPagas: parcelasPagas,
-      } as CompraCartao;
-      
-      await saveCompraCartao(updated);
-      
-      setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === updated.id ? updated : p));
-      
-      try { 
-        await replanGastosFixosDaCompra(updated);
-      } catch (error) {
-        console.error('Erro em replanGastosFixosDaCompra:', error);
-      }
-    } else {
-    // Calcular parcelas pagas e valor pago se for dívida em andamento
-    const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (editingDivida?.parcelasPagas || 0);
-    const valorPago = formData.emAndamento ? valorParcelaNum * parcelasPagas : (editingDivida?.valorPago || 0);
-
-    const novaDivida: Divida = {
-        id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
-      descricao: formData.descricao,
-      valorTotal: parseFloat(formData.valorTotal),
-      valorPago: valorPago,
-      parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
-      parcelasPagas: parcelasPagas,
-      valorParcela: formData.tipo === 'parcelada' 
-          ? valorParcelaNum 
-        : parseFloat(formData.valorTotal),
-      dataVencimento: new Date(formData.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
-      tipo: formData.tipo,
-      categoria: formData.categoria,
-    } as any;
-
-      await saveDivida(novaDivida);
-      setDividas(prev => {
-        const index = prev.findIndex(d => d.id === novaDivida.id);
-        if (index >= 0) {
-          const clone = [...prev];
-          clone[index] = novaDivida;
-          return clone;
+      // Se for uma compra de cartão (id começa com purchase:), atualiza a compra em vez da dívida
+      if (editingDivida?.id && editingDivida.id.startsWith('purchase:')) {
+        const purchaseId = editingDivida.id.replace('purchase:', '');
+        
+        const compraAtual = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
+        
+        if (!compraAtual) {
+          return;
         }
-        return [...prev, novaDivida];
-      });
+        
+        const cardForPurchase = (cartoes as CartaoCredito[]).find(c => c.id === compraAtual.cardId);
+        
+        // Calcular parcelas pagas se for dívida em andamento
+        const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (compraAtual.parcelasPagas || 0);
+        
+        const updated: CompraCartao = {
+          ...compraAtual,
+          descricao: formData.descricao,
+          valorTotal: parseFloat(formData.valorTotal),
+          parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
+          valorParcela: formData.tipo === 'parcelada' ? valorParcelaNum : parseFloat(formData.valorTotal),
+          startMonth: new Date(formData.dataVencimento + 'T00:00:00').toISOString().slice(0,7),
+          startDay: (cardForPurchase?.diaVencimento || compraAtual.startDay || 5),
+          parcelasPagas: parcelasPagas,
+        } as CompraCartao;
+        
+        await saveCompraCartao(updated);
+        
+        setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === updated.id ? updated : p));
+        
+        try { 
+          await replanGastosFixosDaCompra(updated);
+        } catch (error) {
+          console.error('Erro em replanGastosFixosDaCompra:', error);
+        }
+      } else {
+        // Calcular parcelas pagas e valor pago se for dívida em andamento
+        const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (editingDivida?.parcelasPagas || 0);
+        const valorPago = formData.emAndamento ? valorParcelaNum * parcelasPagas : (editingDivida?.valorPago || 0);
 
-      try { await replanGastosFixosDaDivida(novaDivida); } catch {}
+        const novaDivida: Divida = {
+          id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
+          descricao: formData.descricao,
+          valorTotal: parseFloat(formData.valorTotal),
+          valorPago: valorPago,
+          parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
+          parcelasPagas: parcelasPagas,
+          valorParcela: formData.tipo === 'parcelada' 
+            ? valorParcelaNum 
+            : parseFloat(formData.valorTotal),
+          dataVencimento: new Date(formData.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
+          tipo: formData.tipo,
+          categoria: formData.categoria,
+        } as any;
+
+        await saveDivida(novaDivida);
+        setDividas(prev => {
+          const index = prev.findIndex(d => d.id === novaDivida.id);
+          if (index >= 0) {
+            const clone = [...prev];
+            clone[index] = novaDivida;
+            return clone;
+          }
+          return [...prev, novaDivida];
+        });
+
+        try { await replanGastosFixosDaDivida(novaDivida); } catch {}
+      }
+
+      resetForm();
+    } finally {
+      setIsSaving(false);
     }
-
-    resetForm();
   };
 
   const resetForm = () => {
@@ -1030,11 +1039,11 @@ export default function DividasManager() {
               )}
               
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={resetForm}>
+                <Button type="button" variant="outline" onClick={resetForm} disabled={isSaving}>
                   Cancelar
                 </Button>
-                <Button type="submit">
-                  {editingDivida ? 'Salvar' : 'Criar'}
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? 'Salvando...' : editingDivida ? 'Salvar' : 'Criar'}
                 </Button>
               </DialogFooter>
             </form>
