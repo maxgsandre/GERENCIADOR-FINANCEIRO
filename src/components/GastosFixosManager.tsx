@@ -223,14 +223,14 @@ export default function GastosFixosManager() {
     setIsSaving(true);
     
     try {
-      const novoGasto: GastoFixo = {
+    const novoGasto: GastoFixo = {
         id: editingGasto?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
-        descricao: formData.descricao,
+      descricao: formData.descricao,
         valor: valorNumerico,
-        categoria: formData.categoria,
+      categoria: formData.categoria,
         diaVencimento: diaVencimentoNumerico,
-        pago: formData.pago,
-      };
+      pago: formData.pago,
+    };
 
       await saveGastoFixo(novoGasto);
       setGastosFixos(prev => {
@@ -243,7 +243,7 @@ export default function GastosFixosManager() {
         return [...prev, novoGasto];
       });
 
-      resetForm();
+    resetForm();
     } finally {
       setIsSaving(false);
     }
@@ -805,14 +805,6 @@ export default function GastosFixosManager() {
             Gerencie seus gastos recorrentes mensais
           </p>
         </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={verificarEReverterGastosFixos}
-          className="text-xs"
-        >
-          Verificar Status
-        </Button>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
