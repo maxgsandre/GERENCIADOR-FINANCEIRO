@@ -36,6 +36,7 @@ export default function GastosFixosManager() {
   const [modoPagamento, setModoPagamento] = useState<'pay' | 'refund'>('pay');
   const [isValorPagoOpen, setIsValorPagoOpen] = useState(false);
   const [valorPagoInput, setValorPagoInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   
   
@@ -200,6 +201,8 @@ export default function GastosFixosManager() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (isSaving) return;
+    
     if (!formData.descricao || !formData.valor || !formData.categoria || !formData.diaVencimento) {
       alert('Por favor, preencha todos os campos obrigatórios.');
       return;
@@ -217,27 +220,33 @@ export default function GastosFixosManager() {
       return;
     }
 
-    const novoGasto: GastoFixo = {
-      id: editingGasto?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
-      descricao: formData.descricao,
-      valor: valorNumerico,
-      categoria: formData.categoria,
-      diaVencimento: diaVencimentoNumerico,
-      pago: formData.pago,
-    };
+    setIsSaving(true);
+    
+    try {
+      const novoGasto: GastoFixo = {
+        id: editingGasto?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
+        descricao: formData.descricao,
+        valor: valorNumerico,
+        categoria: formData.categoria,
+        diaVencimento: diaVencimentoNumerico,
+        pago: formData.pago,
+      };
 
-    await saveGastoFixo(novoGasto);
-    setGastosFixos(prev => {
-      const index = prev.findIndex(g => g.id === novoGasto.id);
-      if (index >= 0) {
-        const clone = [...prev];
-        clone[index] = novoGasto;
-        return clone;
-      }
-      return [...prev, novoGasto];
-    });
+      await saveGastoFixo(novoGasto);
+      setGastosFixos(prev => {
+        const index = prev.findIndex(g => g.id === novoGasto.id);
+        if (index >= 0) {
+          const clone = [...prev];
+          clone[index] = novoGasto;
+          return clone;
+        }
+        return [...prev, novoGasto];
+      });
 
-    resetForm();
+      resetForm();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const resetForm = () => {
@@ -965,11 +974,11 @@ export default function GastosFixosManager() {
               </div>
               
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={resetForm}>
+                <Button type="button" variant="outline" onClick={resetForm} disabled={isSaving}>
                   Cancelar
                 </Button>
-                <Button type="submit">
-                  {editingGasto ? 'Salvar' : 'Criar'}
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? 'Salvando...' : editingGasto ? 'Salvar' : 'Criar'}
                 </Button>
               </DialogFooter>
             </form>
