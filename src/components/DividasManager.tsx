@@ -78,72 +78,7 @@ export default function DividasManager() {
     return (base).toFixed(2);
   };
 
-  const replanGastosFixosDaDivida = async (d: Divida) => {
-    const dataCorrigida = new Date(d.dataVencimento + 'T00:00:00');
-    const sy = dataCorrigida.getFullYear();
-    const sm = dataCorrigida.getMonth() + 1;
-    const sd = dataCorrigida.getDate();
-    const expected = new Set<string>();
-    const totalParcelas = d.tipo === 'parcelada' ? d.parcelas : 1;
-    for (let i = 0; i < totalParcelas; i++) {
-      const { y, m } = addMonths(sy, sm, i);
-      const ym = `${y}-${String(m).padStart(2,'0')}`;
-      expected.add(ym);
-      const gastoId = `divida:${d.id}:${ym}`;
-      const valor = getInstallmentValue(d, i);
-      const gasto: GastoFixo = { id: gastoId, descricao: d.descricao, valor, categoria: (d as any).categoria || 'Esporádicos', diaVencimento: sd, dataVencimento: `${y}-${String(m).padStart(2, '0')}-${String(sd).padStart(2, '0')}`, pago: i < (d.parcelasPagas || 0) } as any;
-      await saveGastoFixo(gasto);
-      setGastosFixos((prev: GastoFixo[]) => {
-        const j = prev.findIndex(g => g.id === gastoId);
-        if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
-        return [...prev, gasto];
-      });
-    }
-    // Remover gastos que sobraram
-    const toRemove = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(`divida:${d.id}:`)).filter(g => !expected.has(g.id.split(':')[2]));
-    for (const g of toRemove) {
-      await deleteGastoFixo(g.id);
-      setGastosFixos((prev: GastoFixo[]) => prev.filter(x => x.id !== g.id));
-    }
-  };
 
-  const replanGastosFixosDaCompra = async (compra: CompraCartao) => {
-    const [sy, sm] = compra.startMonth.split('-').map(Number);
-    const card = (cartoes as CartaoCredito[]).find(x => x.id === compra.cardId);
-    const day = card?.diaVencimento || compra.startDay || 5;
-    
-    const expected = new Set<string>();
-    const totalParcelas = compra.parcelas;
-    
-    // Primeiro, remover TODOS os gastos antigos desta compra
-    const prefix = `cartao:${compra.cardId}:${compra.id}:`;
-    const gastosAntigos = (gastosFixos as GastoFixo[]).filter(g => g.id.startsWith(prefix));
-    
-    for (const g of gastosAntigos) {
-      await deleteGastoFixo(g.id);
-      setGastosFixos((prev: GastoFixo[]) => prev.filter(x => x.id !== g.id));
-    }
-    
-    // Agora criar os novos gastos
-    for (let i = 0; i < totalParcelas; i++) {
-      const { y, m } = addMonths(sy, sm, i);
-      const ym = `${y}-${String(m).padStart(2,'0')}`;
-      expected.add(ym);
-      const valor = getInstallmentValue({
-        id: 'tmp', descricao: '', valorTotal: compra.valorTotal, valorPago: 0, parcelas: compra.parcelas, parcelasPagas: compra.parcelasPagas || 0, valorParcela: compra.valorParcela, dataVencimento: `${compra.startMonth}-${String(day).padStart(2,'0')}`, tipo: compra.parcelas > 1 ? 'parcelada' : 'total'
-      } as Divida, i);
-      const gastoId = `cartao:${compra.cardId}:${compra.id}:${ym}`;
-      const cardName = (cartoes as CartaoCredito[]).find(c => c.id === compra.cardId)?.nome || '';
-      const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${cardName}: ${compra.descricao} – ${i+1}/${compra.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: day, pago: i < (compra.parcelasPagas || 0) } as any;
-      
-      await saveGastoFixo(gasto);
-      setGastosFixos((prev: GastoFixo[]) => {
-        const j = prev.findIndex(g => g.id === gastoId);
-        if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
-        return [...prev, gasto];
-      });
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -190,11 +125,6 @@ export default function DividasManager() {
         
         setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === updated.id ? updated : p));
         
-        try { 
-          await replanGastosFixosDaCompra(updated);
-        } catch (error) {
-          console.error('Erro em replanGastosFixosDaCompra:', error);
-        }
       } else {
         // Calcular parcelas pagas e valor pago se for dívida em andamento
         const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (editingDivida?.parcelasPagas || 0);
@@ -226,7 +156,6 @@ export default function DividasManager() {
           return [...prev, novaDivida];
         });
 
-        try { await replanGastosFixosDaDivida(novaDivida); } catch {}
       }
 
       resetForm();

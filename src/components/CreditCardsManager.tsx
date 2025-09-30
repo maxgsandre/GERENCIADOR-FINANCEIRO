@@ -12,7 +12,7 @@ export default function CreditCardsManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { cartoes, setCartoes, comprasCartao, setComprasCartao, saveCartao, saveCompraCartao, saveGastoFixo, setGastosFixos } = context as any;
+  const { cartoes, setCartoes, comprasCartao, setComprasCartao, saveCartao, saveCompraCartao } = context as any;
 
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
@@ -80,23 +80,6 @@ export default function CreditCardsManager() {
     await saveCompraCartao(p);
     setComprasCartao((prev: CompraCartao[]) => [...prev, p]);
 
-    // Gerar gastos fixos vinculados por competência
-    try {
-      const [sy, sm] = startMonth.split('-').map(Number);
-      for (let i = 0; i < p.parcelas; i++) {
-        const { y, m } = addMonths(sy, sm, i);
-        const ym = `${y}-${String(m).padStart(2,'0')}`;
-        const valor = getInstallmentValue(p.valorTotal, p.valorParcela, p.parcelas, i);
-        const gastoId = `cartao:${p.cardId}:${p.id}:${ym}`;
-        const gasto: GastoFixo = { id: gastoId, descricao: `Cartão ${selectedCard?.nome || ''}: ${p.descricao} – ${i+1}/${p.parcelas}`, valor, categoria: 'Cartão de Crédito', diaVencimento: 5, pago: false } as any;
-        await saveGastoFixo(gasto);
-        setGastosFixos((prev: GastoFixo[]) => {
-          const j = prev.findIndex(g => g.id === gastoId);
-          if (j >= 0) { const clone = [...prev]; clone[j] = gasto; return clone; }
-          return [...prev, gasto];
-        });
-      }
-    } catch {}
 
     setIsPurchaseDialogOpen(false);
     setDesc(''); setValorTotal(''); setParcelas('1'); setValorParcela('');

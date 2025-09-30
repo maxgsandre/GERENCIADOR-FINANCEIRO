@@ -44,18 +44,7 @@ export default function Dashboard() {
 
   // Calcular gastos fixos do mês selecionado
   const gastosFixosDoMes = gastosFixos.filter(gasto => {
-    // Gastos fixos manuais são sempre incluídos
-    if (!gasto.id.startsWith('divida:') && !gasto.id.startsWith('cartao:')) {
-      return true;
-    }
-    
-    // Gastos vinculados são filtrados por mês
-    if (gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:')) {
-      const parts = gasto.id.split(':');
-      const ym = parts[parts.length - 1];
-      return ym === selectedMonth;
-    }
-    
+    // Todos os gastos fixos são manuais agora, sempre incluídos
     return true;
   });
 
@@ -76,12 +65,8 @@ export default function Dashboard() {
     const card = (cartoes as any[]).find(x => x.id === c.cardId);
     const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
     
-    // Calcular parcelas pagas baseado nos gastos fixos (mesma lógica do DividasManager)
-    const parcelasPagasNosGastosFixos = (gastosFixos as any[]).filter(g => 
-      g.id.startsWith(`cartao:${c.cardId}:${c.id}:`) && g.pago
-    ).length;
-    
-    const parcelasPagasAtualizadas = Math.max(c.parcelasPagas || 0, parcelasPagasNosGastosFixos);
+    // Usar apenas os dados da compra (não há mais gastos fixos automáticos)
+    const parcelasPagasAtualizadas = c.parcelasPagas || 0;
     const valorPagoEstimado = Math.min(c.parcelas, parcelasPagasAtualizadas) * c.valorParcela + (parcelasPagasAtualizadas === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
     
     // Ajustar data de vencimento para o mês selecionado
