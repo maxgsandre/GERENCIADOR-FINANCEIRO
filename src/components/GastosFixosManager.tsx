@@ -70,7 +70,7 @@ export default function GastosFixosManager() {
 
   // Função para verificar e reverter gastos fixos sem transação correspondente
   const verificarEReverterGastosFixos = () => {
-    if (!transacoes || !Array.isArray(transacoes)) {
+    if (!transacoes || !Array.isArray(transacoes) || !gastosFixos || !Array.isArray(gastosFixos)) {
       return;
     }
     
@@ -88,13 +88,16 @@ export default function GastosFixosManager() {
       return `Gasto fixo pago: ${gasto.descricao}`;
     };
 
-    // Para cada gasto fixo com valorPago > 0, verificar se ainda tem transação correspondente
+    // Para cada gasto fixo marcado como pago (pago: true ou valorPago > 0), verificar se tem transação correspondente
     (gastosFixos as GastoFixo[]).forEach(gasto => {
-      if (gasto.valorPago && gasto.valorPago > 0) {
+      const isPago = gasto.pago || (gasto.valorPago && gasto.valorPago > 0);
+      
+      if (isPago) {
         const descricaoEsperada = getDescricaoTransacao(gasto);
         const temTransacao = transacoesGastosFixos.some(t => t.descricao === descricaoEsperada);
         
         if (!temTransacao) {
+          console.log(`Revertendo gasto sem transação: ${gasto.descricao} (ID: ${gasto.id})`);
           reverterPagamentoGastoFixo(gasto.id);
         }
       }
@@ -114,17 +117,18 @@ export default function GastosFixosManager() {
     }
   }, [gastosFixos]);
 
-  // Monitora mudanças nas transações e verifica gastos fixos
+  // Monitora mudanças nas transações e gastos fixos para verificar consistência
   useEffect(() => {
-    // Aguardar um pouco para garantir que as transações foram atualizadas
+    // Aguardar as operações de gravação (pagar -> salvar gasto -> salvar transação)
+    // para evitar falso positivo e reverter logo após o pagamento
     const timeoutId = setTimeout(() => {
       verificarEReverterGastosFixos();
-    }, 100);
+    }, 1200);
     
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [transacoes]); // Executa quando transacoes mudam
+  }, [transacoes, gastosFixos]); // Executa quando transacoes ou gastosFixos mudam
   const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < gastoSelecionado.valor) : false;
 
   // Mês selecionado para exibição (filtrar parcelas geradas por mês)
