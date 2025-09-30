@@ -38,8 +38,36 @@ export default function GastosFixosManager() {
   const [valorPagoInput, setValorPagoInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
+  const autoCleanRanRef = useRef(false);
   
   
+  // Função para limpar gastos fixos criados automaticamente por dívidas
+  const limparGastosFixosAutomaticos = async () => {
+    if (!gastosFixos || !Array.isArray(gastosFixos)) {
+      return;
+    }
+
+    // Identificar gastos fixos criados automaticamente por dívidas
+    const gastosAutomaticos = (gastosFixos as GastoFixo[]).filter(gasto => 
+      gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:')
+    );
+
+    console.log(`Encontrados ${gastosAutomaticos.length} gastos fixos criados automaticamente por dívidas`);
+
+    // Remover cada gasto automático
+    for (const gasto of gastosAutomaticos) {
+      try {
+        await deleteGastoFixo(gasto.id);
+        setGastosFixos((prev: GastoFixo[]) => prev.filter(g => g.id !== gasto.id));
+        console.log(`Removido gasto automático: ${gasto.descricao}`);
+      } catch (error) {
+        console.error(`Erro ao remover gasto ${gasto.id}:`, error);
+      }
+    }
+
+    console.log('Limpeza de gastos fixos automáticos concluída');
+  };
+
   // Função para verificar e reverter gastos fixos sem transação correspondente
   const verificarEReverterGastosFixos = () => {
     if (!transacoes || !Array.isArray(transacoes)) {
@@ -72,6 +100,19 @@ export default function GastosFixosManager() {
       }
     });
   };
+
+  // Auto-limpar gastos fixos criados por dívidas na primeira carga da tela
+  useEffect(() => {
+    if (autoCleanRanRef.current) return;
+    try {
+      const temAutomaticos = Array.isArray(gastosFixos) && (gastosFixos as GastoFixo[]).some(g => g.id.startsWith('divida:') || g.id.startsWith('cartao:'));
+      if (temAutomaticos) {
+        limparGastosFixosAutomaticos();
+      }
+    } finally {
+      autoCleanRanRef.current = true;
+    }
+  }, [gastosFixos]);
 
   // Monitora mudanças nas transações e verifica gastos fixos
   useEffect(() => {
@@ -806,25 +847,25 @@ export default function GastosFixosManager() {
           </p>
         </div>
         
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={resetForm}>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Gasto Fixo
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {editingGasto ? 'Editar Gasto Fixo' : 'Novo Gasto Fixo'}
-              </DialogTitle>
-              <DialogDescription>
-                {editingGasto 
-                  ? 'Edite as informações do gasto fixo selecionado.'
-                  : 'Adicione um novo gasto que se repete mensalmente.'
-                }
-              </DialogDescription>
-            </DialogHeader>
+        <div className="flex items-center">
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={resetForm}>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Gasto Fixo
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editingGasto ? 'Editar Gasto Fixo' : 'Novo Gasto Fixo'}
+                </DialogTitle>
+                <DialogDescription>
+                  {editingGasto 
+                    ? 'Edite as informações do gasto fixo selecionado.'
+                    : 'Adicione um novo gasto que se repete mensalmente.'}
+                </DialogDescription>
+              </DialogHeader>
             
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -976,6 +1017,15 @@ export default function GastosFixosManager() {
             </form>
           </DialogContent>
         </Dialog>
+          <Button 
+            variant="destructive" 
+            onClick={limparGastosFixosAutomaticos}
+            className="ml-2"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Limpar Gastos Automáticos
+          </Button>
+        </div>
       </div>
 
       {/* Cards de resumo */}
