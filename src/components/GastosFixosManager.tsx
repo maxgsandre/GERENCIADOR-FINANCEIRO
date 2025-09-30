@@ -42,18 +42,12 @@ export default function GastosFixosManager() {
   // Função para verificar e reverter gastos fixos sem transação correspondente
   const verificarEReverterGastosFixos = () => {
     if (!transacoes || !Array.isArray(transacoes)) {
-      console.log('🔍 DEBUG: Transações não disponíveis ou não é array');
       return;
     }
     
     const transacoesGastosFixos = (transacoes as any[]).filter(t => 
       t.descricao && t.descricao.includes('Gasto fixo pago:')
     );
-    
-    console.log('🔍 DEBUG: Verificando gastos fixos...');
-    console.log('🔍 DEBUG: Total de transações:', transacoes.length);
-    console.log('🔍 DEBUG: Transações de gastos fixos encontradas:', transacoesGastosFixos.length);
-    console.log('🔍 DEBUG: Lista de transações de gastos fixos:', transacoesGastosFixos.map(t => t.descricao));
     
     // Função para obter descrição da transação baseada no tipo de gasto
     const getDescricaoTransacao = (gasto: GastoFixo) => {
@@ -71,17 +65,8 @@ export default function GastosFixosManager() {
         const descricaoEsperada = getDescricaoTransacao(gasto);
         const temTransacao = transacoesGastosFixos.some(t => t.descricao === descricaoEsperada);
         
-        console.log(`🔍 DEBUG: Gasto: ${gasto.descricao}`);
-        console.log(`🔍 DEBUG: - Descrição esperada: ${descricaoEsperada}`);
-        console.log(`🔍 DEBUG: - Tem transação: ${temTransacao}`);
-        console.log(`🔍 DEBUG: - Valor pago: ${gasto.valorPago}`);
-        console.log(`🔍 DEBUG: - Status pago: ${gasto.pago}`);
-        
         if (!temTransacao) {
-          console.log('⚠️ DEBUG: Revertendo pagamento para:', gasto.descricao);
           reverterPagamentoGastoFixo(gasto.id);
-        } else {
-          console.log('✅ DEBUG: Gasto mantido como pago:', gasto.descricao);
         }
       }
     });
@@ -89,18 +74,12 @@ export default function GastosFixosManager() {
 
   // Monitora mudanças nas transações e verifica gastos fixos
   useEffect(() => {
-    console.log('🔄 DEBUG: useEffect disparado - transações mudaram');
-    console.log('🔄 DEBUG: Transações disponíveis:', transacoes?.length || 0);
-    console.log('🔄 DEBUG: Gastos fixos disponíveis:', gastosFixos?.length || 0);
-    
     // Aguardar um pouco para garantir que as transações foram atualizadas
     const timeoutId = setTimeout(() => {
-      console.log('⏰ DEBUG: Executando verificação após timeout');
       verificarEReverterGastosFixos();
     }, 100);
     
     return () => {
-      console.log('🧹 DEBUG: Limpando timeout');
       clearTimeout(timeoutId);
     };
   }, [transacoes]); // Executa quando transacoes mudam
@@ -190,22 +169,14 @@ export default function GastosFixosManager() {
       };
     }
     
-    // Para gastos vinculados a dívidas, usar dataVencimento
-    if (!gasto.dataVencimento) {
-      return {
-        ...gasto,
-        dataVencimentoAjustada: gasto.dataVencimento
-      };
-    }
+    // Para gastos vinculados a dívidas, usar diaVencimento
+    const diaVencimento = gasto.diaVencimento;
     
-    const dataOriginal = new Date(gasto.dataVencimento + 'T00:00:00');
-    const diaVencimento = dataOriginal.getDate();
-    
-    // Validar se a data é válida
+    // Validar se o dia é válido
     if (isNaN(diaVencimento) || diaVencimento < 1 || diaVencimento > 31) {
       return {
         ...gasto,
-        dataVencimentoAjustada: gasto.dataVencimento
+        dataVencimentoAjustada: `${anoSelecionado}-${String(mesSelecionado).padStart(2, '0')}-${String(diaVencimento).padStart(2, '0')}`
       };
     }
     
@@ -216,7 +187,7 @@ export default function GastosFixosManager() {
     if (isNaN(novaData.getTime())) {
       return {
         ...gasto,
-        dataVencimentoAjustada: gasto.dataVencimento
+        dataVencimentoAjustada: `${anoSelecionado}-${String(mesSelecionado).padStart(2, '0')}-${String(diaVencimento).padStart(2, '0')}`
       };
     }
     
@@ -360,15 +331,12 @@ export default function GastosFixosManager() {
     try {
       const gasto = (gastosFixos as GastoFixo[]).find(g => g.id === gastoId);
       if (!gasto) {
-        console.log('Gasto não encontrado:', gastoId);
         return;
       }
 
-      console.log('Revertendo pagamento do gasto:', gasto.descricao, 'de', gasto.valorPago, 'para 0');
       const gastoAtualizado = { ...gasto, valorPago: 0, pago: false };
       await saveGastoFixo(gastoAtualizado);
       setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? gastoAtualizado : g));
-      console.log('Pagamento revertido com sucesso');
     } catch (error) {
       console.error('Erro ao reverter pagamento:', error);
     }
