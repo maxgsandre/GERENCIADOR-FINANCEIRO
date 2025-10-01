@@ -64,10 +64,13 @@ export interface Divida {
 export interface Cofrinho {
   id: string;
   nome: string;
-  saldo: number;
-  objetivo?: number;
-  percentualCDI: number;
-  rendimentoMensal: number;
+  saldo: number; // saldo armazenado; para CDI podemos exibir saldo líquido calculado dinamicamente
+  tipo?: 'cdi' | 'manual';
+  dataAplicacao?: string; // YYYY-MM-DD
+  valorAplicado?: number; // aporte inicial
+  aportes?: { data: string; valor: number }[]; // aportes adicionais
+  percentualCDI?: number; // somente quando tipo = 'cdi'
+  rendimentoMensal?: number; // legado; manter para compatibilidade visual
   dataCriacao: string;
   cor: string;
 }
