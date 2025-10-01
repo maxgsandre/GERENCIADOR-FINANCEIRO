@@ -16,7 +16,7 @@ export default function TransacoesManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId } = context;
+  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId, dividas, setDividas, saveDivida, comprasCartao, setComprasCartao, saveCompraCartao } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
@@ -90,6 +90,68 @@ export default function TransacoesManager() {
     }
   };
 
+  // Função para reversão instantânea de dívidas
+  const reverterDividaInstantaneamente = async (transacao: Transacao) => {
+    const nomeDivida = transacao.descricao.replace('Pagamento dívida: ', '').replace('Pagamento cartão: ', '');
+    
+    // Procurar dívida normal correspondente
+    const dividaEncontrada = dividas.find(d => d.descricao === nomeDivida);
+    if (dividaEncontrada) {
+      console.log('🚨 [REVERSÃO INSTANTÂNEA] Revertendo dívida:', dividaEncontrada.descricao);
+      
+      const novoValorPago = Math.max(0, (dividaEncontrada.valorPago || 0) - transacao.valor);
+      let novasParcelasPagas = dividaEncontrada.parcelasPagas || 0;
+      
+      if (dividaEncontrada.tipo === 'total') {
+        if (novoValorPago < dividaEncontrada.valorTotal) {
+          novasParcelasPagas = 0;
+        }
+      } else {
+        novasParcelasPagas = Math.floor(novoValorPago / dividaEncontrada.valorParcela);
+      }
+
+      const dividaAtualizada = {
+        ...dividaEncontrada,
+        valorPago: novoValorPago,
+        parcelasPagas: Math.min(novasParcelasPagas, dividaEncontrada.parcelas),
+      };
+      
+      await saveDivida(dividaAtualizada);
+      setDividas(prev => prev.map(d => d.id === dividaAtualizada.id ? dividaAtualizada : d));
+      console.log('🚨 [REVERSÃO INSTANTÂNEA] ✅ Dívida revertida instantaneamente!');
+      return;
+    }
+    
+    // Procurar compra de cartão correspondente
+    const compraEncontrada = comprasCartao.find(c => 
+      c.descricao === nomeDivida || c.descricao.includes(nomeDivida)
+    );
+    if (compraEncontrada) {
+      console.log('🚨 [REVERSÃO INSTANTÂNEA] Revertendo compra de cartão:', compraEncontrada.descricao);
+      
+      const novoValorPago = Math.max(0, ((compraEncontrada as any).valorPago || 0) - transacao.valor);
+      let novasParcelasPagas = compraEncontrada.parcelasPagas || 0;
+      
+      if (compraEncontrada.parcelas === 1) {
+        if (novoValorPago < compraEncontrada.valorTotal) {
+          novasParcelasPagas = 0;
+        }
+      } else {
+        novasParcelasPagas = Math.floor(novoValorPago / compraEncontrada.valorParcela);
+      }
+
+      const compraAtualizada = {
+        ...compraEncontrada,
+        valorPago: novoValorPago,
+        parcelasPagas: Math.min(novasParcelasPagas, compraEncontrada.parcelas),
+      };
+      
+      await saveCompraCartao(compraAtualizada);
+      setComprasCartao(prev => prev.map(c => c.id === compraAtualizada.id ? compraAtualizada : c));
+      console.log('🚨 [REVERSÃO INSTANTÂNEA] ✅ Compra de cartão revertida instantaneamente!');
+    }
+  };
+
   const handleDelete = async (transacao: Transacao) => {
     console.log('🚨 [DEBUG EXCLUSÃO] Iniciando exclusão da transação:', transacao);
     
@@ -129,6 +191,12 @@ export default function TransacoesManager() {
     try {
       await deleteTransacao(transacao.id);
       console.log('🚨 [DEBUG EXCLUSÃO] ✅ Transação excluída com sucesso!');
+      
+      // Reversão instantânea após exclusão
+      if (isPagamentoDivida) {
+        console.log('🚨 [REVERSÃO INSTANTÂNEA] Iniciando reversão...');
+        await reverterDividaInstantaneamente(transacao);
+      }
     } catch (error) {
       console.log('🚨 [DEBUG EXCLUSÃO] ❌ ERRO ao excluir transação:', error);
     }
