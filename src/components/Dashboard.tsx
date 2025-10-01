@@ -20,7 +20,12 @@ export default function Dashboard() {
   // Calcular totais
   const totalCaixas = caixas.reduce((sum, caixa) => sum + caixa.saldo, 0);
   const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => sum + cofrinho.saldo, 0);
-  const totalRendimentoMensal = cofrinhos.reduce((sum, cofrinho) => sum + cofrinho.rendimentoMensal, 0);
+  
+  // Filtrar apenas cofrinhos de investimentos
+  const cofrinhosInvestimentos = cofrinhos.filter(c => c.nome === 'Investimentos Totais');
+  const totalInvestimentos = cofrinhosInvestimentos.reduce((sum, cofrinho) => sum + cofrinho.saldo, 0);
+  const totalRendimentoMensal = cofrinhosInvestimentos.reduce((sum, cofrinho) => sum + cofrinho.rendimentoMensal, 0);
+  
   const totalDividas = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
 
   // Entradas e saídas do mês selecionado
@@ -222,12 +227,12 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Rendimentos</CardTitle>
+            <CardTitle className="text-sm">Investimentos Totais</CardTitle>
             <PiggyBank className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-              R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {totalInvestimentos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>
@@ -276,11 +281,11 @@ export default function Dashboard() {
             
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4 text-blue-600" />
-                <p className="text-sm text-muted-foreground">Saldo Líquido</p>
+                <PiggyBank className="h-4 w-4 text-blue-600" />
+                <p className="text-sm text-muted-foreground">Rendimentos</p>
               </div>
-              <p className={`text-xl font-semibold ${(entradasMes - saidasMes) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                R$ {(entradasMes - saidasMes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <p className="text-xl font-semibold text-blue-600">
+                +R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês
               </p>
             </div>
           </div>
