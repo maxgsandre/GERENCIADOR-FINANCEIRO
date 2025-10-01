@@ -1982,31 +1982,15 @@ export default function DividasManager() {
               const restante = divida.valorTotal - divida.valorPago;
               const isQuitada = divida.valorPago >= divida.valorTotal;
               const parcelaMes = getMonthlyDue(divida);
+              const { status, cor, bg } = getStatusParcela(divida);
               
               return (
                 <div key={divida.id} className={`border rounded-lg p-3 space-y-3 ${isQuitada ? 'opacity-60' : ''}`}>
                   <div className="flex justify-between items-start">
                     <div className="space-y-1 flex-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          {isQuitada && <CheckCircle className="h-4 w-4 text-green-600 mr-2" />}
-                          <p className="font-medium">{divida.descricao}</p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {parcelaMes > 0 && (
-                            <div className={`${
-                              getMonthlyPaid(divida) >= parcelaMes 
-                                ? 'text-green-600' 
-                                : 'text-red-600'
-                            }`}>
-                              {getMonthlyPaid(divida) >= parcelaMes ? (
-                                <CheckCircle className="h-4 w-4" />
-                              ) : (
-                                <Circle className="h-4 w-4" />
-                              )}
-                            </div>
-                          )}
-                        </div>
+                      <div className="flex items-center">
+                        {isQuitada && <CheckCircle className="h-4 w-4 text-green-600 mr-2" />}
+                        <p className="font-medium">{divida.descricao}</p>
                       </div>
                       <Badge variant={divida.tipo === 'parcelada' ? 'default' : 'secondary'} className="text-xs">
                         {divida.tipo === 'parcelada' 
@@ -2018,43 +2002,64 @@ export default function DividasManager() {
                         <Calendar className="h-4 w-4 mr-1" />
                         {new Date(divida.dataVencimento + 'T00:00:00').toLocaleDateString('pt-BR')}
                       </div>
-                      <div className="text-sm text-muted-foreground">Parcela do mês: <span className="font-medium text-foreground">R$ {parcelaMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
                     </div>
                     
                     <div className="text-right space-y-1">
                       <p className="text-sm font-medium">
                         R$ {divida.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </p>
-                      <p className={`text-sm font-medium ${restante > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        Restante: R$ {restante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </p>
+                      {parcelaMes > 0 && (
+                        <div className={`text-xs ${bg} ${cor} px-2 py-1 rounded`}>
+                          Mês: R$ {parcelaMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </div>
+                      )}
                     </div>
                   </div>
                   
                   <div className="space-y-2">
                     <div className="space-y-1">
+                      <div className="flex justify-between items-center text-xs text-muted-foreground mb-1">
+                        <span>{percentualPago.toFixed(1)}% pago</span>
+                        <span className={restante > 0 ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
+                          Falta: R$ {restante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
                       <Progress value={percentualPago} className="h-2" />
-                      <span className="text-xs text-muted-foreground">
-                        {percentualPago.toFixed(1)}% pago
-                      </span>
                     </div>
                     
-                    <div className="flex justify-end space-x-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(divida)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(divida.id)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handlePagamento(divida)}
+                          className="text-green-600 hover:text-green-700"
+                          title="Registrar Pagamento"
+                        >
+                          <DollarSign className="h-4 w-4" />
+                        </Button>
+                        <span className={`text-sm ${cor}`}>
+                          {status}
+                        </span>
+                      </div>
+                      
+                      <div className="flex space-x-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEdit(divida)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(divida.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
