@@ -48,18 +48,6 @@ export default function Dashboard() {
     return true;
   });
 
-  // Calcular total de gastos fixos do mês selecionado
-  const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
-
-  // Calcular previsão de déficit/superávit
-  const previsaoDeficitSuperavit = totalReceitasPrevistas - totalGastosFixosMes;
-
-  // Calcular dívidas do mês selecionado (incluindo compras de cartão)
-  const dividasDoMes = dividas.filter(divida => {
-    const dataVencimento = new Date(divida.dataVencimento);
-    return dataVencimento.getMonth() === (mesSelecionado - 1) && dataVencimento.getFullYear() === anoSelecionado;
-  });
-  
   // Incluir compras de cartão como dívidas (usando mesma lógica do DividasManager)
   const comprasCartaoAsDividas = (comprasCartao as any[]).map((c) => {
     const card = (cartoes as any[]).find(x => x.id === c.cardId);
@@ -96,6 +84,31 @@ export default function Dashboard() {
     }
     return d.valorTotal - d.valorPago;
   };
+
+  // Calcular total de gastos fixos do mês selecionado
+  const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
+
+  // Calcular parcelas de dívidas do mês selecionado
+  const totalParcelasDividasMes = dividas.reduce((sum, divida) => {
+    return sum + getMonthlyDue(divida);
+  }, 0);
+
+  // Calcular parcelas de compras de cartão do mês selecionado
+  const totalParcelasCartaoMes = comprasCartaoAsDividas.reduce((sum, compra) => {
+    return sum + getMonthlyDue(compra);
+  }, 0);
+
+  // Total de gastos do mês = gastos fixos + parcelas de dívidas + parcelas de cartão
+  const totalGastosMes = totalGastosFixosMes + totalParcelasDividasMes + totalParcelasCartaoMes;
+
+  // Calcular previsão de déficit/superávit
+  const previsaoDeficitSuperavit = totalReceitasPrevistas - totalGastosMes;
+
+  // Calcular dívidas do mês selecionado (incluindo compras de cartão)
+  const dividasDoMes = dividas.filter(divida => {
+    const dataVencimento = new Date(divida.dataVencimento);
+    return dataVencimento.getMonth() === (mesSelecionado - 1) && dataVencimento.getFullYear() === anoSelecionado;
+  });
 
   // Calcular valor restante total a pagar de todas as dívidas
   const totalDividasRestante = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
@@ -247,7 +260,7 @@ export default function Dashboard() {
                 <p className="text-sm text-muted-foreground">Gastos Totais do Mês</p>
               </div>
               <p className="text-xl font-semibold text-orange-600">
-                R$ {totalGastosFixosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                R$ {totalGastosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
