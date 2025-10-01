@@ -1200,7 +1200,7 @@ export default function DividasManager() {
               Nova Dívida
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto overscroll-contain !overflow-y-scroll" style={{ maxHeight: '90vh', overflowY: 'scroll' }}>
             <DialogHeader>
               <DialogTitle>
                 {editingDivida ? 'Editar Dívida' : 'Nova Dívida'}
@@ -1396,7 +1396,7 @@ export default function DividasManager() {
 
       {/* Dialog de pagamento */}
       <Dialog open={isPagamentoOpen} onOpenChange={(o) => { setIsPagamentoOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
-        <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto overscroll-contain">
           <DialogHeader>
             <DialogTitle>Registrar Pagamento</DialogTitle>
             <DialogDescription>
@@ -1770,7 +1770,7 @@ export default function DividasManager() {
 
       {/* Editar Cartão */}
       <Dialog open={isEditCardDialogOpen} onOpenChange={setIsEditCardDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto overscroll-contain">
           <DialogHeader>
             <DialogTitle>Editar Cartão</DialogTitle>
             <DialogDescription>
