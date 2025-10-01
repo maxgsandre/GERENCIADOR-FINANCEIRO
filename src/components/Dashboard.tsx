@@ -72,10 +72,8 @@ export default function Dashboard() {
   // Total de investimentos: soma de todos os cofrinhos já com rendimentos
   const totalInvestimentos = totalCofrinhos;
   
-  // Rendimento mensal anterior mantido (se usado em outro lugar)
-  const totalRendimentoMensal = cofrinhos
-    .filter(c => c.nome === 'Investimentos Totais')
-    .reduce((sum, cofrinho) => sum + (cofrinho.rendimentoMensal || 0), 0);
+  // Rendimentos: soma do que rendeu em reais somando todos os cofrinhos (por mês)
+  const totalRendimentoMensal = cofrinhos.reduce((sum, c) => sum + (c.rendimentoMensal || 0), 0);
   
   const totalDividas = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
 
