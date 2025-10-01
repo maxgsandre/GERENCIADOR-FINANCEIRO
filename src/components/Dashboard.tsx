@@ -1,7 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, LabelList } from 'recharts';
 import { FinanceiroContext } from '../App';
 import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, DollarSign, ArrowUpCircle, ArrowDownCircle, Target } from 'lucide-react';
 
@@ -208,6 +208,8 @@ export default function Dashboard() {
     name: categoria,
     value: valor,
   }));
+
+  const totalGastosCategorias = dadosGastos.reduce((sum, d) => sum + d.value, 0);
 
   const cores = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00'];
 
@@ -458,6 +460,15 @@ export default function Dashboard() {
                     formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
                   />
                   <Bar dataKey="value">
+                    <LabelList position="top" content={(props: any) => {
+                      const { x, y, width, value } = props;
+                      const pct = totalGastosCategorias > 0 ? (Number(value) / totalGastosCategorias) * 100 : 0;
+                      return (
+                        <text x={x + width / 2} y={Math.min(y - 6, 290)} fill="#9ca3af" textAnchor="middle" fontSize={12}>
+                          {`${pct.toFixed(0)}%`}
+                        </text>
+                      );
+                    }} />
                     {dadosGastos.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={cores[index % cores.length]} />
                     ))}
