@@ -80,6 +80,15 @@ export default function DividasManager() {
     return (base).toFixed(2);
   };
 
+  // Calcula automaticamente o valor total quando parcela/parcelas mudarem.
+  const recomputeTotal = (parcelaStr: string, parcelasStr: string) => {
+    const parcela = parseFloat(parcelaStr.replace(',', '.'));
+    const parcelas = parseInt(parcelasStr);
+    if (!isFinite(parcela) || !isFinite(parcelas) || parcelas <= 0) return '';
+    const total = parcela * parcelas;
+    return total.toFixed(2);
+  };
+
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1305,7 +1314,11 @@ export default function DividasManager() {
                       type="number"
                       step="0.01"
                       value={formData.valorParcela}
-                      onChange={(e) => setFormData(prev => ({ ...prev, valorParcela: e.target.value }))}
+                      onChange={(e) => setFormData(prev => ({ 
+                        ...prev, 
+                        valorParcela: e.target.value,
+                        valorTotal: prev.tipo === 'parcelada' ? recomputeTotal(e.target.value, prev.parcelas) : prev.valorTotal
+                      }))}
                       placeholder="0.00"
                       required
                     />
@@ -1638,7 +1651,7 @@ export default function DividasManager() {
                     </div>
                     <div className="space-y-2">
                       <Label>Valor da Parcela</Label>
-                      <Input type="number" step="0.01" value={purchaseValorParcela} onChange={(e) => setPurchaseValorParcela(e.target.value)} required />
+                      <Input type="number" step="0.01" value={purchaseValorParcela} onChange={(e) => { setPurchaseValorParcela(e.target.value); setPurchaseValorTotal(recomputeTotal(e.target.value, purchaseParcelas)); }} required />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
