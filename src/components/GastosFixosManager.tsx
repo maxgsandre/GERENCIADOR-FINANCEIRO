@@ -52,20 +52,14 @@ export default function GastosFixosManager() {
       gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:')
     );
 
-    console.log(`Encontrados ${gastosAutomaticos.length} gastos fixos criados automaticamente por dívidas`);
-
-    // Remover cada gasto automático
     for (const gasto of gastosAutomaticos) {
       try {
         await deleteGastoFixo(gasto.id);
         setGastosFixos((prev: GastoFixo[]) => prev.filter(g => g.id !== gasto.id));
-        console.log(`Removido gasto automático: ${gasto.descricao}`);
       } catch (error) {
         console.error(`Erro ao remover gasto ${gasto.id}:`, error);
       }
     }
-
-    console.log('Limpeza de gastos fixos automáticos concluída');
   };
 
   // Função para verificar e reverter gastos fixos sem transação correspondente
@@ -97,7 +91,6 @@ export default function GastosFixosManager() {
         const temTransacao = transacoesGastosFixos.some(t => t.descricao === descricaoEsperada);
         
         if (!temTransacao) {
-          console.log(`Revertendo gasto sem transação: ${gasto.descricao} (ID: ${gasto.id})`);
           reverterPagamentoGastoFixo(gasto.id);
         }
       }
@@ -376,7 +369,7 @@ export default function GastosFixosManager() {
         await (saveCompraCartao && (saveCompraCartao as any)(compraAtualizada));
       }
     } catch (error) {
-      console.error('Erro ao atualizar progresso das compras:', error);
+      console.error('Erro ao atualizar progresso:', error);
     }
   };
 

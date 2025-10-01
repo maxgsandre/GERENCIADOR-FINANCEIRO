@@ -132,18 +132,18 @@ export default function DividasManager() {
         const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (editingDivida?.parcelasPagas || 0);
         const valorPago = formData.emAndamento ? valorParcelaNum * parcelasPagas : (editingDivida?.valorPago || 0);
 
-        const novaDivida: Divida = {
+    const novaDivida: Divida = {
           id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
-          descricao: formData.descricao,
-          valorTotal: parseFloat(formData.valorTotal),
+      descricao: formData.descricao,
+      valorTotal: parseFloat(formData.valorTotal),
           valorPago: valorPago,
-          parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
+      parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
           parcelasPagas: parcelasPagas,
-          valorParcela: formData.tipo === 'parcelada' 
+      valorParcela: formData.tipo === 'parcelada' 
             ? valorParcelaNum 
-            : parseFloat(formData.valorTotal),
+        : parseFloat(formData.valorTotal),
           dataVencimento: new Date(formData.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
-          tipo: formData.tipo,
+      tipo: formData.tipo,
           categoria: formData.categoria,
         } as any;
 
@@ -265,7 +265,6 @@ export default function DividasManager() {
       // remover cartão
       await (context as any).deleteCartao(cardId);
     } catch (e) {
-      console.error(e);
       alert('Não foi possível excluir o cartão.');
     }
   };
@@ -289,7 +288,6 @@ export default function DividasManager() {
       setEditingCard(null);
       setCardName(''); setCardLimit('');
     } catch (e) {
-      console.error(e);
       alert('Não foi possível salvar o cartão.');
     }
   };
@@ -367,7 +365,6 @@ export default function DividasManager() {
         
         // remover gastos fixos vinculados
       } catch (e) {
-        console.error(e);
         alert('Não foi possível excluir a compra do cartão.');
       }
       return;
@@ -380,7 +377,6 @@ export default function DividasManager() {
       setDividas(prev => prev.filter(d => d.id !== id));
       
     } catch (e) {
-      console.error('Erro ao excluir dívida:', e);
       alert('Não foi possível excluir a dívida.');
     }
   };
@@ -503,18 +499,15 @@ export default function DividasManager() {
 
         const novoValorPago = (dividaAtual.valorPago || 0) + valorPagamento;
         
-        // NÃO atualizar parcelasPagas aqui - permanece inalterado
-        // O pagamento só afeta o valorPago e o status
         const atualizada: Divida = {
           ...dividaAtual,
           valorPago: novoValorPago,
-          parcelasPagas: dividaAtual.parcelasPagas || 0, // Mantém o valor original
+          parcelasPagas: dividaAtual.parcelasPagas || 0,
         };
 
         await saveDivida(atualizada);
         setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
 
-        // Criar transação com descrição limpa (sem ID)
         await (saveTransacao && saveTransacao({
           id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
           caixaId: caixaPagamento,
@@ -526,7 +519,6 @@ export default function DividasManager() {
           hora: new Date().toTimeString().slice(0,5)
         }));
 
-        // Debitar o caixa
         const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
         if (cx) {
           await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
@@ -537,24 +529,20 @@ export default function DividasManager() {
         // Atualizar compra
         const compra = comprasCartao.find((p: CompraCartao) => p.id === compraSelecionada.id);
         if (!compra) {
-          console.error('Compra não encontrada:', compraSelecionada.id);
           return;
         }
 
         const novoValorPago = ((compra as any).valorPago || 0) + valorPagamento;
         
-        // NÃO atualizar parcelasPagas aqui - permanece inalterado
-        // O pagamento só afeta o valorPago e o status
         const atualizada = { 
           ...compra, 
           valorPago: novoValorPago,
-          parcelasPagas: compra.parcelasPagas || 0, // Mantém o valor original
+          parcelasPagas: compra.parcelasPagas || 0,
         } as CompraCartao;
         
         await saveCompraCartao(atualizada);
         setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === atualizada.id ? atualizada : p));
 
-        // Criar transação com descrição limpa (sem ID)
         await (saveTransacao && saveTransacao({
           id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
           caixaId: caixaPagamento,
@@ -577,15 +565,7 @@ export default function DividasManager() {
     setDividaSelecionada(null);
       setCompraSelecionada(null);
       setValorPagamentoInput('');
-    } catch (error) {
-      console.error('Erro ao processar pagamento:', error);
-      console.error('Detalhes do erro:', {
-        dividaSelecionada,
-        compraSelecionada,
-        valorPagamento,
-        caixaPagamento,
-        error: error.message || error
-      });
+    } catch (error: any) {
       alert('Erro ao processar pagamento: ' + (error.message || error));
     } finally {
       setIsSaving(false);
@@ -615,11 +595,10 @@ export default function DividasManager() {
 
         const novoValorPago = Math.max(0, (dividaAtual.valorPago || 0) - valorPagamento);
         
-        // NÃO atualizar parcelasPagas - é baseado apenas na data
         const atualizada: Divida = {
           ...dividaAtual,
           valorPago: novoValorPago,
-          // parcelasPagas permanece inalterado
+          parcelasPagas: dividaAtual.parcelasPagas || 0,
         };
 
         await saveDivida(atualizada);
@@ -651,11 +630,10 @@ export default function DividasManager() {
 
         const novoValorPago = Math.max(0, ((compra as any).valorPago || 0) - valorPagamento);
         
-        // NÃO atualizar parcelasPagas - é baseado apenas na data
         const atualizada = { 
           ...compra, 
           valorPago: novoValorPago,
-          // parcelasPagas permanece inalterado
+          parcelasPagas: compra.parcelasPagas || 0,
         } as CompraCartao;
         
         await saveCompraCartao(atualizada);
@@ -684,9 +662,8 @@ export default function DividasManager() {
       setDividaSelecionada(null);
       setCompraSelecionada(null);
       setValorPagamentoInput('');
-    } catch (error) {
-      console.error('Erro ao processar estorno:', error);
-      alert('Erro ao processar estorno.');
+    } catch (error: any) {
+      alert('Erro ao processar estorno: ' + (error.message || error));
     } finally {
       setIsSaving(false);
     }
@@ -789,13 +766,6 @@ export default function DividasManager() {
   };
   const selectedYM = useMemo(() => parseYYYYMM(selectedMonth), [selectedMonth]);
   
-  // Função para subtrair meses de uma data
-  const subtrairMeses = (dataStr: string, meses: number) => {
-    const data = new Date(dataStr + 'T00:00:00');
-    data.setMonth(data.getMonth() - meses);
-    return data.toISOString().split('T')[0];
-  };
-
   const getMonthlyDue = (d: Divida): number => {
     if (d.tipo === 'parcelada') {
       const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
@@ -817,31 +787,25 @@ export default function DividasManager() {
     return base + (isLast ? delta / 100 : 0);
   };
 
-  // Função para mostrar qual parcela está em andamento (baseado em parcelasPagas)
   const getParcelaDoMes = (divida: Divida) => {
     if (divida.tipo !== 'parcelada') {
-      return null; // Não é parcelada
+      return null;
     }
     
-    // A parcela atual é: parcelasPagas + 1
-    // Você controla isso manualmente ao editar a dívida
     const parcelaAtual = (divida.parcelasPagas || 0) + 1;
     
     if (parcelaAtual < 1 || parcelaAtual > divida.parcelas) {
-      return null; // Parcela fora do range
+      return null;
     }
     
     return parcelaAtual;
   };
 
-  // Função para mostrar qual parcela da compra está em andamento (baseado em parcelasPagas)
   const getParcelaCompraDoMes = (compra: CompraCartao) => {
-    // A parcela atual é: parcelasPagas + 1
-    // Você controla isso manualmente ao editar a compra
     const parcelaAtual = (compra.parcelasPagas || 0) + 1;
     
     if (parcelaAtual < 1 || parcelaAtual > compra.parcelas) {
-      return null; // Parcela fora do range
+      return null;
     }
     
     return parcelaAtual;

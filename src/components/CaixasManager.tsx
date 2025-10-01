@@ -292,7 +292,6 @@ export default function CaixasManager() {
         const temTransacao = transacoesReceitas.some(t => t.descricao === descricaoEsperada);
         
         if (!temTransacao) {
-          console.log(`Revertendo receita sem transação: ${receita.descricao} (ID: ${receita.id})`);
           reverterRecebimentoReceita(receita.id);
         }
       }
@@ -314,7 +313,7 @@ export default function CaixasManager() {
       
       await saveReceitaPrevista(receitaAtualizada);
     } catch (error) {
-      console.error('Erro ao reverter recebimento da receita:', error);
+      console.error('Erro ao reverter recebimento:', error);
     }
   };
 
