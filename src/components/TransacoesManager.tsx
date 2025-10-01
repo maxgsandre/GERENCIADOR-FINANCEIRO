@@ -16,7 +16,7 @@ export default function TransacoesManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId } = context;
+  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId, dividas, setDividas, saveDivida, comprasCartao, setComprasCartao, saveCompraCartao } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
@@ -92,6 +92,10 @@ export default function TransacoesManager() {
 
   const handleDelete = async (transacao: Transacao) => {
     if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
+    
+    // Verificar se é uma transação de pagamento de dívida ou cartão
+    const isPagamentoDivida = transacao.descricao.includes('Pagamento dívida:') || transacao.descricao.includes('Pagamento cartão:');
+    
     const caixaAtual = caixas.find(c => c.id === transacao.caixaId);
     if (caixaAtual) {
       const novoSaldo = transacao.tipo === 'entrada' 
@@ -99,6 +103,76 @@ export default function TransacoesManager() {
         : caixaAtual.saldo + transacao.valor;
       await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
     }
+    
+    // Se for pagamento de dívida, reverter automaticamente a dívida correspondente
+    if (isPagamentoDivida) {
+      console.log('Transação de pagamento removida:', transacao.descricao);
+      
+      // Extrair nome da dívida/compra da descrição
+      const nomeDivida = transacao.descricao.replace('Pagamento dívida: ', '').replace('Pagamento cartão: ', '');
+      
+      // Procurar dívida correspondente
+      const dividaEncontrada = dividas.find(d => d.descricao === nomeDivida);
+      if (dividaEncontrada) {
+        console.log('Revertendo dívida:', dividaEncontrada.descricao);
+        
+        // Recalcular valores após remoção da transação
+        const novoValorPago = Math.max(0, (dividaEncontrada.valorPago || 0) - transacao.valor);
+        let novasParcelasPagas = dividaEncontrada.parcelasPagas || 0;
+        
+        if (dividaEncontrada.tipo === 'total') {
+          if (novoValorPago < dividaEncontrada.valorTotal) {
+            novasParcelasPagas = 0;
+          }
+        } else {
+          // Para dívidas parceladas
+          novasParcelasPagas = Math.floor(novoValorPago / dividaEncontrada.valorParcela);
+        }
+
+        const dividaAtualizada = {
+          ...dividaEncontrada,
+          valorPago: novoValorPago,
+          parcelasPagas: Math.min(novasParcelasPagas, dividaEncontrada.parcelas),
+        };
+        
+        await saveDivida(dividaAtualizada);
+        setDividas(prev => prev.map(d => d.id === dividaAtualizada.id ? dividaAtualizada : d));
+        console.log('Dívida revertida com sucesso');
+        return; // Sair da função aqui
+      }
+      
+      // Procurar compra de cartão correspondente
+      const compraEncontrada = comprasCartao.find(c => 
+        c.descricao === nomeDivida || c.descricao.includes(nomeDivida)
+      );
+      if (compraEncontrada) {
+        console.log('Revertendo compra de cartão:', compraEncontrada.descricao);
+        
+        // Recalcular valores após remoção da transação
+        const novoValorPago = Math.max(0, ((compraEncontrada as any).valorPago || 0) - transacao.valor);
+        let novasParcelasPagas = compraEncontrada.parcelasPagas || 0;
+        
+        if (compraEncontrada.parcelas === 1) {
+          if (novoValorPago < compraEncontrada.valorTotal) {
+            novasParcelasPagas = 0;
+          }
+        } else {
+          novasParcelasPagas = Math.floor(novoValorPago / compraEncontrada.valorParcela);
+        }
+
+        const compraAtualizada = {
+          ...compraEncontrada,
+          valorPago: novoValorPago,
+          parcelasPagas: Math.min(novasParcelasPagas, compraEncontrada.parcelas),
+        };
+        
+        await saveCompraCartao(compraAtualizada);
+        setComprasCartao(prev => prev.map(c => c.id === compraAtualizada.id ? compraAtualizada : c));
+        console.log('Compra de cartão revertida com sucesso');
+        return; // Sair da função aqui
+      }
+    }
+    
     await deleteTransacao(transacao.id);
   };
 
