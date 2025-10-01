@@ -210,6 +210,8 @@ export default function Dashboard() {
   }));
 
   const totalGastosCategorias = dadosGastos.reduce((sum, d) => sum + d.value, 0);
+  const maxValorCategoria = dadosGastos.reduce((m, d) => Math.max(m, d.value), 0);
+  const yAxisMax = maxValorCategoria > 0 ? maxValorCategoria * 1.15 : 1;
 
   const cores = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00'];
 
@@ -443,7 +445,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="overflow-x-auto">
               <ResponsiveContainer width={Math.max(400, dadosGastos.length * 80)} height={300}>
-                <BarChart data={dadosGastos}>
+                <BarChart data={dadosGastos} margin={{ top: 16, right: 16, left: 0, bottom: 16 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
                     dataKey="name" 
@@ -455,6 +457,7 @@ export default function Dashboard() {
                   <YAxis 
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
+                    domain={[0, yAxisMax]}
                   />
                   <Tooltip 
                     formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
@@ -464,7 +467,7 @@ export default function Dashboard() {
                       const { x, y, width, value } = props;
                       const pct = totalGastosCategorias > 0 ? (Number(value) / totalGastosCategorias) * 100 : 0;
                       return (
-                        <text x={x + width / 2} y={Math.min(y - 6, 290)} fill="#9ca3af" textAnchor="middle" fontSize={12}>
+                        <text x={x + width / 2} y={y - 6} fill="#9ca3af" textAnchor="middle" fontSize={12}>
                           {`${pct.toFixed(0)}%`}
                         </text>
                       );
