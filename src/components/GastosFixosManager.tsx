@@ -36,6 +36,7 @@ export default function GastosFixosManager() {
   const [modoPagamento, setModoPagamento] = useState<'pay' | 'refund'>('pay');
   const [isValorPagoOpen, setIsValorPagoOpen] = useState(false);
   const [valorPagoInput, setValorPagoInput] = useState('');
+  const [valorPagamentoInput, setValorPagamentoInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   const autoCleanRanRef = useRef(false);
@@ -122,7 +123,18 @@ export default function GastosFixosManager() {
       clearTimeout(timeoutId);
     };
   }, [transacoes, gastosFixos]); // Executa quando transacoes ou gastosFixos mudam
-  const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < gastoSelecionado.valor) : false;
+  const valorPagamentoNum = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
+  const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < valorPagamentoNum) : false;
+
+  // Preencher automaticamente o valor sugerido ao abrir o modal de pagamento
+  useEffect(() => {
+    if (isPagamentoOpen && modoPagamento === 'pay' && gastoSelecionado) {
+      const valor = typeof (gastoSelecionado as any).valor === 'number' ? (gastoSelecionado as any).valor : parseFloat((gastoSelecionado as any).valor || '0');
+      if (isFinite(valor)) {
+        setValorPagamentoInput(valor.toFixed(2).replace('.', ','));
+      }
+    }
+  }, [isPagamentoOpen, modoPagamento, gastoSelecionado]);
 
   // Mês selecionado para exibição (filtrar parcelas geradas por mês)
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -353,7 +365,7 @@ export default function GastosFixosManager() {
 
   const abrirModalValorPago = (gasto: GastoFixo) => {
     setGastoSelecionado(gasto);
-    setValorPagoInput(gasto.valorPago?.toString() || '');
+    setValorPagoInput(gasto.valor.toFixed(2).replace('.', ','));
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
     setIsValorPagoOpen(true);
   };
@@ -514,6 +526,7 @@ export default function GastosFixosManager() {
         setGastoSelecionado(gastoConsolidado);
         setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
         setModoPagamento('pay');
+        setValorPagamentoInput(Number(totalValor).toFixed(2).replace('.', ','));
         setIsPagamentoOpen(true);
         return;
       } else {
@@ -545,6 +558,7 @@ export default function GastosFixosManager() {
       setGastoSelecionado(gasto);
       setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
       setModoPagamento('pay');
+      setValorPagamentoInput(Number(gasto.valor).toFixed(2).replace('.', ','));
       setIsPagamentoOpen(true);
       return;
     }
@@ -566,6 +580,7 @@ export default function GastosFixosManager() {
   const confirmarPagamentoVinculado = async () => {
     if (!gastoSelecionado || !caixaPagamento) return;
     const gasto = gastoSelecionado;
+    const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
     
     // Se for um gasto consolidado de cartão, marcar todas as parcelas
     if (gasto.id.startsWith('cartao:') && gasto.id.includes(selectedMonth)) {
@@ -579,7 +594,7 @@ export default function GastosFixosManager() {
       
       // Marcar todas as parcelas como pagas
       for (const parcela of parcelasDoCartao) {
-        const parcelaPaga = { ...parcela, pago: true, valorPago: parcela.valor };
+        const parcelaPaga = { ...parcela, pago: true, valorPago: valorPagamento };
         await (saveGastoFixo && saveGastoFixo(parcelaPaga));
         setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaPaga : g));
       }
@@ -588,7 +603,7 @@ export default function GastosFixosManager() {
       await atualizarProgressoComprasCartao(cardId);
     } else {
       // Marcar gasto como pago (comportamento normal)
-      const gastoPago = { ...gasto, pago: true };
+      const gastoPago = { ...gasto, pago: true, valorPago: valorPagamento };
       await (saveGastoFixo && saveGastoFixo(gastoPago));
       setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoPago : g));
     }
@@ -605,7 +620,7 @@ export default function GastosFixosManager() {
           const [yy, mm] = ym.split('-').map(Number);
           const [sy, sm] = d.dataVencimento.split('-').slice(0,2).map(Number);
           const idx = ymToIndex(yy, mm) - ymToIndex(sy, sm);
-          const novoValorPago = d.valorPago + gasto.valor;
+          const novoValorPago = d.valorPago + valorPagamento;
           const novasParcelasPagas = d.tipo === 'parcelada' ? Math.max(d.parcelasPagas, Math.min(d.parcelas, idx + 1)) : (novoValorPago >= d.valorTotal ? 1 : d.parcelasPagas);
           const atualizada: Divida = { ...d, valorPago: novoValorPago, parcelasPagas: novasParcelasPagas };
           await (saveDivida && saveDivida(atualizada));
@@ -630,7 +645,7 @@ export default function GastosFixosManager() {
     try {
       const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
       if (caixa) {
-        const novoSaldo = caixa.saldo - gasto.valor;
+        const novoSaldo = caixa.saldo - valorPagamento;
         if (novoSaldo < 0) { alert('Saldo insuficiente no caixa selecionado.'); return; }
         await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
       }
@@ -638,7 +653,7 @@ export default function GastosFixosManager() {
         id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
         caixaId: caixaPagamento,
         tipo: 'saida',
-        valor: gasto.valor,
+        valor: valorPagamento,
         descricao: `Gasto fixo pago: ${gasto.descricao}`,
         categoria: 'Dívidas',
         data: new Date().toISOString().slice(0,10),
@@ -648,6 +663,7 @@ export default function GastosFixosManager() {
 
     setIsPagamentoOpen(false);
     setGastoSelecionado(null);
+    setValorPagamentoInput('');
   };
 
   const confirmarEstornoVinculado = async () => {
@@ -768,7 +784,18 @@ export default function GastosFixosManager() {
                 </select>
               </div>
             )}
-            <p className="text-sm text-muted-foreground">Valor: <strong>R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
+            <div className="space-y-2">
+              <Label htmlFor="valorPagamento">Valor do Pagamento</Label>
+              <Input
+                id="valorPagamento"
+                type="text"
+                value={valorPagamentoInput}
+                onChange={(e) => setValorPagamentoInput(e.target.value)}
+                placeholder="0,00"
+                required
+              />
+              <p className="text-sm text-muted-foreground">Valor total: <strong>R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
+            </div>
             {caixaSelecionado && (
               <p className={`text-sm ${saldoInsuficiente ? 'text-red-600' : 'text-muted-foreground'}`}>Saldo do caixa: <strong>R$ {caixaSelecionado.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
             )}
@@ -801,12 +828,10 @@ export default function GastosFixosManager() {
               <Label htmlFor="valorPago">Valor pago</Label>
               <Input
                 id="valorPago"
-                type="number"
-                step="0.01"
+                type="text"
                 value={valorPagoInput}
                 onChange={(e) => setValorPagoInput(e.target.value)}
-                placeholder="0.00"
-                max={gastoSelecionado?.valor}
+                placeholder="0,00"
               />
               <p className="text-sm text-muted-foreground">
                 Valor total: R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -1095,8 +1120,8 @@ export default function GastosFixosManager() {
                       R$ {gasto.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
-                </div>
-              ))}
+                  </div>
+                ))}
             </div>
           </CardContent>
         </Card>
