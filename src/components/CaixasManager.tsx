@@ -67,8 +67,9 @@ export default function CaixasManager() {
   });
   const [cofrinhoFormData, setCofrinhoFormData] = useState({
     nome: '',
-    saldo: '',
-    objetivo: '',
+    tipo: 'cdi' as 'cdi' | 'manual',
+    valorAplicado: '',
+    dataAplicacao: new Date().toISOString().slice(0,10),
     percentualCDI: '',
     cor: '#10b981',
   });
@@ -77,6 +78,93 @@ export default function CaixasManager() {
     valor: '',
     dataVencimento: '',
   });
+
+  // Helpers: CDI/IOF/IR
+  const CDI_ANUAL_PERCENT = 10.75; // fixo conforme solicitado
+  const dailyRateFromAnnual = (annualPercent: number) => Math.pow(1 + annualPercent / 100, 1 / 252) - 1;
+  const approxBusinessDays = (from: string, to: string) => {
+    const d1 = new Date(from + 'T00:00:00');
+    const d2 = new Date(to + 'T00:00:00');
+    const diffDays = Math.max(0, Math.floor((d2.getTime() - d1.getTime()) / 86400000));
+    return Math.max(0, Math.round(diffDays * (252 / 365)));
+  };
+  const iofRateForDays = (daysSince: number) => {
+    if (daysSince >= 30) return 0;
+    const remain = 30 - daysSince; // 30..1
+    return Math.max(0, remain / 30);
+  };
+  const irRateForDays = (daysSince: number) => {
+    if (daysSince <= 180) return 0.225;
+    if (daysSince <= 360) return 0.20;
+    if (daysSince <= 720) return 0.175;
+    return 0.15;
+  };
+  const todayStr = new Date().toISOString().slice(0,10);
+  const computeCdiRendimento = (cofrinho: Cofrinho) => {
+    if (!cofrinho || (cofrinho.tipo !== 'cdi')) return { saldoLiquido: cofrinho?.saldo || 0, rendimentoLiquido: 0, rendimentoBruto: 0, totalIR: 0, totalIOF: 0, principal: (cofrinho?.valorAplicado || 0) + (cofrinho?.aportes?.reduce((s,a)=>s+a.valor,0) || 0) };
+    const percentOfCDI = cofrinho.percentualCDI || 0;
+    const baseDaily = dailyRateFromAnnual(CDI_ANUAL_PERCENT);
+    const daily = baseDaily * (percentOfCDI / 100);
+    const aportes = [
+      ...(cofrinho.valorAplicado && cofrinho.dataAplicacao ? [{ data: cofrinho.dataAplicacao, valor: cofrinho.valorAplicado }] : []),
+      ...(cofrinho.aportes || [])
+    ];
+    const principal = aportes.reduce((s,a)=>s + a.valor, 0);
+    let rendimentoBruto = 0;
+    let totalIR = 0;
+    let totalIOF = 0;
+    for (const ap of aportes) {
+      const nBiz = approxBusinessDays(ap.data, todayStr);
+      const fator = Math.pow(1 + daily, nBiz);
+      const rendBrutoAp = ap.valor * (fator - 1);
+      const daysSince = Math.max(0, Math.floor((new Date(todayStr).getTime() - new Date(ap.data).getTime())/86400000));
+      const iof = iofRateForDays(daysSince) * rendBrutoAp;
+      const baseIr = rendBrutoAp - iof;
+      const ir = Math.max(0, baseIr) * irRateForDays(daysSince);
+      rendimentoBruto += rendBrutoAp;
+      totalIOF += iof;
+      totalIR += ir;
+    }
+    const rendimentoLiquido = Math.max(0, rendimentoBruto - totalIOF - totalIR);
+    const saldoLiquido = principal + rendimentoLiquido;
+    return { saldoLiquido, rendimentoLiquido, rendimentoBruto, totalIR, totalIOF, principal };
+  };
+
+  const elapsedLabel = (cofrinho: Cofrinho) => {
+    const baseDate = (cofrinho.tipo === 'cdi' ? (cofrinho.dataAplicacao || cofrinho.dataCriacao) : cofrinho.dataCriacao) || todayStr;
+    const ms = new Date(todayStr).getTime() - new Date(baseDate + 'T00:00:00').getTime();
+    const days = Math.max(0, Math.floor(ms / 86400000));
+    if (days < 30) return `${days} ${days === 1 ? 'dia' : 'dias'}`;
+    const months = Math.floor(days / 30);
+    return `${months} ${months === 1 ? 'mês' : 'meses'}`;
+  };
+
+  // Modal de Aporte
+  const [isAporteOpen, setIsAporteOpen] = useState(false);
+  const [cofrinhoAporte, setCofrinhoAporte] = useState<Cofrinho | null>(null);
+  const [aporteData, setAporteData] = useState(new Date().toISOString().slice(0,10));
+  const [aporteValor, setAporteValor] = useState('');
+  const abrirAporte = (c: Cofrinho) => {
+    setCofrinhoAporte(c);
+    setAporteData(new Date().toISOString().slice(0,10));
+    setAporteValor('');
+    setIsAporteOpen(true);
+  };
+  const confirmarAporte = async () => {
+    if (!cofrinhoAporte) return;
+    const valor = parseFloat(aporteValor);
+    if (!aporteData || isNaN(valor) || valor <= 0) return;
+    const atualizado: Cofrinho = {
+      ...cofrinhoAporte,
+      valorAplicado: (cofrinhoAporte.valorAplicado || 0) + valor,
+      saldo: (cofrinhoAporte.saldo || 0) + valor,
+      aportes: [...(cofrinhoAporte.aportes || []), { data: aporteData, valor }],
+    };
+    await saveCofrinho(atualizado);
+    setCofrinhos(prev => prev.map(c => c.id === atualizado.id ? atualizado : c));
+    setIsAporteOpen(false);
+    setCofrinhoAporte(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,19 +220,23 @@ export default function CaixasManager() {
   const handleCofrinhoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!cofrinhoFormData.nome || !cofrinhoFormData.saldo || !cofrinhoFormData.percentualCDI) return;
-
-    const cdiAtual = 10.75; // CDI atual em % a.a. (pode ser atualizado via API)
-    const rendimentoAnual = (parseFloat(cofrinhoFormData.percentualCDI) / 100) * cdiAtual;
-    const rendimentoMensal = (parseFloat(cofrinhoFormData.saldo) * rendimentoAnual) / 12 / 100;
+    if (!cofrinhoFormData.nome) return;
+    if (cofrinhoFormData.tipo === 'cdi') {
+      if (!cofrinhoFormData.valorAplicado || !cofrinhoFormData.dataAplicacao || !cofrinhoFormData.percentualCDI) return;
+    } else {
+      if (!cofrinhoFormData.valorAplicado) return;
+    }
 
     const novoCofrinho: Cofrinho = {
       id: editingCofrinho?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
       nome: cofrinhoFormData.nome,
-      saldo: parseFloat(cofrinhoFormData.saldo),
-      objetivo: cofrinhoFormData.objetivo ? parseFloat(cofrinhoFormData.objetivo) : undefined,
-      percentualCDI: parseFloat(cofrinhoFormData.percentualCDI),
-      rendimentoMensal: rendimentoMensal,
+      saldo: parseFloat(cofrinhoFormData.valorAplicado),
+      tipo: cofrinhoFormData.tipo,
+      dataAplicacao: cofrinhoFormData.dataAplicacao,
+      valorAplicado: parseFloat(cofrinhoFormData.valorAplicado),
+      aportes: [],
+      percentualCDI: cofrinhoFormData.tipo === 'cdi' ? parseFloat(cofrinhoFormData.percentualCDI) : undefined,
+      rendimentoMensal: 0,
       dataCriacao: editingCofrinho?.dataCriacao || new Date().toISOString().split('T')[0],
       cor: cofrinhoFormData.cor,
     };
@@ -164,7 +256,7 @@ export default function CaixasManager() {
   };
 
   const resetCofrinhoForm = () => {
-    setCofrinhoFormData({ nome: '', saldo: '', objetivo: '', percentualCDI: '', cor: '#10b981' });
+    setCofrinhoFormData({ nome: '', tipo: 'cdi', valorAplicado: '', dataAplicacao: new Date().toISOString().slice(0,10), percentualCDI: '', cor: '#10b981' });
     setEditingCofrinho(null);
     setIsCofrinhoDialogOpen(false);
   };
@@ -173,9 +265,10 @@ export default function CaixasManager() {
     setEditingCofrinho(cofrinho);
     setCofrinhoFormData({
       nome: cofrinho.nome,
-      saldo: cofrinho.saldo.toString(),
-      objetivo: cofrinho.objetivo?.toString() || '',
-      percentualCDI: cofrinho.percentualCDI.toString(),
+      tipo: cofrinho.tipo || 'cdi',
+      valorAplicado: (cofrinho.valorAplicado ?? cofrinho.saldo).toString(),
+      dataAplicacao: cofrinho.dataAplicacao || new Date().toISOString().slice(0,10),
+      percentualCDI: (cofrinho.percentualCDI ?? '').toString(),
       cor: cofrinho.cor,
     });
     setIsCofrinhoDialogOpen(true);
@@ -778,48 +871,59 @@ export default function CaixasManager() {
                   />
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="saldo-cofrinho">Saldo Inicial</Label>
+                    <Label>Tipo</Label>
+                    <Select value={cofrinhoFormData.tipo} onValueChange={(v) => setCofrinhoFormData(prev => ({ ...prev, tipo: v as any }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cdi">CDI</SelectItem>
+                        <SelectItem value="manual">Manual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="data-aplicacao">Data de aplicação</Label>
                     <Input
-                      id="saldo-cofrinho"
-                      type="number"
-                      step="0.01"
-                      value={cofrinhoFormData.saldo}
-                      onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, saldo: e.target.value }))}
-                      placeholder="0.00"
-                      required
+                      id="data-aplicacao"
+                      type="date"
+                      value={cofrinhoFormData.dataAplicacao}
+                      onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, dataAplicacao: e.target.value }))}
+                      disabled={cofrinhoFormData.tipo !== 'cdi'}
                     />
                   </div>
-                  
                   <div className="space-y-2">
-                    <Label htmlFor="objetivo">Objetivo (opcional)</Label>
+                    <Label htmlFor="valor-aplicado">Valor aplicado</Label>
                     <Input
-                      id="objetivo"
+                      id="valor-aplicado"
                       type="number"
                       step="0.01"
-                      value={cofrinhoFormData.objetivo}
-                      onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, objetivo: e.target.value }))}
-                      placeholder="Meta a atingir"
+                      value={cofrinhoFormData.valorAplicado}
+                      onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, valorAplicado: e.target.value }))}
+                      placeholder="0.00"
+                      required
                     />
                   </div>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="percentual-cdi">% do CDI</Label>
-                    <Input
-                      id="percentual-cdi"
-                      type="number"
-                      min="0"
-                      max="200"
-                      value={cofrinhoFormData.percentualCDI}
-                      onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, percentualCDI: e.target.value }))}
-                      placeholder="Ex: 100 (100% do CDI)"
-                      required
-                    />
-                  </div>
-                  
+                  {cofrinhoFormData.tipo === 'cdi' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="percentual-cdi">% do CDI</Label>
+                      <Input
+                        id="percentual-cdi"
+                        type="number"
+                        min="0"
+                        max="200"
+                        value={cofrinhoFormData.percentualCDI}
+                        onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, percentualCDI: e.target.value }))}
+                        placeholder="Ex: 100 (100% do CDI)"
+                        required
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="cor">Cor</Label>
                     <Input
@@ -847,10 +951,12 @@ export default function CaixasManager() {
         {/* Lista de cofrinhos */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           {cofrinhos.map((cofrinho) => {
-            const progressoObjetivo = cofrinho.objetivo 
-              ? (cofrinho.saldo / cofrinho.objetivo) * 100 
-              : 0;
-            
+            const cdiCalc = computeCdiRendimento(cofrinho);
+            const mostrarIOF = cofrinho.tipo === 'cdi' && (() => {
+              const base = cofrinho.dataAplicacao || new Date().toISOString().slice(0,10);
+              const days = Math.max(0, Math.floor((new Date().getTime() - new Date(base + 'T00:00:00').getTime())/86400000));
+              return days < 30;
+            })();
             return (
               <Card key={cofrinho.id} className="relative">
                 <CardHeader className="pb-2">
@@ -862,41 +968,48 @@ export default function CaixasManager() {
                       />
                       <CardTitle className="text-lg">{cofrinho.nome}</CardTitle>
                     </div>
-                    <Badge variant="outline" className="flex items-center">
-                      <Percent className="h-3 w-3 mr-1" />
-                      {cofrinho.percentualCDI}% CDI
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">
+                        {elapsedLabel(cofrinho)}
+                      </Badge>
+                      {cofrinho.tipo === 'cdi' && (
+                        <Badge variant="outline" className="flex items-center">
+                          <Percent className="h-3 w-3 mr-1" />
+                          {cofrinho.percentualCDI}% CDI
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 
                 <CardContent>
                   <div className="space-y-4">
                     <div>
-                      <p className="text-sm text-muted-foreground">Saldo Atual</p>
+                      <p className="text-sm text-muted-foreground">Saldo Líquido Atual</p>
                       <p className="text-2xl font-bold text-green-600">
-                        R$ {cofrinho.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        R$ {(cofrinho.tipo === 'cdi' ? cdiCalc.saldoLiquido : cofrinho.saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </p>
                     </div>
                     
-                    <div>
-                      <p className="text-sm text-muted-foreground">Rendimento Mensal</p>
-                      <p className="text-sm font-medium text-green-600">
-                        +R$ {cofrinho.rendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    
-                    {cofrinho.objetivo && (
-                      <div className="space-y-2">
+                    {cofrinho.tipo === 'cdi' && (
+                      <div className="space-y-1">
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Objetivo</span>
-                          <span className="font-medium">
-                            R$ {cofrinho.objetivo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </span>
+                          <span className="text-muted-foreground">Rendimento líquido</span>
+                          <span className="font-medium text-green-600">+R$ {cdiCalc.rendimentoLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         </div>
-                        <Progress value={Math.min(progressoObjetivo, 100)} className="h-2" />
-                        <p className="text-xs text-muted-foreground text-center">
-                          {progressoObjetivo.toFixed(1)}% concluído
-                        </p>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Rentabilidade</span>
+                          <div className="text-right">
+                            <div className="font-medium">{cdiCalc.principal > 0 ? ((cdiCalc.rendimentoLiquido / cdiCalc.principal) * 100).toFixed(2) : '0.00'}%</div>
+                            <div className="text-xs text-muted-foreground">IR: R$ {cdiCalc.totalIR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                          </div>
+                        </div>
+                        {mostrarIOF && (
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>IOF (até D+30)</span>
+                            <span>R$ {cdiCalc.totalIOF.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                     
@@ -909,6 +1022,15 @@ export default function CaixasManager() {
                       >
                         <Edit className="h-4 w-4 md:mr-1" />
                         <span className="hidden md:inline">Editar</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => abrirAporte(cofrinho)}
+                        className="flex-1"
+                      >
+                        <DollarSign className="h-4 w-4 md:mr-1" />
+                        <span className="hidden md:inline">Aporte</span>
                       </Button>
                       <Button
                         variant="outline"
@@ -989,6 +1111,32 @@ export default function CaixasManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+  {/* Modal de Aporte */}
+  <Dialog open={isAporteOpen} onOpenChange={setIsAporteOpen}>
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>Novo aporte</DialogTitle>
+        <DialogDescription>
+          {cofrinhoAporte ? `Adicionar aporte em ${cofrinhoAporte.nome}` : ''}
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Data</Label>
+          <Input type="date" value={aporteData} onChange={(e) => setAporteData(e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label>Valor</Label>
+          <Input type="number" step="0.01" value={aporteValor} onChange={(e) => setAporteValor(e.target.value)} placeholder="0.00" />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => setIsAporteOpen(false)}>Cancelar</Button>
+        <Button onClick={confirmarAporte} disabled={!aporteData || !aporteValor}>Confirmar</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
     </div>
   );
 }
