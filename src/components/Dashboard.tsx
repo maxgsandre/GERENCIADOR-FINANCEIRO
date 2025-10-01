@@ -39,15 +39,13 @@ export default function Dashboard() {
     return 0.15;
   };
   const todayStr = new Date().toISOString().slice(0,10);
+  const principalOf = (c: any) => ((c.valorAplicado || 0) + ((c.aportes || []).reduce((s: number, a: any) => s + a.valor, 0)));
   const computeCdiSaldoLiquido = (c: any) => {
     const percentOfCDI = c.percentualCDI || 0;
     const baseDaily = dailyRateFromAnnual(CDI_ANUAL_PERCENT);
     const daily = baseDaily * (percentOfCDI / 100);
-    const aportes = [
-      ...(c.valorAplicado && c.dataAplicacao ? [{ data: c.dataAplicacao, valor: c.valorAplicado }] : []),
-      ...(c.aportes || [])
-    ];
-    const principal = aportes.reduce((s: number,a: any)=>s + a.valor, 0);
+    const aportes = [ ...(c.valorAplicado && c.dataAplicacao ? [{ data: c.dataAplicacao, valor: c.valorAplicado }] : []), ...(c.aportes || []) ];
+    const principal = principalOf(c);
     let rendimentoBruto = 0;
     let totalIR = 0;
     let totalIOF = 0;
@@ -67,13 +65,30 @@ export default function Dashboard() {
     return principal + rendimentoLiquido;
   };
 
+  const computeCdiRendimentoMensal = (c: any) => {
+    const percentOfCDI = c.percentualCDI || 0;
+    const annual = (percentOfCDI / 100) * CDI_ANUAL_PERCENT; // % a.a.
+    const principal = principalOf(c);
+    return (principal * annual) / 12 / 100; // R$ por mês (aprox.)
+  };
+
   const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => sum + (cofrinho.tipo === 'cdi' ? computeCdiSaldoLiquido(cofrinho) : cofrinho.saldo), 0);
   
   // Total de investimentos: soma de todos os cofrinhos já com rendimentos
   const totalInvestimentos = totalCofrinhos;
   
-  // Rendimentos: soma do que rendeu em reais somando todos os cofrinhos (por mês)
-  const totalRendimentoMensal = cofrinhos.reduce((sum, c) => sum + (c.rendimentoMensal || 0), 0);
+  // Rendimentos mensais (aprox) para exibição de resumo financeiro
+  const totalRendimentoMensal = cofrinhos.reduce((sum, c) => sum + (c.tipo === 'cdi' ? computeCdiRendimentoMensal(c) : (c.rendimentoMensal || 0)), 0);
+  // Rendimento total acumulado dos cofrinhos (desde a aplicação)
+  const totalRendimentoAcumulado = cofrinhos.reduce((sum, c) => {
+    if (c.tipo === 'cdi') {
+      const saldoLiq = computeCdiSaldoLiquido(c);
+      const principal = principalOf(c);
+      return sum + Math.max(0, saldoLiq - principal);
+    }
+    const principal = principalOf(c) || 0;
+    return sum + Math.max(0, (c.saldo || 0) - principal);
+  }, 0);
   
   const totalDividas = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
 
@@ -469,7 +484,8 @@ export default function Dashboard() {
               const progressoObjetivo = cofrinho.objetivo 
                 ? (cofrinho.saldo / cofrinho.objetivo) * 100 
                 : 0;
-                
+              const saldoMostrar = cofrinho.tipo === 'cdi' ? computeCdiSaldoLiquido(cofrinho) : cofrinho.saldo;
+              const rendimentoMesMostrar = cofrinho.tipo === 'cdi' ? computeCdiRendimentoMensal(cofrinho) : (cofrinho.rendimentoMensal || 0);
               return (
                 <Card key={cofrinho.id} className="relative">
                   <CardContent className="p-4">
@@ -491,14 +507,14 @@ export default function Dashboard() {
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Saldo</span>
                         <span className="font-medium text-green-600">
-                          R$ {cofrinho.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          R$ {saldoMostrar.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                       
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Rendimento/mês</span>
                         <span className="text-sm font-medium text-green-600">
-                          +R$ {cofrinho.rendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          +R$ {rendimentoMesMostrar.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                       
@@ -538,9 +554,14 @@ export default function Dashboard() {
                   <PiggyBank className="h-5 w-5 text-green-600" />
                   <span className="font-medium">Rendimento Total dos Cofrinhos</span>
                 </div>
-                <span className="text-lg font-bold text-green-600">
-                  +R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês
-                </span>
+                <div className="text-right">
+                  <div className="text-lg font-bold text-green-600">
+                    +R$ {totalRendimentoAcumulado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    (+R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês)
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
