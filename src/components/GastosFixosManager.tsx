@@ -185,7 +185,8 @@ export default function GastosFixosManager() {
     return [...gastosManuais, ...cartoesConsolidados.values(), ...gastosDividas];
   })();
   
-  const gastosComDataAjustada = gastosConsolidados.map(gasto => {
+  const gastosComDataAjustada = gastosConsolidados
+    .map(gasto => {
     // Para gastos fixos manuais, usar diaVencimento diretamente
     if (!gasto.id.startsWith('cartao:') && !gasto.id.startsWith('divida:')) {
       const diaVencimento = gasto.diaVencimento;
@@ -234,6 +235,11 @@ export default function GastosFixosManager() {
       ...gasto,
       dataVencimentoAjustada: novaData.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-')
     };
+  })
+  .sort((a, b) => {
+    const diaA = a.diaVencimento;
+    const diaB = b.diaVencimento;
+    return diaA - diaB;
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1096,30 +1102,6 @@ export default function GastosFixosManager() {
         </Card>
       )}
 
-      {/* Resumo por categoria */}
-      {Object.keys(gastosPorCategoria).length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Gastos por Categoria</CardTitle>
-            <CardDescription>Distribuição dos gastos mensais</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {Object.entries(gastosPorCategoria)
-                .sort(([,a], [,b]) => b - a)
-                .map(([categoria, valor]) => (
-                  <div key={categoria} className="flex justify-between items-center">
-                    <span>{categoria}</span>
-                    <span className="font-medium">
-                      R$ {valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Lista de gastos fixos */}
       <Card>
         <CardHeader>
@@ -1291,6 +1273,30 @@ export default function GastosFixosManager() {
           )}
         </CardContent>
       </Card>
+
+      {/* Gastos por Categoria */}
+      {Object.keys(gastosPorCategoria).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Gastos por Categoria</CardTitle>
+            <CardDescription>Distribuição dos gastos mensais</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {Object.entries(gastosPorCategoria)
+                .sort(([,a], [,b]) => b - a)
+                .map(([categoria, valor]) => (
+                  <div key={categoria} className="flex justify-between items-center">
+                    <span>{categoria}</span>
+                    <span className="font-medium">
+                      R$ {valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
