@@ -572,13 +572,17 @@ export default function DividasManager() {
     setCompraSelecionada(null);
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
     setModoPagamento('pay');
-    // Sugerir valor da parcela do mês automaticamente no campo
-    try {
-      const valorParcelaMes = getMonthlyDue(divida);
-      setValorPagamentoInput(valorParcelaMes > 0 ? String(valorParcelaMes.toFixed(2)).replace('.', ',') : '');
-    } catch { 
-      setValorPagamentoInput(''); 
-    }
+    
+    // Preencher automaticamente com o valor da parcela do mês
+    setTimeout(() => {
+      try {
+        const valorParcelaMes = getMonthlyDue(divida);
+        setValorPagamentoInput(valorParcelaMes > 0 ? valorParcelaMes.toFixed(2).replace('.', ',') : '');
+      } catch { 
+        setValorPagamentoInput(''); 
+      }
+    }, 50);
+    
     setIsPagamentoOpen(true);
   };
 
@@ -587,15 +591,19 @@ export default function DividasManager() {
     setDividaSelecionada(null);
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
     setModoPagamento('pay');
-    // Sugerir valor da parcela do mês automaticamente no campo
-    try {
-      const [sy, sm] = compra.startMonth.split('-').map(Number);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-      const valor = purchaseInstallmentValue(compra, Math.max(0, Math.min((compra.parcelas || 1) - 1, idx)));
-      setValorPagamentoInput(valor > 0 ? String(valor.toFixed(2)).replace('.', ',') : '');
-    } catch { 
-      setValorPagamentoInput(''); 
-    }
+    
+    // Preencher automaticamente com o valor da parcela do mês
+    setTimeout(() => {
+      try {
+        const [sy, sm] = compra.startMonth.split('-').map(Number);
+        const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+        const valor = purchaseInstallmentValue(compra, Math.max(0, Math.min((compra.parcelas || 1) - 1, idx)));
+        setValorPagamentoInput(valor > 0 ? valor.toFixed(2).replace('.', ',') : '');
+      } catch { 
+        setValorPagamentoInput(''); 
+      }
+    }, 50);
+    
     setIsPagamentoOpen(true);
   };
 
@@ -1264,7 +1272,7 @@ export default function DividasManager() {
                 placeholder="0,00"
               />
               <p className="text-sm text-muted-foreground">
-                Valor da parcela do mês: R$ {(() => {
+                Sugestão (valor da parcela do mês): R$ {(() => {
                   if (dividaSelecionada) {
                     const valor = getMonthlyDue(dividaSelecionada);
                     return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
@@ -1278,26 +1286,6 @@ export default function DividasManager() {
                   return '0,00';
                 })()}
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                onClick={() => {
-                  if (dividaSelecionada) {
-                    const valor = getMonthlyDue(dividaSelecionada);
-                    setValorPagamentoInput(valor.toFixed(2).replace('.', ','));
-                  }
-                  if (compraSelecionada) {
-                    const [sy, sm] = compraSelecionada.startMonth.split('-').map(Number);
-                    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-                    const valor = purchaseInstallmentValue(compraSelecionada, Math.max(0, Math.min((compraSelecionada.parcelas || 1) - 1, idx)));
-                    setValorPagamentoInput(valor.toFixed(2).replace('.', ','));
-                  }
-                }}
-              >
-                Usar valor da parcela
-              </Button>
             </div>
             <div className="space-y-2">
               <Label htmlFor="caixaPagamento">Caixa para débito</Label>
@@ -1558,8 +1546,7 @@ export default function DividasManager() {
           
           <form onSubmit={(e) => {
             e.preventDefault();
-            const formData = new FormData(e.target as HTMLFormElement);
-            const valor = parseFloat(formData.get('valorPagamento') as string);
+            const valor = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
             if (valor > 0) {
               processarPagamento(valor);
             }
@@ -1601,9 +1588,10 @@ export default function DividasManager() {
               <Input
                 id="valorPagamento"
                 name="valorPagamento"
-                type="number"
-                step="0.01"
-                placeholder="0.00"
+                type="text"
+                value={valorPagamentoInput}
+                onChange={(e) => setValorPagamentoInput(e.target.value)}
+                placeholder="0,00"
                 required
               />
             </div>
