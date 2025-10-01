@@ -234,12 +234,22 @@ function AppContent() {
   const saveTransacao = async (transacao: Transacao) => {
     if (currentUser) {
       await firebaseService.saveTransacao(currentUser.uid, transacao);
+      // Atualizar estado local imediatamente para melhor UX e consistência
+      setTransacoes(prev => {
+        const exists = prev.some(t => t.id === transacao.id);
+        if (exists) {
+          return prev.map(t => t.id === transacao.id ? transacao : t);
+        }
+        return [...prev, transacao];
+      });
     }
   };
 
   const deleteTransacao = async (transacaoId: string) => {
     if (currentUser) {
       await firebaseService.deleteTransacao(currentUser.uid, transacaoId);
+      // Atualizar estado local imediatamente
+      setTransacoes(prev => prev.filter(t => t.id !== transacaoId));
     }
   };
 
@@ -260,12 +270,22 @@ function AppContent() {
   const saveDivida = async (divida: Divida) => {
     if (currentUser) {
       await firebaseService.saveDivida(currentUser.uid, divida);
+      // Atualizar estado local imediatamente
+      setDividas(prev => {
+        const exists = prev.some(d => d.id === divida.id);
+        if (exists) {
+          return prev.map(d => d.id === divida.id ? divida : d);
+        }
+        return [...prev, divida];
+      });
     }
   };
 
   const deleteDivida = async (dividaId: string) => {
     if (currentUser) {
       await firebaseService.deleteDivida(currentUser.uid, dividaId);
+      // Atualizar estado local imediatamente
+      setDividas(prev => prev.filter(d => d.id !== dividaId));
     }
   };
 
@@ -320,6 +340,14 @@ function AppContent() {
   const saveCompraCartao = async (purchase: CompraCartao) => {
     if (currentUser) {
       await (firebaseService as any).saveCreditCardPurchase(currentUser.uid, purchase);
+      // Atualizar estado local imediatamente
+      setComprasCartao(prev => {
+        const exists = prev.some(p => p.id === purchase.id);
+        if (exists) {
+          return prev.map(p => p.id === purchase.id ? purchase : p);
+        }
+        return [...prev, purchase];
+      });
     }
   };
 

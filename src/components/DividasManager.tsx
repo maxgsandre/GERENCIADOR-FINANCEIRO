@@ -132,18 +132,18 @@ export default function DividasManager() {
         const parcelasPagas = formData.emAndamento ? Math.max(0, parseInt(formData.parcelaAtual) - 1) : (editingDivida?.parcelasPagas || 0);
         const valorPago = formData.emAndamento ? valorParcelaNum * parcelasPagas : (editingDivida?.valorPago || 0);
 
-    const novaDivida: Divida = {
+        const novaDivida: Divida = {
           id: editingDivida?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
-      descricao: formData.descricao,
-      valorTotal: parseFloat(formData.valorTotal),
+          descricao: formData.descricao,
+          valorTotal: parseFloat(formData.valorTotal),
           valorPago: valorPago,
-      parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
+          parcelas: formData.tipo === 'parcelada' ? parseInt(formData.parcelas) : 1,
           parcelasPagas: parcelasPagas,
-      valorParcela: formData.tipo === 'parcelada' 
+          valorParcela: formData.tipo === 'parcelada' 
             ? valorParcelaNum 
-        : parseFloat(formData.valorTotal),
+            : parseFloat(formData.valorTotal),
           dataVencimento: new Date(formData.dataVencimento + 'T00:00:00').toISOString().split('T')[0],
-      tipo: formData.tipo,
+          tipo: formData.tipo,
           categoria: formData.categoria,
         } as any;
 
@@ -204,178 +204,6 @@ export default function DividasManager() {
       }
     }
   }, [isDialogOpen]);
-
-  // Função para verificar e reverter dívidas sem transação correspondente
-  const verificarEReverterDividas = () => {
-    if (!transacoes || !Array.isArray(transacoes) || !dividas || !Array.isArray(dividas)) {
-      return;
-    }
-    
-    const transacoesDividas = (transacoes as any[]).filter(t => 
-      t.descricao && t.descricao.includes('Pagamento dívida:')
-    );
-    
-    // Para cada dívida com pagamento, verificar se tem transação correspondente
-    (dividas as Divida[]).forEach(divida => {
-      const temPagamento = (divida.valorPago || 0) > 0;
-      
-      if (temPagamento) {
-        const descricaoEsperada = `Pagamento dívida: ${divida.descricao}`;
-        
-        // Verificação mais robusta: buscar transações que correspondem à dívida
-        const temTransacao = transacoesDividas.some(t => {
-          // Verificação exata primeiro
-          if (t.descricao === descricaoEsperada) return true;
-          
-          // Verificação por partes da descrição
-          const partesDescricao = divida.descricao.split(' ');
-          const palavrasChave = partesDescricao.filter(p => p.length > 2); // Palavras com mais de 2 caracteres
-          
-          // Se a transação contém pelo menos 2 palavras-chave da dívida
-          const palavrasEncontradas = palavrasChave.filter(palavra => 
-            t.descricao.toLowerCase().includes(palavra.toLowerCase())
-          );
-          
-          return palavrasEncontradas.length >= Math.min(2, palavrasChave.length);
-        });
-        
-        if (!temTransacao) {
-          console.log(`Revertendo dívida sem transação: ${divida.descricao} (ID: ${divida.id})`);
-          console.log('Transações disponíveis:', transacoesDividas.map(t => t.descricao));
-          console.log('Descrição esperada:', descricaoEsperada);
-          
-          // Aguardar mais um pouco antes de reverter (pode ser transação ainda sendo processada)
-          setTimeout(() => {
-            reverterPagamentoDivida(divida.id);
-          }, 2000);
-        }
-      }
-    });
-  };
-
-  // Função para verificar e reverter compras sem transação correspondente
-  const verificarEReverterCompras = () => {
-    if (!transacoes || !Array.isArray(transacoes) || !comprasCartao || !Array.isArray(comprasCartao)) {
-      return;
-    }
-    
-    const transacoesCompras = (transacoes as any[]).filter(t => 
-      t.descricao && t.descricao.includes('Pagamento cartão:')
-    );
-    
-    // Para cada compra com pagamento, verificar se tem transação correspondente
-    (comprasCartao as CompraCartao[]).forEach(compra => {
-      const temPagamento = ((compra as any).valorPago || 0) > 0;
-      
-      if (temPagamento) {
-        const descricaoEsperada = `Pagamento cartão: ${compra.descricao}`;
-        const temTransacao = transacoesCompras.some(t => t.descricao === descricaoEsperada);
-        
-        if (!temTransacao) {
-          console.log(`Revertendo compra sem transação: ${compra.descricao} (ID: ${compra.id})`);
-          reverterPagamentoCompra(compra.id);
-        }
-      }
-    });
-  };
-
-
-  // Função para reverter pagamento de dívida
-  const reverterPagamentoDivida = async (dividaId: string) => {
-    try {
-      const divida = (dividas as Divida[]).find(d => d.id === dividaId);
-      if (!divida) return;
-
-      const dividaAtualizada: Divida = {
-        ...divida,
-        valorPago: 0,
-        parcelasPagas: 0,
-      };
-      
-      await saveDivida(dividaAtualizada);
-      setDividas(prev => prev.map(d => d.id === dividaId ? dividaAtualizada : d));
-    } catch (error) {
-      console.error('Erro ao reverter pagamento da dívida:', error);
-    }
-  };
-
-  // Função para reverter pagamento de compra
-  const reverterPagamentoCompra = async (compraId: string) => {
-    try {
-      const compra = (comprasCartao as CompraCartao[]).find(c => c.id === compraId);
-      if (!compra) return;
-
-      const compraAtualizada = { 
-        ...compra, 
-        valorPago: 0,
-        parcelasPagas: 0 
-      } as CompraCartao;
-      
-      await saveCompraCartao(compraAtualizada);
-      setComprasCartao(prev => prev.map(c => c.id === compraId ? compraAtualizada : c));
-    } catch (error) {
-      console.error('Erro ao reverter pagamento da compra:', error);
-    }
-  };
-
-  // Monitora mudanças nas transações para verificar consistência
-  useEffect(() => {
-    // Detectar se transações de pagamento foram removidas
-    const transacoesPagamento = transacoes.filter(t => 
-      t.descricao && (t.descricao.includes('Pagamento dívida:') || t.descricao.includes('Pagamento cartão:'))
-    );
-    
-    // Inicializar contador se não existir
-    if (typeof (window as any).ultimoCountTransacoes === 'undefined') {
-      (window as any).ultimoCountTransacoes = transacoesPagamento.length;
-      return; // Primeira execução, não fazer nada
-    }
-    
-    // Se há menos transações de pagamento que antes, verificar imediatamente
-    const transacoesForamRemovidas = transacoesPagamento.length < (window as any).ultimoCountTransacoes;
-    (window as any).ultimoCountTransacoes = transacoesPagamento.length;
-    
-    // Timeout mais rápido se transações foram removidas
-    const timeout = transacoesForamRemovidas ? 800 : 3000;
-    
-    const timeoutId = setTimeout(() => {
-      // Só executar se não estiver salvando (evitar conflito com operações em andamento)
-      if (!isSaving) {
-        if (transacoesForamRemovidas) {
-          console.log('Transações de pagamento removidas - verificando dívidas imediatamente');
-        }
-        verificarEReverterDividas();
-        verificarEReverterCompras();
-      }
-    }, timeout);
-    
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [transacoes, dividas, comprasCartao, isSaving]); // Executa quando transacoes, dividas ou comprasCartao mudam
-
-  // Função para atualizar dívida imediatamente quando transação é removida
-  const atualizarDividaAposRemocaoTransacao = async (descricaoTransacao: string) => {
-    // Extrair nome da dívida da descrição da transação
-    const nomeDivida = descricaoTransacao.replace('Pagamento dívida: ', '').replace('Pagamento cartão: ', '');
-    
-    // Encontrar dívida correspondente
-    const dividaEncontrada = dividas.find(d => d.descricao === nomeDivida || d.descricao.includes(nomeDivida));
-    if (dividaEncontrada) {
-      console.log('Atualizando dívida imediatamente após remoção de transação:', dividaEncontrada.descricao);
-      await reverterPagamentoDivida(dividaEncontrada.id);
-      return;
-    }
-    
-    // Procurar em compras de cartão
-    const compraEncontrada = (comprasCartao as CompraCartao[]).find(c => 
-      c.descricao === nomeDivida || c.descricao.includes(nomeDivida)
-    );
-    if (compraEncontrada) {
-      console.log('Atualizando compra imediatamente após remoção de transação:', compraEncontrada.descricao);
-      await reverterPagamentoCompra(compraEncontrada.id);
-    }
-  };
 
 
   // CRUD simples de cartões e compras (na própria seção de dívidas)
@@ -674,26 +502,13 @@ export default function DividasManager() {
         if (!dividaAtual) return;
 
         const novoValorPago = (dividaAtual.valorPago || 0) + valorPagamento;
-        const parcelaMes = getMonthlyDue(dividaAtual);
         
-        // Para dívidas não parceladas
-        let novasParcelasPagas = dividaAtual.parcelasPagas || 0;
-        if (dividaAtual.tipo === 'total') {
-          if (novoValorPago >= dividaAtual.valorTotal) {
-            novasParcelasPagas = 1;
-          }
-        } else {
-          // Para dívidas parceladas - lógica baseada no pagamento da parcela do mês
-          const valorPagoMes = getMonthlyPaid(dividaAtual) + valorPagamento;
-          if (valorPagoMes >= parcelaMes && parcelaMes > 0) {
-            novasParcelasPagas = Math.max(novasParcelasPagas, Math.floor(novoValorPago / dividaAtual.valorParcela));
-          }
-        }
-
+        // NÃO atualizar parcelasPagas aqui - permanece inalterado
+        // O pagamento só afeta o valorPago e o status
         const atualizada: Divida = {
           ...dividaAtual,
           valorPago: novoValorPago,
-          parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas),
+          parcelasPagas: dividaAtual.parcelasPagas || 0, // Mantém o valor original
         };
 
         await saveDivida(atualizada);
@@ -727,29 +542,13 @@ export default function DividasManager() {
         }
 
         const novoValorPago = ((compra as any).valorPago || 0) + valorPagamento;
-        const [sy, sm] = compra.startMonth.split('-').map(Number);
-        const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-        const parcelaMes = idx >= 0 && idx < compra.parcelas ? purchaseInstallmentValue(compra, idx) : 0;
         
-        // Lógica de pagamento para compras no cartão
-        let novasParcelasPagas = compra.parcelasPagas || 0;
-        if (compra.parcelas === 1) {
-          // Compra à vista
-          if (novoValorPago >= compra.valorTotal) {
-            novasParcelasPagas = 1;
-          }
-        } else {
-          // Compra parcelada
-          const valorPagoMes = (idx < (compra.parcelasPagas || 0) ? parcelaMes : 0) + valorPagamento;
-          if (valorPagoMes >= parcelaMes && parcelaMes > 0) {
-            novasParcelasPagas = Math.max(novasParcelasPagas, idx + 1);
-          }
-        }
-
+        // NÃO atualizar parcelasPagas aqui - permanece inalterado
+        // O pagamento só afeta o valorPago e o status
         const atualizada = { 
           ...compra, 
           valorPago: novoValorPago,
-          parcelasPagas: Math.min(novasParcelasPagas, compra.parcelas) 
+          parcelasPagas: compra.parcelasPagas || 0, // Mantém o valor original
         } as CompraCartao;
         
         await saveCompraCartao(atualizada);
@@ -816,21 +615,11 @@ export default function DividasManager() {
 
         const novoValorPago = Math.max(0, (dividaAtual.valorPago || 0) - valorPagamento);
         
-        // Recalcular parcelas pagas baseado no novo valor pago
-        let novasParcelasPagas = dividaAtual.parcelasPagas || 0;
-        if (dividaAtual.tipo === 'total') {
-          if (novoValorPago < dividaAtual.valorTotal) {
-            novasParcelasPagas = 0;
-          }
-        } else {
-          // Para dívidas parceladas
-          novasParcelasPagas = Math.floor(novoValorPago / dividaAtual.valorParcela);
-        }
-
+        // NÃO atualizar parcelasPagas - é baseado apenas na data
         const atualizada: Divida = {
           ...dividaAtual,
           valorPago: novoValorPago,
-          parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas),
+          // parcelasPagas permanece inalterado
         };
 
         await saveDivida(atualizada);
@@ -862,20 +651,11 @@ export default function DividasManager() {
 
         const novoValorPago = Math.max(0, ((compra as any).valorPago || 0) - valorPagamento);
         
-        // Recalcular parcelas pagas baseado no novo valor pago
-        let novasParcelasPagas = compra.parcelasPagas || 0;
-        if (compra.parcelas === 1) {
-          if (novoValorPago < compra.valorTotal) {
-            novasParcelasPagas = 0;
-          }
-        } else {
-          novasParcelasPagas = Math.floor(novoValorPago / compra.valorParcela);
-        }
-
+        // NÃO atualizar parcelasPagas - é baseado apenas na data
         const atualizada = { 
           ...compra, 
           valorPago: novoValorPago,
-          parcelasPagas: Math.min(novasParcelasPagas, compra.parcelas) 
+          // parcelasPagas permanece inalterado
         } as CompraCartao;
         
         await saveCompraCartao(atualizada);
@@ -1008,6 +788,13 @@ export default function DividasManager() {
     return { y, m };
   };
   const selectedYM = useMemo(() => parseYYYYMM(selectedMonth), [selectedMonth]);
+  
+  // Função para subtrair meses de uma data
+  const subtrairMeses = (dataStr: string, meses: number) => {
+    const data = new Date(dataStr + 'T00:00:00');
+    data.setMonth(data.getMonth() - meses);
+    return data.toISOString().split('T')[0];
+  };
 
   const getMonthlyDue = (d: Divida): number => {
     if (d.tipo === 'parcelada') {
@@ -1028,6 +815,36 @@ export default function DividasManager() {
     const delta = Math.round(compra.valorTotal * 100) - Math.round(base * 100) * compra.parcelas;
     const isLast = index === compra.parcelas - 1;
     return base + (isLast ? delta / 100 : 0);
+  };
+
+  // Função para mostrar qual parcela está em andamento (baseado em parcelasPagas)
+  const getParcelaDoMes = (divida: Divida) => {
+    if (divida.tipo !== 'parcelada') {
+      return null; // Não é parcelada
+    }
+    
+    // A parcela atual é: parcelasPagas + 1
+    // Você controla isso manualmente ao editar a dívida
+    const parcelaAtual = (divida.parcelasPagas || 0) + 1;
+    
+    if (parcelaAtual < 1 || parcelaAtual > divida.parcelas) {
+      return null; // Parcela fora do range
+    }
+    
+    return parcelaAtual;
+  };
+
+  // Função para mostrar qual parcela da compra está em andamento (baseado em parcelasPagas)
+  const getParcelaCompraDoMes = (compra: CompraCartao) => {
+    // A parcela atual é: parcelasPagas + 1
+    // Você controla isso manualmente ao editar a compra
+    const parcelaAtual = (compra.parcelasPagas || 0) + 1;
+    
+    if (parcelaAtual < 1 || parcelaAtual > compra.parcelas) {
+      return null; // Parcela fora do range
+    }
+    
+    return parcelaAtual;
   };
 
   // Função para determinar status do cartão baseado nas parcelas do mês selecionado
@@ -1159,29 +976,31 @@ export default function DividasManager() {
   };
 
   const getMonthlyPaid = (d: Divida): number => {
+    // Buscar todas as transações de pagamento desta dívida
+    const transacoesDivida = (transacoes as any[]).filter(t => 
+      t.descricao === `Pagamento dívida: ${d.descricao}`
+    );
+    
+    // Somar o valor pago via transações
+    const totalPagoViaTransacoes = transacoesDivida.reduce((sum, t) => sum + t.valor, 0);
+    
     if (d.tipo === 'parcelada') {
       const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
       const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
       if (idx < 0 || idx >= d.parcelas) return 0;
       
-      // Se a parcela já foi completamente quitada
-      if (idx < (d.parcelasPagas || 0)) {
-        const delta = Math.round(d.valorTotal * 100) - Math.round(d.valorParcela * 100) * d.parcelas;
-        const isLast = idx === d.parcelas - 1;
-        return d.valorParcela + (isLast ? delta / 100 : 0);
-      }
+      const parcelaMes = getMonthlyDue(d);
       
-      // Se a parcela está parcialmente paga
-      if (idx === (d.parcelasPagas || 0)) {
-        const valorPagoTotal = d.valorPago || 0;
-        const parcelasCompletasPagas = (d.parcelasPagas || 0) * d.valorParcela;
-        const valorPagoParcial = Math.max(0, valorPagoTotal - parcelasCompletasPagas);
-        
-        const delta = Math.round(d.valorTotal * 100) - Math.round(d.valorParcela * 100) * d.parcelas;
-        const isLast = idx === d.parcelas - 1;
-        const valorParcelaCompleta = d.valorParcela + (isLast ? delta / 100 : 0);
-        
-        return Math.min(valorPagoParcial, valorParcelaCompleta);
+      // Verificar quanto já foi pago desta parcela específica
+      // Como não temos pagamento por parcela, verificamos se o total pago cobre esta parcela
+      const valorAteEstaParcela = (idx + 1) * d.valorParcela;
+      
+      if (totalPagoViaTransacoes >= valorAteEstaParcela) {
+        // Parcela completamente paga
+        return parcelaMes;
+      } else if (totalPagoViaTransacoes > idx * d.valorParcela) {
+        // Parcela parcialmente paga
+        return Math.min(parcelaMes, totalPagoViaTransacoes - (idx * d.valorParcela));
       }
       
       return 0;
@@ -1190,8 +1009,38 @@ export default function DividasManager() {
     // Para dívidas não parceladas
     const vencYM = parseYYYYMMDDtoYM(d.dataVencimento);
     if (vencYM.y === selectedYM.y && vencYM.m === selectedYM.m) {
-      return d.valorPago || 0;
+      return totalPagoViaTransacoes;
     }
+    return 0;
+  };
+
+  // Função para calcular quanto foi pago da compra de cartão no mês
+  const getMonthlyPaidCompra = (c: CompraCartao): number => {
+    // Buscar todas as transações de pagamento desta compra
+    const transacoesCompra = (transacoes as any[]).filter(t => 
+      t.descricao === `Pagamento cartão: ${c.descricao}`
+    );
+    
+    // Somar o valor pago via transações
+    const totalPagoViaTransacoes = transacoesCompra.reduce((sum, t) => sum + t.valor, 0);
+    
+    const [sy, sm] = c.startMonth.split('-').map(Number);
+    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+    if (idx < 0 || idx >= c.parcelas) return 0;
+    
+    const parcelaMes = purchaseInstallmentValue(c, idx);
+    
+    // Verificar quanto já foi pago desta parcela específica
+    const valorAteEstaParcela = (idx + 1) * c.valorParcela;
+    
+    if (totalPagoViaTransacoes >= valorAteEstaParcela) {
+      // Parcela completamente paga
+      return parcelaMes;
+    } else if (totalPagoViaTransacoes > idx * c.valorParcela) {
+      // Parcela parcialmente paga
+      return Math.min(parcelaMes, totalPagoViaTransacoes - (idx * c.valorParcela));
+    }
+    
     return 0;
   };
 
@@ -2030,7 +1879,10 @@ export default function DividasManager() {
                       </div>
                       <Badge variant={divida.tipo === 'parcelada' ? 'default' : 'secondary'} className="text-xs">
                         {divida.tipo === 'parcelada' 
-                          ? `${divida.parcelasPagas}/${divida.parcelas} parcelas`
+                          ? (() => {
+                              const parcelaDoMes = getParcelaDoMes(divida);
+                              return parcelaDoMes ? `${parcelaDoMes}/${divida.parcelas} parcelas` : `Sem parcela este mês`;
+                            })()
                           : 'Valor total'
                         }
                       </Badge>
@@ -2058,7 +1910,7 @@ export default function DividasManager() {
                         <span>{percentualPago.toFixed(1)}% pago</span>
                         <span className={restante > 0 ? 'text-red-600 font-medium' : 'text-green-600 font-medium'}>
                           Falta: R$ {restante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
+                      </span>
                       </div>
                       <Progress value={percentualPago} className="h-2" />
                     </div>
@@ -2080,21 +1932,21 @@ export default function DividasManager() {
                       </div>
                       
                       <div className="flex space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEdit(divida)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(divida.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEdit(divida)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(divida.id)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                       </div>
                     </div>
                   </div>
@@ -2154,7 +2006,10 @@ export default function DividasManager() {
                       <TableCell>
                         <Badge variant={divida.tipo === 'parcelada' ? 'default' : 'secondary'}>
                           {divida.tipo === 'parcelada' 
-                            ? `${divida.parcelasPagas}/${divida.parcelas} parcelas`
+                            ? (() => {
+                                const parcelaDoMes = getParcelaDoMes(divida);
+                                return parcelaDoMes ? `${parcelaDoMes}/${divida.parcelas} parcelas` : `Sem parcela este mês`;
+                              })()
                             : 'Valor total'
                           }
                         </Badge>
