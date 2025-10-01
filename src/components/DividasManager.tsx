@@ -1030,6 +1030,53 @@ export default function DividasManager() {
     return base + (isLast ? delta / 100 : 0);
   };
 
+  // Função para determinar status do cartão baseado nas parcelas do mês selecionado
+  const getStatusCartao = (cardId: string) => {
+    const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
+    
+    if (comprasDoCartao.length === 0) {
+      return { status: 'Sem compras', cor: 'text-muted-foreground' };
+    }
+    
+    // Filtrar compras que têm parcela vencendo no mês selecionado
+    const comprasDoMes = comprasDoCartao.filter(compra => {
+      const [sy, sm] = compra.startMonth.split('-').map(Number);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+      return idx >= 0 && idx < compra.parcelas; // Tem parcela neste mês
+    });
+    
+    if (comprasDoMes.length === 0) {
+      return { status: 'Sem parcelas este mês', cor: 'text-muted-foreground' };
+    }
+    
+    // Verificar se todas as parcelas do mês estão pagas
+    const todasParcelasDoMesPagas = comprasDoMes.every(compra => {
+      const [sy, sm] = compra.startMonth.split('-').map(Number);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+      const parcelaMes = purchaseInstallmentValue(compra, idx);
+      const parcelaMesPaga = idx < (compra.parcelasPagas || 0) ? parcelaMes : 0;
+      return parcelaMesPaga >= parcelaMes;
+    });
+    
+    if (todasParcelasDoMesPagas) {
+      return { status: '✓ Pago', cor: 'text-green-600' };
+    }
+    
+    // Verificar se pelo menos uma parcela do mês tem pagamento parcial
+    const algumPagamentoParcial = comprasDoMes.some(compra => {
+      const [sy, sm] = compra.startMonth.split('-').map(Number);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+      const parcelaMesPaga = idx < (compra.parcelasPagas || 0);
+      return parcelaMesPaga;
+    });
+    
+    if (algumPagamentoParcial) {
+      return { status: '⏳ Pago Parcial', cor: 'text-orange-600' };
+    }
+    
+    return { status: '⏳ Pendente', cor: 'text-red-600' };
+  };
+
   // Função para determinar status e cores das parcelas baseado no pagamento do mês
   const getStatusParcela = (divida: Divida) => {
     const valorPago = divida.valorPago || 0;
@@ -1868,6 +1915,7 @@ export default function DividasManager() {
                 .filter(pd => pd.descricao.startsWith(`Cartão ${c.nome}`))
                 .reduce((s, d) => s + getMonthlyDue(d), 0);
               const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === c.id);
+              const statusCartao = getStatusCartao(c.id);
               return (
                 <div key={c.id} className="border rounded p-3">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1875,7 +1923,7 @@ export default function DividasManager() {
                     <div className="flex items-center gap-2 flex-wrap md:justify-end">
                       <div className="text-sm whitespace-nowrap">Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
                       <div className="text-sm whitespace-nowrap">
-                        <span className="text-orange-600 font-medium">⏳ Pendente</span>
+                        <span className={`${statusCartao.cor} font-medium`}>{statusCartao.status}</span>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
                         <button title="Editar" onClick={() => openEditCard(c)} className="p-2 text-muted-foreground hover:text-foreground">
