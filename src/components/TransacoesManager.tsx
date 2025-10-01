@@ -279,7 +279,7 @@ export default function TransacoesManager() {
               Nova Transação
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto overscroll-contain !overflow-y-scroll" style={{ maxHeight: '90vh', overflowY: 'scroll' }}>
             <DialogHeader>
               <DialogTitle>{editingTransacao ? 'Editar Transação' : 'Nova Transação'}</DialogTitle>
               <DialogDescription>
