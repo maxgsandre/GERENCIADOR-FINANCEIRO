@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Calendar, CheckCircle, CreditCard, DollarSign } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign } from 'lucide-react';
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 
 export default function DividasManager() {
@@ -320,19 +320,63 @@ export default function DividasManager() {
 
   // Monitora mudanças nas transações para verificar consistência
   useEffect(() => {
-    // Aguardar as operações de gravação para evitar falso positivo
+    // Detectar se transações de pagamento foram removidas
+    const transacoesPagamento = transacoes.filter(t => 
+      t.descricao && (t.descricao.includes('Pagamento dívida:') || t.descricao.includes('Pagamento cartão:'))
+    );
+    
+    // Inicializar contador se não existir
+    if (typeof (window as any).ultimoCountTransacoes === 'undefined') {
+      (window as any).ultimoCountTransacoes = transacoesPagamento.length;
+      return; // Primeira execução, não fazer nada
+    }
+    
+    // Se há menos transações de pagamento que antes, verificar imediatamente
+    const transacoesForamRemovidas = transacoesPagamento.length < (window as any).ultimoCountTransacoes;
+    (window as any).ultimoCountTransacoes = transacoesPagamento.length;
+    
+    // Timeout mais rápido se transações foram removidas
+    const timeout = transacoesForamRemovidas ? 800 : 3000;
+    
     const timeoutId = setTimeout(() => {
       // Só executar se não estiver salvando (evitar conflito com operações em andamento)
       if (!isSaving) {
+        if (transacoesForamRemovidas) {
+          console.log('Transações de pagamento removidas - verificando dívidas imediatamente');
+        }
         verificarEReverterDividas();
         verificarEReverterCompras();
       }
-    }, 5000); // Aumentado para 5 segundos para dar tempo da transação ser salva
+    }, timeout);
     
     return () => {
       clearTimeout(timeoutId);
     };
   }, [transacoes, dividas, comprasCartao, isSaving]); // Executa quando transacoes, dividas ou comprasCartao mudam
+
+  // Função para atualizar dívida imediatamente quando transação é removida
+  const atualizarDividaAposRemocaoTransacao = async (descricaoTransacao: string) => {
+    // Extrair nome da dívida da descrição da transação
+    const nomeDivida = descricaoTransacao.replace('Pagamento dívida: ', '').replace('Pagamento cartão: ', '');
+    
+    // Encontrar dívida correspondente
+    const dividaEncontrada = dividas.find(d => d.descricao === nomeDivida || d.descricao.includes(nomeDivida));
+    if (dividaEncontrada) {
+      console.log('Atualizando dívida imediatamente após remoção de transação:', dividaEncontrada.descricao);
+      await reverterPagamentoDivida(dividaEncontrada.id);
+      return;
+    }
+    
+    // Procurar em compras de cartão
+    const compraEncontrada = (comprasCartao as CompraCartao[]).find(c => 
+      c.descricao === nomeDivida || c.descricao.includes(nomeDivida)
+    );
+    if (compraEncontrada) {
+      console.log('Atualizando compra imediatamente após remoção de transação:', compraEncontrada.descricao);
+      await reverterPagamentoCompra(compraEncontrada.id);
+    }
+  };
+
 
   // CRUD simples de cartões e compras (na própria seção de dívidas)
   const handleCreateCard = async (e: React.FormEvent) => {
@@ -514,6 +558,16 @@ export default function DividasManager() {
   };
 
   const handlePagamento = (divida: Divida) => {
+    // Verificar se é uma compra de cartão mapeada como dívida
+    if (divida.id.startsWith('purchase:')) {
+      const purchaseId = divida.id.replace('purchase:', '');
+      const compra = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
+      
+      if (compra) {
+        return handlePagamentoCompra(compra);
+      }
+    }
+    
     setDividaSelecionada(divida);
     setCompraSelecionada(null);
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
@@ -550,6 +604,17 @@ export default function DividasManager() {
       alert('Não há pagamentos para estornar.');
       return;
     }
+    
+    // Verificar se é uma compra de cartão mapeada como dívida
+    if (divida.id.startsWith('purchase:')) {
+      const purchaseId = divida.id.replace('purchase:', '');
+      const compra = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
+      
+      if (compra) {
+        return handleEstornoCompra(compra);
+      }
+    }
+    
     setDividaSelecionada(divida);
     setCompraSelecionada(null);
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
@@ -648,7 +713,10 @@ export default function DividasManager() {
       if (compraSelecionada) {
         // Atualizar compra
         const compra = comprasCartao.find((p: CompraCartao) => p.id === compraSelecionada.id);
-        if (!compra) return;
+        if (!compra) {
+          console.error('Compra não encontrada:', compraSelecionada.id);
+          return;
+        }
 
         const novoValorPago = ((compra as any).valorPago || 0) + valorPagamento;
         const [sy, sm] = compra.startMonth.split('-').map(Number);
@@ -704,7 +772,14 @@ export default function DividasManager() {
       setValorPagamentoInput('');
     } catch (error) {
       console.error('Erro ao processar pagamento:', error);
-      alert('Erro ao processar pagamento.');
+      console.error('Detalhes do erro:', {
+        dividaSelecionada,
+        compraSelecionada,
+        valorPagamento,
+        caixaPagamento,
+        error: error.message || error
+      });
+      alert('Erro ao processar pagamento: ' + (error.message || error));
     } finally {
       setIsSaving(false);
     }
@@ -893,7 +968,7 @@ export default function DividasManager() {
           caixaId: caixaPagamento,
           tipo: 'saida',
           valor: valorPagamento,
-          descricao: `Pagamento cartão: ${compra.descricao} [compraId=${compra.id}]`,
+          descricao: `Pagamento cartão: ${compra.descricao}`,
           categoria: 'Dívidas',
           data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
           hora: new Date().toTimeString().slice(0,5)
@@ -1912,9 +1987,26 @@ export default function DividasManager() {
                 <div key={divida.id} className={`border rounded-lg p-3 space-y-3 ${isQuitada ? 'opacity-60' : ''}`}>
                   <div className="flex justify-between items-start">
                     <div className="space-y-1 flex-1">
-                      <div className="flex items-center">
-                        {isQuitada && <CheckCircle className="h-4 w-4 text-green-600 mr-2" />}
-                        <p className="font-medium">{divida.descricao}</p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          {isQuitada && <CheckCircle className="h-4 w-4 text-green-600 mr-2" />}
+                          <p className="font-medium">{divida.descricao}</p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {parcelaMes > 0 && (
+                            <div className={`${
+                              getMonthlyPaid(divida) >= parcelaMes 
+                                ? 'text-green-600' 
+                                : 'text-red-600'
+                            }`}>
+                              {getMonthlyPaid(divida) >= parcelaMes ? (
+                                <CheckCircle className="h-4 w-4" />
+                              ) : (
+                                <Circle className="h-4 w-4" />
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <Badge variant={divida.tipo === 'parcelada' ? 'default' : 'secondary'} className="text-xs">
                         {divida.tipo === 'parcelada' 
@@ -1975,8 +2067,9 @@ export default function DividasManager() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">Status</TableHead>
                   <TableHead>Descrição</TableHead>
-                  <TableHead>Tipo</TableHead>
+                  <TableHead>Parcela</TableHead>
                   <TableHead>Vencimento</TableHead>
                   <TableHead>Progresso</TableHead>
                   <TableHead className="text-right">Parcela do mês</TableHead>
@@ -1994,6 +2087,23 @@ export default function DividasManager() {
                   
                   return (
                     <TableRow key={divida.id} className={isQuitada ? 'opacity-60' : ''}>
+                      <TableCell>
+                        <div className="flex items-center justify-center">
+                          {parcelaMes > 0 && (
+                            <div className={`${
+                              getMonthlyPaid(divida) >= parcelaMes 
+                                ? 'text-green-600' 
+                                : 'text-red-600'
+                            }`}>
+                              {getMonthlyPaid(divida) >= parcelaMes ? (
+                                <CheckCircle className="h-5 w-5" />
+                              ) : (
+                                <Circle className="h-5 w-5" />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center">
                           {isQuitada && <CheckCircle className="h-4 w-4 text-green-600 mr-2" />}
