@@ -83,6 +83,7 @@ export interface ReceitaPrevista {
   valor: number;
   recebido: boolean;
   dataVencimento: string;
+  caixaId?: string; // ID do caixa onde foi recebida
 }
 
 // Cartão de crédito

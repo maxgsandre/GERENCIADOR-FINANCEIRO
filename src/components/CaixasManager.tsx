@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -44,6 +44,8 @@ export default function CaixasManager() {
     deleteCofrinho,
     setSelectedCaixaId,
     goToTab,
+    transacoes,
+    saveTransacao,
   } = context;
 
   // Mês selecionado para exibição
@@ -233,11 +235,11 @@ export default function CaixasManager() {
     if (!receita.recebido) {
       // Se está marcando como recebida, abrir modal para selecionar caixa
       setReceitaSelecionada(receita);
+      setCaixaReceita(caixas && caixas.length > 0 ? caixas[0].id : null);
       setIsReceitaPagamentoOpen(true);
     } else {
-      // Se está desmarcando, apenas atualizar sem caixa
-      const receitaAtualizada = { ...receita, recebido: false };
-      await saveReceitaPrevista(receitaAtualizada);
+      // Não permitir desmarcar diretamente - deve excluir a transação
+      alert('Para desmarcar esta receita, exclua a transação de entrada correspondente na aba Transações.');
     }
   };
 
@@ -251,8 +253,20 @@ export default function CaixasManager() {
     const novoSaldo = caixaSelecionado.saldo + receitaSelecionada.valor;
     await saveCaixa({ ...caixaSelecionado, saldo: novoSaldo });
 
-    // Marcar receita como recebida
-    const receitaAtualizada = { ...receitaSelecionada, recebido: true };
+    // Criar transação de entrada
+    await saveTransacao({
+      id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+      caixaId: caixaReceita,
+      tipo: 'entrada',
+      valor: receitaSelecionada.valor,
+      descricao: `Receita recebida: ${receitaSelecionada.descricao}`,
+      categoria: 'Receitas',
+      data: new Date().toISOString().slice(0,10),
+      hora: new Date().toTimeString().slice(0,5)
+    });
+
+    // Marcar receita como recebida e guardar o caixaId
+    const receitaAtualizada = { ...receitaSelecionada, recebido: true, caixaId: caixaReceita };
     await saveReceitaPrevista(receitaAtualizada);
 
     // Fechar modal e limpar estados
@@ -260,6 +274,61 @@ export default function CaixasManager() {
     setReceitaSelecionada(null);
     setCaixaReceita(null);
   };
+
+  // Função para verificar e reverter receitas sem transação correspondente
+  const verificarEReverterReceitas = () => {
+    if (!transacoes || !Array.isArray(transacoes) || !receitasPrevistas || !Array.isArray(receitasPrevistas)) {
+      return;
+    }
+    
+    const transacoesReceitas = (transacoes as any[]).filter(t => 
+      t.descricao && t.descricao.includes('Receita recebida:')
+    );
+    
+    // Para cada receita marcada como recebida, verificar se tem transação correspondente
+    (receitasPrevistas as ReceitaPrevista[]).forEach(receita => {
+      if (receita.recebido) {
+        const descricaoEsperada = `Receita recebida: ${receita.descricao}`;
+        const temTransacao = transacoesReceitas.some(t => t.descricao === descricaoEsperada);
+        
+        if (!temTransacao) {
+          console.log(`Revertendo receita sem transação: ${receita.descricao} (ID: ${receita.id})`);
+          reverterRecebimentoReceita(receita.id);
+        }
+      }
+    });
+  };
+
+  // Função para reverter recebimento de receita
+  const reverterRecebimentoReceita = async (receitaId: string) => {
+    try {
+      const receita = (receitasPrevistas as ReceitaPrevista[]).find(r => r.id === receitaId);
+      if (!receita) return;
+
+      // Criar objeto sem o campo caixaId (remover ao invés de undefined)
+      const { caixaId, ...receitaSemCaixa } = receita;
+      const receitaAtualizada: ReceitaPrevista = {
+        ...receitaSemCaixa,
+        recebido: false,
+      };
+      
+      await saveReceitaPrevista(receitaAtualizada);
+    } catch (error) {
+      console.error('Erro ao reverter recebimento da receita:', error);
+    }
+  };
+
+  // Monitora mudanças nas transações para verificar consistência
+  useEffect(() => {
+    // Aguardar as operações de gravação para evitar falso positivo
+    const timeoutId = setTimeout(() => {
+      verificarEReverterReceitas();
+    }, 1200);
+    
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [transacoes, receitasPrevistas]); // Executa quando transacoes ou receitasPrevistas mudam
 
   const totalGeral = caixas.reduce((sum, caixa) => sum + caixa.saldo, 0);
   
