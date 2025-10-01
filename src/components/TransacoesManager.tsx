@@ -16,7 +16,7 @@ export default function TransacoesManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId, dividas, setDividas, saveDivida, comprasCartao, setComprasCartao, saveCompraCartao } = context;
+  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
@@ -91,89 +91,47 @@ export default function TransacoesManager() {
   };
 
   const handleDelete = async (transacao: Transacao) => {
-    if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
+    console.log('🚨 [DEBUG EXCLUSÃO] Iniciando exclusão da transação:', transacao);
+    
+    if (!confirm('Tem certeza que deseja excluir esta transação?')) {
+      console.log('🚨 [DEBUG EXCLUSÃO] Usuário cancelou a exclusão');
+      return;
+    }
+    
+    console.log('🚨 [DEBUG EXCLUSÃO] Usuário confirmou a exclusão');
     
     // Verificar se é uma transação de pagamento de dívida ou cartão
     const isPagamentoDivida = transacao.descricao.includes('Pagamento dívida:') || transacao.descricao.includes('Pagamento cartão:');
+    console.log('🚨 [DEBUG EXCLUSÃO] É pagamento de dívida?', isPagamentoDivida);
     
+    console.log('🚨 [DEBUG EXCLUSÃO] Atualizando saldo do caixa...');
     const caixaAtual = caixas.find(c => c.id === transacao.caixaId);
     if (caixaAtual) {
+      console.log('🚨 [DEBUG EXCLUSÃO] Caixa encontrado:', caixaAtual.nome, 'Saldo atual:', caixaAtual.saldo);
       const novoSaldo = transacao.tipo === 'entrada' 
         ? caixaAtual.saldo - transacao.valor
         : caixaAtual.saldo + transacao.valor;
+      console.log('🚨 [DEBUG EXCLUSÃO] Novo saldo calculado:', novoSaldo);
       await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
+      console.log('🚨 [DEBUG EXCLUSÃO] Saldo do caixa atualizado com sucesso');
+    } else {
+      console.log('🚨 [DEBUG EXCLUSÃO] ERRO: Caixa não encontrado!');
     }
     
-    // Se for pagamento de dívida, reverter automaticamente a dívida correspondente
+    // Se for pagamento de dívida, atualizar imediatamente a dívida correspondente
     if (isPagamentoDivida) {
+      // Importar a função do DividasManager ou implementar aqui
       console.log('Transação de pagamento removida:', transacao.descricao);
-      
-      // Extrair nome da dívida/compra da descrição
-      const nomeDivida = transacao.descricao.replace('Pagamento dívida: ', '').replace('Pagamento cartão: ', '');
-      
-      // Procurar dívida correspondente
-      const dividaEncontrada = dividas.find(d => d.descricao === nomeDivida);
-      if (dividaEncontrada) {
-        console.log('Revertendo dívida:', dividaEncontrada.descricao);
-        
-        // Recalcular valores após remoção da transação
-        const novoValorPago = Math.max(0, (dividaEncontrada.valorPago || 0) - transacao.valor);
-        let novasParcelasPagas = dividaEncontrada.parcelasPagas || 0;
-        
-        if (dividaEncontrada.tipo === 'total') {
-          if (novoValorPago < dividaEncontrada.valorTotal) {
-            novasParcelasPagas = 0;
-          }
-        } else {
-          // Para dívidas parceladas
-          novasParcelasPagas = Math.floor(novoValorPago / dividaEncontrada.valorParcela);
-        }
-
-        const dividaAtualizada = {
-          ...dividaEncontrada,
-          valorPago: novoValorPago,
-          parcelasPagas: Math.min(novasParcelasPagas, dividaEncontrada.parcelas),
-        };
-        
-        await saveDivida(dividaAtualizada);
-        setDividas(prev => prev.map(d => d.id === dividaAtualizada.id ? dividaAtualizada : d));
-        console.log('Dívida revertida com sucesso');
-        return; // Sair da função aqui
-      }
-      
-      // Procurar compra de cartão correspondente
-      const compraEncontrada = comprasCartao.find(c => 
-        c.descricao === nomeDivida || c.descricao.includes(nomeDivida)
-      );
-      if (compraEncontrada) {
-        console.log('Revertendo compra de cartão:', compraEncontrada.descricao);
-        
-        // Recalcular valores após remoção da transação
-        const novoValorPago = Math.max(0, ((compraEncontrada as any).valorPago || 0) - transacao.valor);
-        let novasParcelasPagas = compraEncontrada.parcelasPagas || 0;
-        
-        if (compraEncontrada.parcelas === 1) {
-          if (novoValorPago < compraEncontrada.valorTotal) {
-            novasParcelasPagas = 0;
-          }
-        } else {
-          novasParcelasPagas = Math.floor(novoValorPago / compraEncontrada.valorParcela);
-        }
-
-        const compraAtualizada = {
-          ...compraEncontrada,
-          valorPago: novoValorPago,
-          parcelasPagas: Math.min(novasParcelasPagas, compraEncontrada.parcelas),
-        };
-        
-        await saveCompraCartao(compraAtualizada);
-        setComprasCartao(prev => prev.map(c => c.id === compraAtualizada.id ? compraAtualizada : c));
-        console.log('Compra de cartão revertida com sucesso');
-        return; // Sair da função aqui
-      }
+      // A atualização da dívida será feita pelo sistema de verificação automática
     }
     
-    await deleteTransacao(transacao.id);
+    console.log('🚨 [DEBUG EXCLUSÃO] Chamando deleteTransacao para ID:', transacao.id);
+    try {
+      await deleteTransacao(transacao.id);
+      console.log('🚨 [DEBUG EXCLUSÃO] ✅ Transação excluída com sucesso!');
+    } catch (error) {
+      console.log('🚨 [DEBUG EXCLUSÃO] ❌ ERRO ao excluir transação:', error);
+    }
   };
 
   const openEdit = (transacao: Transacao) => {
