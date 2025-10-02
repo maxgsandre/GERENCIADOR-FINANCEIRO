@@ -378,8 +378,7 @@ export default function TransacoesManager() {
                             size="sm"
                             className="h-8 px-2"
                           >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Nova
+                            <Plus className="h-3 w-3" />
                           </Button>
                         </DialogTrigger>
                         <DialogContent className="sm:max-w-md">
