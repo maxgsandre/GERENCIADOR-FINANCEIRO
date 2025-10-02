@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -22,6 +22,19 @@ export default function TransacoesManager() {
   const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'entrada' | 'saida'>('todos');
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detectar se é mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   const [filtroDe, setFiltroDe] = useState('');
   const [filtroAte, setFiltroAte] = useState('');
   const [novaCategoria, setNovaCategoria] = useState('');
@@ -279,7 +292,10 @@ export default function TransacoesManager() {
               Nova Transação
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto overscroll-contain !overflow-y-scroll" style={{ maxHeight: '90vh', overflowY: 'scroll' }}>
+          <DialogContent 
+            className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+            style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+          >
             <DialogHeader>
               <DialogTitle>{editingTransacao ? 'Editar Transação' : 'Nova Transação'}</DialogTitle>
               <DialogDescription>
