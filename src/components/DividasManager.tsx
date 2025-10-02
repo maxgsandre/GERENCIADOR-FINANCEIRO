@@ -21,6 +21,19 @@ export default function DividasManager() {
   const scrollBeforeDialogRef = useRef<number>(0);
   const [editingDivida, setEditingDivida] = useState<Divida | null>(null);
   const [isPagamentoOpen, setIsPagamentoOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detectar se é mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   const [dividaSelecionada, setDividaSelecionada] = useState<Divida | null>(null);
   const [compraSelecionada, setCompraSelecionada] = useState<CompraCartao | null>(null);
   const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
@@ -1209,7 +1222,10 @@ export default function DividasManager() {
               Nova Dívida
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto overscroll-contain !overflow-y-scroll" style={{ maxHeight: '90vh', overflowY: 'scroll' }}>
+          <DialogContent 
+            className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+            style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+          >
             <DialogHeader>
               <DialogTitle>
                 {editingDivida ? 'Editar Dívida' : 'Nova Dívida'}
