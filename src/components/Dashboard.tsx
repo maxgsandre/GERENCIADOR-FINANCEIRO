@@ -4,6 +4,7 @@ import { Input } from './ui/input';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, LabelList } from 'recharts';
 import { FinanceiroContext } from '../App';
 import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, DollarSign, ArrowUpCircle, ArrowDownCircle, Target } from 'lucide-react';
+import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
 
 export default function Dashboard() {
   const context = useContext(FinanceiroContext);
@@ -142,33 +143,20 @@ export default function Dashboard() {
     };
   });
 
-  // Função para calcular valor devido no mês (mesma lógica do DividasManager)
-  const getMonthlyDue = (d: any) => {
-    if (d.tipo === 'parcelada') {
-      const [sy, sm] = d.dataVencimento.split('-').slice(0,2).map(Number);
-      const [cy, cm] = selectedMonth.split('-').map(Number);
-      const monthsDiff = (cy - sy) * 12 + (cm - sm);
-      if (monthsDiff < 0 || monthsDiff >= d.parcelas) return 0;
-      return d.valorParcela;
-    }
-    return d.valorTotal - d.valorPago;
-  };
-
   // Calcular total de gastos fixos do mês selecionado
   const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
 
-  // Calcular parcelas de dívidas do mês selecionado
-  const totalParcelasDividasMes = dividas.reduce((sum, divida) => {
-    return sum + getMonthlyDue(divida);
-  }, 0);
-
-  // Calcular parcelas de compras de cartão do mês selecionado
-  const totalParcelasCartaoMes = comprasCartaoAsDividas.reduce((sum, compra) => {
-    return sum + getMonthlyDue(compra);
-  }, 0);
+  // Calcular totais mensais usando utilitário compartilhado
+  const { monthlyTotal, monthlyPaid, monthlyRemaining, monthlyCount } = calculateMonthlyTotals(
+    dividas,
+    comprasCartao,
+    cartoes,
+    selectedMonth,
+    transacoes
+  );
 
   // Total de gastos do mês = gastos fixos + parcelas de dívidas + parcelas de cartão
-  const totalGastosMes = totalGastosFixosMes + totalParcelasDividasMes + totalParcelasCartaoMes;
+  const totalGastosMes = totalGastosFixosMes + monthlyTotal;
 
   // Calcular previsão de déficit/superávit
   const previsaoDeficitSuperavit = totalReceitasPrevistas - totalGastosMes;
@@ -189,6 +177,7 @@ export default function Dashboard() {
   }, 0);
   
   const totalDividasMes = totalDividasRestante + totalComprasCartaoRestante;
+  const totalParcelasMes = monthlyTotal;
 
 
   // Dados para gráfico de barras - distribuição por caixa
@@ -209,8 +198,8 @@ export default function Dashboard() {
     value: valor,
   }));
 
-  const totalGastosCategorias = dadosGastos.reduce((sum, d) => sum + d.value, 0);
-  const maxValorCategoria = dadosGastos.reduce((m, d) => Math.max(m, d.value), 0);
+  const totalGastosCategorias = dadosGastos.reduce((sum, d) => sum + (d.value as number), 0);
+  const maxValorCategoria = dadosGastos.reduce((m, d) => Math.max(m, d.value as number), 0);
   const yAxisMax = maxValorCategoria > 0 ? maxValorCategoria * 1.15 : 1;
 
   const cores = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00'];
@@ -283,12 +272,12 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Total de Dívidas Pendentes</CardTitle>
+            <CardTitle className="text-sm">Parcelas Dívidas do Mês</CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              R$ {totalDividasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {totalParcelasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>

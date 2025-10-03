@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Progress } from './ui/progress';
 import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign } from 'lucide-react';
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
+import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
 
 export default function DividasManager() {
   const context = useContext(FinanceiroContext);
@@ -1095,14 +1096,14 @@ export default function DividasManager() {
     return Array.from(map.values());
   })();
 
-  // Totais mensais incluindo compras de cartão
-  const monthlyTotalDividas = dividas.reduce((sum, d) => sum + getMonthlyDue(d), 0);
-  const monthlyPaidDividas = dividas.reduce((sum, d) => sum + getMonthlyPaid(d), 0);
-  
-  const monthlyTotal = monthlyTotalDividas + purchasesAsDividas.reduce((sum, d) => sum + getMonthlyDue(d), 0);
-  const monthlyPaid = monthlyPaidDividas + purchasesAsDividas.reduce((sum, d) => sum + getMonthlyPaid(d), 0);
-  const monthlyRemaining = Math.max(0, monthlyTotal - monthlyPaid);
-  const monthlyCount = dividas.filter(d => getMonthlyDue(d) > 0).length + purchasesAsDividas.filter(d => getMonthlyDue(d) > 0).length;
+  // Totais mensais usando utilitário compartilhado
+  const { monthlyTotal, monthlyPaid, monthlyRemaining, monthlyCount } = calculateMonthlyTotals(
+    dividas,
+    comprasCartao,
+    cartoes,
+    selectedMonth,
+    transacoes
+  );
 
   // Mostrar na lista apenas o que tem parcela no mês selecionado
   const listDividasForMonth: Divida[] = allDividasForView.filter(d => getMonthlyDue(d) > 0);
