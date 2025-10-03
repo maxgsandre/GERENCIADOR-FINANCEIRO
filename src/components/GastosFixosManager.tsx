@@ -739,8 +739,7 @@ export default function GastosFixosManager() {
     .reduce((sum, g) => sum + g.valor, 0);
 
   const totalPendentes = gastosComDataAjustada
-    .filter(g => !g.pago)
-    .reduce((sum, g) => sum + g.valor, 0);
+    .reduce((sum, g) => sum + Math.max(0, g.valor - (g.valorPago || 0)), 0);
 
   // Verificar vencimentos próximos (próximos 7 dias) que ainda não foram pagos
   const hoje = new Date();
@@ -1078,7 +1077,7 @@ export default function GastosFixosManager() {
               R$ {totalPendentes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {gastosFixos.filter(g => !g.pago).length} gasto(s) pendente(s)
+              {gastosComDataAjustada.filter(g => (g.valor - (g.valorPago || 0)) > 0).length} gasto(s) pendente(s)
             </p>
           </CardContent>
         </Card>
@@ -1154,6 +1153,9 @@ export default function GastosFixosManager() {
                     <p className="font-medium">
                       R$ {gasto.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </p>
+                    <p className="text-sm text-muted-foreground">
+                      Pago: R$ {(gasto.valorPago || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
                   </div>
                 </div>
                 
@@ -1214,6 +1216,7 @@ export default function GastosFixosManager() {
                   <TableHead>Categoria</TableHead>
                   <TableHead>Vencimento</TableHead>
                   <TableHead className="text-right">Valor</TableHead>
+                  <TableHead className="text-right">Valor Pago</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-24">Ações</TableHead>
                 </TableRow>
@@ -1231,6 +1234,9 @@ export default function GastosFixosManager() {
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       R$ {gasto.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      R$ {(gasto.valorPago || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2">
