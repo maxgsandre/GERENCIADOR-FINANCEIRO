@@ -1030,12 +1030,6 @@ export default function DividasManager() {
     return 0;
   };
 
-  // Totais mensais
-  const monthlyTotal = dividas.reduce((sum, d) => sum + getMonthlyDue(d), 0);
-  const monthlyPaid = dividas.reduce((sum, d) => sum + getMonthlyPaid(d), 0);
-  const monthlyRemaining = Math.max(0, monthlyTotal - monthlyPaid);
-  const monthlyCount = dividas.filter(d => getMonthlyDue(d) > 0).length;
-
   // Mapear compras de cartão como "dividas" para exibição com datas ajustadas
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   const purchasesAsDividas: Divida[] = (comprasCartao as CompraCartao[]).map((c) => {
@@ -1100,6 +1094,15 @@ export default function DividasManager() {
     });
     return Array.from(map.values());
   })();
+
+  // Totais mensais incluindo compras de cartão
+  const monthlyTotalDividas = dividas.reduce((sum, d) => sum + getMonthlyDue(d), 0);
+  const monthlyPaidDividas = dividas.reduce((sum, d) => sum + getMonthlyPaid(d), 0);
+  
+  const monthlyTotal = monthlyTotalDividas + purchasesAsDividas.reduce((sum, d) => sum + getMonthlyDue(d), 0);
+  const monthlyPaid = monthlyPaidDividas + purchasesAsDividas.reduce((sum, d) => sum + getMonthlyPaid(d), 0);
+  const monthlyRemaining = Math.max(0, monthlyTotal - monthlyPaid);
+  const monthlyCount = dividas.filter(d => getMonthlyDue(d) > 0).length + purchasesAsDividas.filter(d => getMonthlyDue(d) > 0).length;
 
   // Mostrar na lista apenas o que tem parcela no mês selecionado
   const listDividasForMonth: Divida[] = allDividasForView.filter(d => getMonthlyDue(d) > 0);
