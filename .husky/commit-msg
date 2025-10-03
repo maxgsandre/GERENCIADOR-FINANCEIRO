@@ -1,5 +1,4 @@
-#!/usr/bin/env sh
-. "$(dirname "$0")/_/husky.sh"
-
-npx --no commitlint --edit "$1"
+# Validate commit message using Conventional Commits rules
+# Husky v9+ no longer requires sourcing _/husky.sh
+npx --yes commitlint --config commitlint.config.cjs --edit "$1"
 
