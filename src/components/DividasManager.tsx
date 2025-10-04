@@ -963,6 +963,12 @@ export default function DividasManager() {
   };
 
   const getMonthlyPaid = (d: Divida): number => {
+    // Se a dívida foi marcada como paga diretamente (criada via transação)
+    if (d.pago) {
+      const parcelaMes = getMonthlyDue(d);
+      return parcelaMes; // Retorna o valor da parcela do mês se estiver pago
+    }
+    
     // Buscar todas as transações de pagamento desta dívida
     const transacoesDivida = (transacoes as any[]).filter(t => 
       t.descricao === `Pagamento dívida: ${d.descricao}`
@@ -1870,10 +1876,7 @@ export default function DividasManager() {
                 <div key={divida.id} className={`border rounded-lg p-3 space-y-3 ${isQuitada ? 'opacity-60' : ''}`}>
                   <div className="flex justify-between items-start">
                     <div className="space-y-1 flex-1">
-                      <div className="flex items-center">
-                        {isQuitada && <CheckCircle className="h-4 w-4 text-green-600 mr-2" />}
-                        <p className="font-medium">{divida.descricao}</p>
-                      </div>
+                      <p className="font-medium">{divida.descricao}</p>
                       <Badge variant={divida.tipo === 'parcelada' ? 'default' : 'secondary'} className="text-xs">
                         {divida.tipo === 'parcelada' 
                           ? (() => {
@@ -1995,10 +1998,7 @@ export default function DividasManager() {
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">
-                        <div className="flex items-center">
-                          {isQuitada && <CheckCircle className="h-4 w-4 text-green-600 mr-2" />}
-                          {divida.descricao}
-                        </div>
+                        {divida.descricao}
                       </TableCell>
                       <TableCell>
                         <Badge variant={divida.tipo === 'parcelada' ? 'default' : 'secondary'}>

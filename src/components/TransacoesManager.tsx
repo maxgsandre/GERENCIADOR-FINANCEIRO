@@ -9,6 +9,7 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Separator } from './ui/separator';
 import { Trash2, Plus, ArrowUp, ArrowDown, Filter, Tag, Edit } from 'lucide-react';
+import { Switch } from './ui/switch';
 import { FinanceiroContext, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
 
@@ -16,7 +17,7 @@ export default function TransacoesManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId, dividas, setDividas, saveDivida, comprasCartao, setComprasCartao, saveCompraCartao } = context;
+  const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId, dividas, setDividas, saveDivida, deleteDivida, comprasCartao, setComprasCartao, saveCompraCartao } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
@@ -38,6 +39,7 @@ export default function TransacoesManager() {
   const [filtroDe, setFiltroDe] = useState('');
   const [filtroAte, setFiltroAte] = useState('');
   const [novaCategoria, setNovaCategoria] = useState('');
+  const [adicionarDivida, setAdicionarDivida] = useState(false);
   const [formData, setFormData] = useState({
     caixaId: '',
     tipo: 'entrada' as 'entrada' | 'saida',
@@ -76,6 +78,26 @@ export default function TransacoesManager() {
     }
 
     await saveTransacao(novaTransacao);
+    
+    // Se marcado para adicionar à lista de dívidas e for uma saída
+    if (adicionarDivida && formData.tipo === 'saida') {
+      const novaDivida = {
+        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+        descricao: formData.descricao,
+        valorTotal: parseFloat(formData.valor),
+        valorPago: parseFloat(formData.valor), // Já foi pago via transação
+        parcelas: 1,
+        parcelasPagas: 1,
+        valorParcela: parseFloat(formData.valor),
+        dataVencimento: formData.data,
+        tipo: 'total' as 'parcelada' | 'total',
+        categoria: formData.categoria,
+        criadaViaTransacao: true, // Flag para identificar origem
+        pago: true, // Marcar como pago
+      };
+      await saveDivida(novaDivida);
+    }
+    
     resetForm();
   };
 
@@ -89,6 +111,7 @@ export default function TransacoesManager() {
       data: new Date().toISOString().split('T')[0],
       hora: new Date().toTimeString().slice(0, 5),
     });
+    setAdicionarDivida(false);
     setIsDialogOpen(false);
     setEditingTransacao(null);
   };
@@ -181,6 +204,20 @@ export default function TransacoesManager() {
       
       if (isPagamentoDivida) {
         await reverterDividaInstantaneamente(transacao);
+      }
+      
+      // Se a transação criou uma dívida automaticamente, apagar a dívida também
+      if (transacao.tipo === 'saida') {
+        const dividaVinculada = dividas.find(d => 
+          d.criadaViaTransacao && 
+          d.descricao === transacao.descricao && 
+          d.valorTotal === transacao.valor &&
+          d.dataVencimento === transacao.data
+        );
+        
+        if (dividaVinculada) {
+          await deleteDivida(dividaVinculada.id);
+        }
       }
     } catch (error) {
       console.error('Erro ao excluir transação:', error);
@@ -471,6 +508,20 @@ export default function TransacoesManager() {
                   />
                 </div>
               </div>
+              
+              {/* Checkbox para adicionar à lista de dívidas (apenas para saídas) */}
+              {formData.tipo === 'saida' && (
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="adicionarDivida"
+                    checked={adicionarDivida}
+                    onCheckedChange={setAdicionarDivida}
+                  />
+                  <Label htmlFor="adicionarDivida" className="text-sm">
+                    Adicionar à lista de dívidas
+                  </Label>
+                </div>
+              )}
               
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={resetForm}>

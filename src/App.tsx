@@ -59,6 +59,8 @@ export interface Divida {
   dataVencimento: string;
   tipo: 'parcelada' | 'total';
   categoria?: string;
+  criadaViaTransacao?: boolean; // Flag para identificar dívidas criadas automaticamente via transação
+  pago?: boolean; // Status de pagamento da dívida
 }
 
 export interface Cofrinho {
