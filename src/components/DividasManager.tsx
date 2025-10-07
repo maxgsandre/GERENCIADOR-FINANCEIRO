@@ -1037,31 +1037,9 @@ export default function DividasManager() {
     return 0;
   };
 
-  // Mapear compras de cartão como "dividas" para exibição com datas ajustadas
+  // Compras de cartão não são mais exibidas na lista de dívidas
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
-  const purchasesAsDividas: Divida[] = (comprasCartao as CompraCartao[]).map((c) => {
-    const card = (cartoes as CartaoCredito[]).find(x => x.id === c.cardId);
-    const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
-    
-    // Usar apenas os dados da compra (não há mais gastos fixos automáticos)
-    const parcelasPagasAtualizadas = c.parcelasPagas || 0;
-    const valorPagoEstimado = Math.min(c.parcelas, parcelasPagasAtualizadas) * c.valorParcela + (parcelasPagasAtualizadas === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
-    
-    // Ajustar data de vencimento para o mês selecionado
-    const dataVencimentoAjustada = `${anoSelecionado}-${String(mesSelecionado).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
-    
-    return {
-      id: `purchase:${c.id}`,
-      descricao: `Cartão ${(cartoes as CartaoCredito[]).find(x => x.id === c.cardId)?.nome || ''}: ${c.descricao}`,
-      valorTotal: c.valorTotal,
-      valorPago: valorPagoEstimado,
-      parcelas: c.parcelas,
-      parcelasPagas: parcelasPagasAtualizadas,
-      valorParcela: c.valorParcela,
-      dataVencimento: dataVencimentoAjustada,
-      tipo: c.parcelas > 1 ? 'parcelada' : 'total',
-    } as Divida;
-  });
+  // const purchasesAsDividas: Divida[] = []; // Removido - compras não aparecem mais como dívidas
   // Ajustar datas das dívidas normais para o mês selecionado
   const dividasComDataAjustada = dividas.map(divida => {
     // Validar se dataVencimento existe e é válida
@@ -1093,14 +1071,8 @@ export default function DividasManager() {
     };
   });
 
-  // Unificar e deduplicar por id (evita warnings de keys duplicadas)
-  const allDividasForView: Divida[] = (() => {
-    const map = new Map<string, Divida>();
-    [...dividasComDataAjustada, ...purchasesAsDividas].forEach((d) => {
-      if (!map.has(d.id)) map.set(d.id, d);
-    });
-    return Array.from(map.values());
-  })();
+  // Apenas dívidas reais são exibidas (compras de cartão removidas)
+  const allDividasForView: Divida[] = dividasComDataAjustada;
 
   // Totais mensais usando utilitário compartilhado
   const { monthlyTotal, monthlyPaid, monthlyRemaining, monthlyCount } = calculateMonthlyTotals(
@@ -1763,10 +1735,17 @@ export default function DividasManager() {
         <CardContent>
           <div className="space-y-2">
             {cartoes.map((c: CartaoCredito) => {
-              const totalMes = purchasesAsDividas
-                .filter(pd => pd.descricao.startsWith(`Cartão ${c.nome}`))
-                .reduce((s, d) => s + getMonthlyDue(d), 0);
+              // Calcular total do mês baseado nas compras reais do cartão
               const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === c.id);
+              const totalMes = comprasDoCartao.reduce((s, compra) => {
+                const [sy, sm] = compra.startMonth.split('-').map(Number);
+                const [cy, cm] = selectedMonth.split('-').map(Number);
+                const idx = ymToIndex(cy, cm) - ymToIndex(sy, sm);
+                if (idx >= 0 && idx < compra.parcelas) {
+                  return s + purchaseInstallmentValue(compra, idx);
+                }
+                return s;
+              }, 0);
               const statusCartao = getStatusCartao(c.id);
               return (
                 <div key={c.id} className="border rounded p-3">
@@ -1859,7 +1838,7 @@ export default function DividasManager() {
         <CardHeader>
           <CardTitle>Lista de Dívidas</CardTitle>
           <CardDescription>
-            {dividas.length + purchasesAsDividas.length} dívida(s) registrada(s)
+            {dividas.length} dívida(s) registrada(s)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -2071,7 +2050,7 @@ export default function DividasManager() {
             </Table>
           </div>
           
-          {(dividas.length === 0 && purchasesAsDividas.length === 0) && (
+          {dividas.length === 0 && (
             <div className="text-center py-8">
               <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">Nenhuma dívida cadastrada</h3>
