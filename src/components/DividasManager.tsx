@@ -1995,12 +1995,12 @@ export default function DividasManager() {
                   </button>
                   {expandedCardId === c.id && (
                     <div className="mt-3 space-y-2">
-                      {comprasDoCartao.length === 0 && (
+                      {comprasDoCartao.length === 0 ? (
                         <div className="text-muted-foreground text-sm text-center py-4">
                           <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-50" />
                           <p>Sem compras registradas</p>
                         </div>
-                      )}
+                      ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
@@ -2015,7 +2015,7 @@ export default function DividasManager() {
                               <th className="text-left py-2 font-medium">Ações</th>
                             </tr>
                           </thead>
-                          <tbody className="hidden md:table-row-group">
+                          <tbody>
                             {comprasDoCartao.map((p) => {
                               const parcelasPagas = p.parcelasPagas || 0;
                               const totalParcelas = p.parcelas || 1;
@@ -2087,6 +2087,7 @@ export default function DividasManager() {
                           </tbody>
                         </table>
                       </div>
+                      )}
                     </div>
                   )}
 
