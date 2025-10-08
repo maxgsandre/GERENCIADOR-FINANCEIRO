@@ -63,10 +63,12 @@ export default function DividasManager() {
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
   const [isEditCardDialogOpen, setIsEditCardDialogOpen] = useState(false);
+  const [isEditPurchaseDialogOpen, setIsEditPurchaseDialogOpen] = useState(false);
   const [cardName, setCardName] = useState('');
   const [cardLimit, setCardLimit] = useState('');
   const [cardDueDay, setCardDueDay] = useState('15');
   const [editingCard, setEditingCard] = useState<CartaoCredito | null>(null);
+  const [editingPurchase, setEditingPurchase] = useState<CompraCartao | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [purchaseDesc, setPurchaseDesc] = useState('');
   const [purchaseValorTotal, setPurchaseValorTotal] = useState('');
@@ -300,6 +302,30 @@ export default function DividasManager() {
     setIsEditCardDialogOpen(true);
   };
 
+  const openEditPurchase = (purchase: CompraCartao) => {
+    setEditingPurchase(purchase);
+    setPurchaseDesc(purchase.descricao);
+    setPurchaseValorTotal(String(purchase.valorTotal));
+    setPurchaseParcelas(String(purchase.parcelas));
+    setPurchaseValorParcela(String(purchase.valorParcela));
+    setPurchaseStartDate(purchase.startMonth + '-05');
+    setPurchaseDate(new Date(purchase.dataCompra).toISOString().slice(0,10));
+    setPurchaseEmAndamento(purchase.parcelasPagas > 0);
+    setPurchaseParcelaAtual(String(purchase.parcelasPagas + 1));
+    setSelectedCardId(purchase.cardId);
+    setIsEditPurchaseDialogOpen(true);
+  };
+
+  const handleDeletePurchase = async (purchaseId: string) => {
+    if (!confirm('Excluir esta compra? Esta ação não pode ser desfeita.')) return;
+    try {
+      await (context as any).deleteCompraCartao(purchaseId);
+      setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
+    } catch (e) {
+      alert('Não foi possível excluir a compra.');
+    }
+  };
+
   const handleSaveEditCard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCard) return;
@@ -312,6 +338,40 @@ export default function DividasManager() {
       setCardName(''); setCardLimit('');
     } catch (e) {
       alert('Não foi possível salvar o cartão.');
+    }
+  };
+
+  const handleSaveEditPurchase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPurchase || !selectedCardId) return;
+    
+    const startMonth = purchaseStartDate.slice(0,7);
+    const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
+    const startDay = selectedCard?.diaVencimento || 5;
+    
+    const parcelasPagas = purchaseEmAndamento ? Math.max(0, parseInt(purchaseParcelaAtual) - 1) : 0;
+    
+    const atualizado: CompraCartao = {
+      ...editingPurchase,
+      descricao: purchaseDesc,
+      valorTotal: parseFloat(purchaseValorTotal),
+      parcelas: parseInt(purchaseParcelas || '1'),
+      valorParcela: parseFloat(purchaseValorParcela),
+      startMonth,
+      dataCompra: purchaseDate,
+      parcelasPagas: parcelasPagas,
+      startDay,
+    } as any;
+    
+    try {
+      await saveCompraCartao(atualizado);
+      setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === atualizado.id ? atualizado : p));
+      setIsEditPurchaseDialogOpen(false);
+      setEditingPurchase(null);
+      setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela('');
+      setPurchaseEmAndamento(false); setPurchaseParcelaAtual('');
+    } catch (e) {
+      alert('Não foi possível salvar a compra.');
     }
   };
 
@@ -1770,13 +1830,99 @@ export default function DividasManager() {
                     {expandedCardId === c.id ? 'Ocultar compras' : 'Ver compras'}
                   </button>
                   {expandedCardId === c.id && (
-                    <div className="mt-2 text-sm overflow-x-auto">
-                      {comprasDoCartao.length === 0 && <div className="text-muted-foreground">Sem compras</div>}
-                      {comprasDoCartao.map((p) => (
-                        <div key={p.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 py-1">
-                          <div>{p.descricao} — {p.parcelasPagas || 0}/{p.parcelas} parcelas — compra em {new Date(p.dataCompra).toLocaleDateString('pt-BR')}</div>
+                    <div className="mt-3 space-y-2">
+                      {comprasDoCartao.length === 0 && (
+                        <div className="text-muted-foreground text-sm text-center py-4">
+                          <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p>Sem compras registradas</p>
                         </div>
-                      ))}
+                      )}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left py-2 font-medium">Descrição</th>
+                              <th className="text-left py-2 font-medium">Parcela</th>
+                              <th className="text-left py-2 font-medium">Data de Compra</th>
+                              <th className="text-left py-2 font-medium">Progresso</th>
+                              <th className="text-left py-2 font-medium">Parcela do mês</th>
+                              <th className="text-left py-2 font-medium">Valor Total</th>
+                              <th className="text-left py-2 font-medium">Restante</th>
+                              <th className="text-left py-2 font-medium">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {comprasDoCartao.map((p) => {
+                              const parcelasPagas = p.parcelasPagas || 0;
+                              const totalParcelas = p.parcelas || 1;
+                              const valorPago = parcelasPagas * p.valorParcela;
+                              const valorRestante = p.valorTotal - valorPago;
+                              const progresso = (valorPago / p.valorTotal) * 100;
+                              
+                              return (
+                                <tr key={p.id} className="border-b hover:bg-muted/50">
+                                  <td className="py-3 font-medium">{p.descricao}</td>
+                                  <td className="py-3">
+                                    <Badge variant={totalParcelas === 1 ? 'secondary' : 'default'}>
+                                      {totalParcelas === 1 ? 'Valor total' : `${parcelasPagas}/${totalParcelas} parcelas`}
+                                    </Badge>
+                                    {totalParcelas > 1 && (
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        R$ {p.valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} cada
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="py-3">
+                                    <div className="flex items-center">
+                                      <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
+                                      {new Date(p.dataCompra).toLocaleDateString('pt-BR')}
+                                    </div>
+                                  </td>
+                                  <td className="py-3">
+                                    <div className="space-y-1 w-24">
+                                      <Progress value={progresso} className="h-2" />
+                                      <span className="text-xs text-muted-foreground">
+                                        {progresso.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 font-medium">
+                                    R$ {p.valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="py-3 font-medium">
+                                    R$ {p.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="py-3">
+                                    <span className={`font-medium ${
+                                      valorRestante === 0 ? 'text-green-600' : 'text-red-600'
+                                    }`}>
+                                      R$ {valorRestante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </td>
+                                  <td className="py-3">
+                                    <div className="flex items-center gap-1">
+                                      <button 
+                                        title="Editar compra" 
+                                        onClick={() => openEditPurchase(p)} 
+                                        className="p-1 text-muted-foreground hover:text-foreground"
+                                      >
+                                        <Edit className="h-4 w-4" />
+                                      </button>
+                                      <button 
+                                        title="Excluir compra" 
+                                        onClick={() => handleDeletePurchase(p.id)} 
+                                        className="p-1 text-red-600 hover:text-red-700"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1810,6 +1956,110 @@ export default function DividasManager() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditCardDialogOpen(false)}>Cancelar</Button>
+              <Button type="submit">Salvar</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar Compra */}
+      <Dialog open={isEditPurchaseDialogOpen} onOpenChange={setIsEditPurchaseDialogOpen}>
+        <DialogContent className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}>
+          <DialogHeader>
+            <DialogTitle>Editar Compra</DialogTitle>
+            <DialogDescription>
+              Edite as informações da compra selecionada.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveEditPurchase} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Descrição</Label>
+              <Input value={purchaseDesc} onChange={(e) => setPurchaseDesc(e.target.value)} required />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Valor Total</Label>
+                <Input 
+                  type="text" 
+                  value={purchaseValorTotal} 
+                  onChange={(e) => {
+                    setPurchaseValorTotal(e.target.value);
+                    const novaParcela = recomputeParcela(e.target.value, purchaseParcelas);
+                    if (novaParcela) setPurchaseValorParcela(novaParcela);
+                  }} 
+                  required 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Parcelas</Label>
+                <Input 
+                  type="number" 
+                  min="1" 
+                  value={purchaseParcelas} 
+                  onChange={(e) => {
+                    setPurchaseParcelas(e.target.value);
+                    const novaParcela = recomputeParcela(purchaseValorTotal, e.target.value);
+                    if (novaParcela) setPurchaseValorParcela(novaParcela);
+                  }} 
+                  required 
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Valor da Parcela</Label>
+              <Input 
+                type="text" 
+                value={purchaseValorParcela} 
+                onChange={(e) => {
+                  setPurchaseValorParcela(e.target.value);
+                  const novoTotal = recomputeTotal(e.target.value, purchaseParcelas);
+                  if (novoTotal) setPurchaseValorTotal(novoTotal);
+                }} 
+                required 
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Data da Compra</Label>
+                <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Primeira Competência</Label>
+                <Input type="date" value={purchaseStartDate} onChange={(e) => setPurchaseStartDate(e.target.value)} required />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  id="purchaseEmAndamento" 
+                  checked={purchaseEmAndamento} 
+                  onChange={(e) => setPurchaseEmAndamento(e.target.checked)} 
+                  className="rounded"
+                />
+                <Label htmlFor="purchaseEmAndamento">Compra já em andamento</Label>
+              </div>
+            </div>
+            
+            {purchaseEmAndamento && (
+              <div className="space-y-2">
+                <Label>Parcela Atual</Label>
+                <Input 
+                  type="number" 
+                  min="1" 
+                  max={purchaseParcelas} 
+                  value={purchaseParcelaAtual} 
+                  onChange={(e) => setPurchaseParcelaAtual(e.target.value)} 
+                />
+              </div>
+            )}
+            
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsEditPurchaseDialogOpen(false)}>Cancelar</Button>
               <Button type="submit">Salvar</Button>
             </DialogFooter>
           </form>
