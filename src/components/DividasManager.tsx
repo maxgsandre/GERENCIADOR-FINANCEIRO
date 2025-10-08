@@ -1301,9 +1301,25 @@ export default function DividasManager() {
 
 
 
-  // Calcular totais
-  const totalDividas = dividas.reduce((sum, d) => sum + d.valorTotal, 0);
-  const totalPago = dividas.reduce((sum, d) => sum + d.valorPago, 0);
+  // Calcular totais das dívidas
+  const totalDividasNormais = dividas.reduce((sum, d) => sum + d.valorTotal, 0);
+  const totalPagoNormais = dividas.reduce((sum, d) => sum + d.valorPago, 0);
+  
+  // Calcular totais das faturas dos cartões
+  const totalFaturasCartao = (cartoes || []).reduce((sum, cartao) => {
+    return sum + cardInvoiceTotalForSelectedMonth(cartao.id);
+  }, 0);
+  
+  const totalPagoCartao = (transacoes || []).reduce((sum, t) => {
+    if (t.descricao.includes('Pagamento fatura:') && t.categoria === 'Cartão de Crédito') {
+      return sum + t.valor;
+    }
+    return sum;
+  }, 0);
+  
+  // Totais combinados
+  const totalDividas = totalDividasNormais + totalFaturasCartao;
+  const totalPago = totalPagoNormais + totalPagoCartao;
   const totalRestante = totalDividas - totalPago;
 
   // Dívidas próximas do vencimento (próximos 30 dias)
