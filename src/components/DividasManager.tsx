@@ -1285,7 +1285,13 @@ export default function DividasManager() {
   );
 
   // Mostrar na lista apenas o que tem parcela no mês selecionado
-  const listDividasForMonth: Divida[] = allDividasForView.filter(d => getMonthlyDue(d) > 0);
+  const listDividasForMonth: Divida[] = allDividasForView
+    .filter(d => getMonthlyDue(d) > 0)
+    .sort((a, b) => {
+      const dataA = new Date(a.dataVencimento);
+      const dataB = new Date(b.dataVencimento);
+      return dataA.getTime() - dataB.getTime(); // Mais próximas primeiro
+    });
 
   // Helpers para fatura do cartão
   const cardInvoiceTotalForSelectedMonth = (cardId: string): number => {
