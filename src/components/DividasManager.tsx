@@ -35,6 +35,7 @@ export default function DividasManager() {
     
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
   const [dividaSelecionada, setDividaSelecionada] = useState<Divida | null>(null);
   const [compraSelecionada, setCompraSelecionada] = useState<CompraCartao | null>(null);
   const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
@@ -514,6 +515,44 @@ export default function DividasManager() {
     setIsPagamentoOpen(true);
   };
 
+  const handlePagamentoCartao = (cartao: CartaoCredito) => {
+    // Criar uma dívida temporária para o cartão
+    const dividaTemporaria: Divida = {
+      id: `card:${cartao.id}`,
+      descricao: `Fatura ${cartao.nome}`,
+      valorTotal: cardInvoiceTotalForSelectedMonth(cartao.id),
+      valorPago: 0,
+      parcelas: 1,
+      dataVencimento: `${selectedYM.y}-${String(selectedYM.m).padStart(2, '0')}-${String(cartao.diaVencimento || 5).padStart(2, '0')}`,
+      tipo: 'total' as const,
+      categoria: 'Cartão de Crédito',
+      emAndamento: false,
+      parcelaAtual: '',
+      dataUltimoPagamento: '',
+      pago: false
+    };
+    
+    setDividaSelecionada(dividaTemporaria);
+    setCompraSelecionada(null);
+    setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+    setModoPagamento('pay');
+    
+    // Sugerir valor da fatura do mês
+    const valorFatura = cardInvoiceTotalForSelectedMonth(cartao.id);
+    setValorPagamentoInput(String(valorFatura.toFixed(2)).replace('.', ','));
+    
+    // Scroll para o topo se mobile
+    try {
+      setTimeout(() => {
+        if (window.innerWidth < 768) {
+          window.scrollTo(0, 0);
+        }
+      }, 50);
+    } catch {}
+    
+    setIsPagamentoOpen(true);
+  };
+
   const handleEstorno = (divida: Divida) => {
     if ((divida.valorPago || 0) === 0) {
       alert('Não há pagamentos para estornar.');
@@ -644,6 +683,29 @@ export default function DividasManager() {
         }
       }
 
+      // Pagamento de cartão (dívida temporária)
+      if (dividaSelecionada && dividaSelecionada.id.startsWith('card:')) {
+        const cardId = dividaSelecionada.id.replace('card:', '');
+        
+        // Criar transação
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'saida',
+          valor: valorPagamento,
+          descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
+          categoria: 'Cartão de Crédito',
+          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+
+        // Atualizar saldo do caixa
+        const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (cx) {
+          await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
+        }
+      }
+
     setIsPagamentoOpen(false);
     setDividaSelecionada(null);
       setCompraSelecionada(null);
@@ -754,14 +816,67 @@ export default function DividasManager() {
 
   const processarPagamento = async (valorPagamento: number) => {
     if (!dividaSelecionada && !compraSelecionada) return;
-    if (!caixaPagamento) { alert('Selecione um caixa.'); return; }
+    if (!caixaPagamento) { 
+      alert('Selecione um caixa.'); 
+      return; 
+    }
     // Bloqueio de saldo negativo
     const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
     if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
 
     if (dividaSelecionada) {
-      const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
-      if (!dividaAtual) return;
+      // Verificar se é pagamento de cartão (dívida temporária)
+      if (dividaSelecionada.id.startsWith('card:')) {
+        const cardId = dividaSelecionada.id.replace('card:', '');
+        
+        // Criar transação para pagamento da fatura
+        try {
+          await (saveTransacao && saveTransacao({
+            id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+            caixaId: caixaPagamento,
+            tipo: 'saida',
+            valor: valorPagamento,
+            descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
+            categoria: 'Cartão de Crédito',
+            data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+            hora: new Date().toTimeString().slice(0,5)
+          }));
+
+          // Debitar o caixa
+          const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+          if (cx) {
+            await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
+          }
+
+          // Atualizar parcelas pagas das compras do cartão para o mês atual
+          const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
+          
+          for (const compra of comprasDoCartao) {
+            const [sy, sm] = compra.startMonth.split('-').map(Number);
+            const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+            
+            // Se a compra tem parcela neste mês, avançar +1 parcela
+            if (idx >= 0 && idx < compra.parcelas) {
+              const parcelasAtuais = compra.parcelasPagas || 0;
+              const novasParcelasPagas = parcelasAtuais + 1;
+              
+              const compraAtualizada = { ...compra, parcelasPagas: novasParcelasPagas };
+              
+              await saveCompraCartao(compraAtualizada);
+              setComprasCartao((prev: CompraCartao[]) => 
+                prev.map(p => p.id === compraAtualizada.id ? compraAtualizada : p)
+              );
+            }
+          }
+        } catch (error) {
+          console.error('Erro ao processar pagamento do cartão:', error);
+          alert('Erro ao processar pagamento: ' + (error as any).message);
+          return;
+        }
+      } else {
+        // Pagamento de dívida normal
+        const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
+        if (!dividaAtual) return;
 
       const novoValorPago = dividaAtual.valorPago + valorPagamento;
       const novasParcelasPagas = dividaAtual.tipo === 'parcelada' 
@@ -797,6 +912,7 @@ export default function DividasManager() {
         }
       } catch {}
 
+      }
     }
 
     if (compraSelecionada) {
@@ -848,6 +964,36 @@ export default function DividasManager() {
     return { y, m };
   };
   const selectedYM = useMemo(() => parseYYYYMM(selectedMonth), [selectedMonth]);
+
+  // Monitorar exclusão de transações de pagamento de fatura
+  useEffect(() => {
+    const transacoesFatura = (transacoes || []).filter(t => 
+      t.descricao.includes('Pagamento fatura:') && t.categoria === 'Cartão de Crédito'
+    );
+    
+    // Se não há transações de fatura, reverter apenas compras que foram afetadas pelo pagamento da fatura
+    if (transacoesFatura.length === 0) {
+      const comprasParaReverter = (comprasCartao as CompraCartao[]).filter(compra => {
+        const [sy, sm] = compra.startMonth.split('-').map(Number);
+        const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+        // Só reverter se a compra tem parcela neste mês E não está marcada como "em andamento"
+        return idx >= 0 && idx < compra.parcelas && (compra.parcelasPagas || 0) > 0 && !compra.emAndamento;
+      });
+      
+      comprasParaReverter.forEach(async (compra) => {
+        const parcelasAtuais = compra.parcelasPagas || 0;
+        const novasParcelasPagas = Math.max(0, parcelasAtuais - 1);
+        
+        if (novasParcelasPagas !== parcelasAtuais) {
+          const compraAtualizada = { ...compra, parcelasPagas: novasParcelasPagas };
+          await saveCompraCartao(compraAtualizada);
+          setComprasCartao((prev: CompraCartao[]) => 
+            prev.map(p => p.id === compraAtualizada.id ? compraAtualizada : p)
+          );
+        }
+      });
+    }
+  }, [transacoes, selectedYM]); // Removido comprasCartao das dependências
   
   const getMonthlyDue = (d: Divida): number => {
     if (d.tipo === 'parcelada') {
@@ -894,7 +1040,7 @@ export default function DividasManager() {
     return parcelaAtual;
   };
 
-  // Função para determinar status do cartão baseado nas parcelas do mês selecionado
+  // Função para determinar status do cartão baseado em transações de pagamento da fatura
   const getStatusCartao = (cardId: string) => {
     const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
     
@@ -913,29 +1059,24 @@ export default function DividasManager() {
       return { status: 'Sem parcelas este mês', cor: 'text-muted-foreground' };
     }
     
-    // Verificar se todas as parcelas do mês estão pagas
-    const todasParcelasDoMesPagas = comprasDoMes.every(compra => {
-      const [sy, sm] = compra.startMonth.split('-').map(Number);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-      const parcelaMes = purchaseInstallmentValue(compra, idx);
-      const parcelaMesPaga = idx < (compra.parcelasPagas || 0) ? parcelaMes : 0;
-      return parcelaMesPaga >= parcelaMes;
-    });
+    // Buscar o cartão para obter o nome
+    const cartao = (cartoes || []).find((c: any) => c.id === cardId);
+    const nomeCartao = cartao?.nome || '';
     
-    if (todasParcelasDoMesPagas) {
+    // Verificar se há transação de pagamento da fatura para este cartão no mês selecionado
+    const transacoesFatura = (transacoes || []).filter(t => 
+      t.descricao.includes(`Fatura ${nomeCartao}`) ||
+      t.descricao.includes(`Pagamento fatura: ${nomeCartao}`)
+    );
+    
+    // Verificar se há transação de pagamento da fatura no mês atual
+    const mesAtual = `${selectedYM.y}-${String(selectedYM.m).padStart(2, '0')}`;
+    const transacaoFaturaMes = transacoesFatura.find(t => 
+      t.data.startsWith(mesAtual)
+    );
+    
+    if (transacaoFaturaMes) {
       return { status: '✓ Pago', cor: 'text-green-600' };
-    }
-    
-    // Verificar se pelo menos uma parcela do mês tem pagamento parcial
-    const algumPagamentoParcial = comprasDoMes.some(compra => {
-      const [sy, sm] = compra.startMonth.split('-').map(Number);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-      const parcelaMesPaga = idx < (compra.parcelasPagas || 0);
-      return parcelaMesPaga;
-    });
-    
-    if (algumPagamentoParcial) {
-      return { status: '⏳ Pago Parcial', cor: 'text-orange-600' };
     }
     
     return { status: '⏳ Pendente', cor: 'text-red-600' };
@@ -1817,6 +1958,13 @@ export default function DividasManager() {
                         <span className={`${statusCartao.cor} font-medium`}>{statusCartao.status}</span>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                        <button 
+                          title="Pagar Fatura" 
+                          onClick={() => handlePagamentoCartao(c)} 
+                          className="p-2 text-green-600 hover:text-green-700"
+                        >
+                          <DollarSign className="h-4 w-4" />
+                        </button>
                         <button title="Editar" onClick={() => openEditCard(c)} className="p-2 text-muted-foreground hover:text-foreground">
                           <Edit className="h-4 w-4" />
                         </button>
