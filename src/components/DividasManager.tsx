@@ -2015,7 +2015,7 @@ export default function DividasManager() {
                               <th className="text-left py-2 font-medium">Ações</th>
                             </tr>
                           </thead>
-                          <tbody>
+                          <tbody className="hidden md:table-row-group">
                             {comprasDoCartao.map((p) => {
                               const parcelasPagas = p.parcelasPagas || 0;
                               const totalParcelas = p.parcelas || 1;
@@ -2089,6 +2089,78 @@ export default function DividasManager() {
                       </div>
                     </div>
                   )}
+
+                  {/* Visualização em cards para mobile */}
+                  <div className="md:hidden space-y-3">
+                    {comprasDoCartao.map((p) => {
+                      const parcelasPagas = p.parcelasPagas || 0;
+                      const totalParcelas = p.parcelas || 1;
+                      const valorPago = parcelasPagas * p.valorParcela;
+                      const valorRestante = p.valorTotal - valorPago;
+                      const progresso = (valorPago / p.valorTotal) * 100;
+                      
+                      return (
+                        <div key={p.id} className="border rounded-lg p-4 bg-card">
+                          {/* Título e valor total */}
+                          <div className="flex justify-between items-start mb-2">
+                            <h3 className="text-lg font-bold">{p.descricao}</h3>
+                            <span className="text-lg font-bold">R$ {p.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          
+                          {/* Parcela do mês */}
+                          <div className="text-right mb-2">
+                            <span className="text-sm text-red-600">Mês: R$ {p.valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          
+                          {/* Badge de parcelas */}
+                          <div className="mb-2">
+                            <Badge variant={totalParcelas === 1 ? 'secondary' : 'default'} className="text-xs">
+                              {totalParcelas === 1 ? 'Valor total' : `${parcelasPagas}/${totalParcelas} parcelas`}
+                            </Badge>
+                          </div>
+                          
+                          {/* Data de compra */}
+                          <div className="flex items-center mb-3 text-sm text-muted-foreground">
+                            <Calendar className="h-4 w-4 mr-1" />
+                            {new Date(p.dataCompra).toLocaleDateString('pt-BR')}
+                          </div>
+                          
+                          {/* Progresso e restante */}
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="text-sm">{progresso.toFixed(1)}% pago</span>
+                            <span className={`text-sm font-medium ${valorRestante === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              Falta: R$ {valorRestante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          
+                          {/* Barra de progresso */}
+                          <div className="mb-4">
+                            <Progress value={progresso} className="h-2" />
+                          </div>
+                          
+                          {/* Ações */}
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1">
+                              <button 
+                                title="Editar compra" 
+                                onClick={() => openEditPurchase(p)} 
+                                className="p-2 text-muted-foreground hover:text-foreground"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button 
+                                title="Excluir compra" 
+                                onClick={() => handleDeletePurchase(p.id)} 
+                                className="p-2 text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
