@@ -1097,8 +1097,8 @@ export default function DividasManager() {
     }
     
     // Para dívidas parceladas - verificar se a parcela do mês está paga
-    const parcelaMes = getMonthlyDue(divida);
-    const parcelaMesPaga = getMonthlyPaid(divida);
+    const parcelaMes = getMonthlyDue(divida, selectedMonth);
+    const parcelaMesPaga = getMonthlyPaid(divida, transacoes, selectedMonth);
     
     if (parcelaMesPaga >= parcelaMes && parcelaMes > 0) {
       return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
@@ -2449,11 +2449,11 @@ export default function DividasManager() {
                         <div className="flex items-center justify-center">
                           {parcelaMes > 0 && (
                             <div className={`${
-                              getMonthlyPaid(divida) >= parcelaMes 
+                              getMonthlyPaid(divida, transacoes, selectedMonth) >= parcelaMes 
                                 ? 'text-green-600' 
                                 : 'text-red-600'
                             }`}>
-                              {getMonthlyPaid(divida) >= parcelaMes ? (
+                              {getMonthlyPaid(divida, transacoes, selectedMonth) >= parcelaMes ? (
                                 <CheckCircle className="h-5 w-5" />
                               ) : (
                                 <Circle className="h-5 w-5" />
