@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
 import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign, Lock } from 'lucide-react';
-import { FinanceiroContext, GastoFixo, Divida } from '../App';
+import { FinanceiroContext, GastoFixo, Divida, Pagamento, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
 
 export default function GastosFixosManager() {
@@ -38,6 +38,9 @@ export default function GastosFixosManager() {
   const [valorPagoInput, setValorPagoInput] = useState('');
   const [valorPagamentoInput, setValorPagamentoInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isFracionado, setIsFracionado] = useState(false);
+  const [dataPagamento, setDataPagamento] = useState('');
+  const [horaPagamento, setHoraPagamento] = useState('');
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   const autoCleanRanRef = useRef(false);
   
@@ -98,6 +101,38 @@ export default function GastosFixosManager() {
     });
   };
 
+  // Função para migrar gastos existentes para nova estrutura
+  const migrarGastosExistentes = async () => {
+    if (!gastosFixos || !Array.isArray(gastosFixos)) return;
+    
+    const gastosParaMigrar = (gastosFixos as GastoFixo[]).filter(gasto => 
+      // Migrar gastos que têm valorPago mas não têm array pagamentos
+      (gasto.valorPago && gasto.valorPago > 0) && !gasto.pagamentos
+    );
+    
+    for (const gasto of gastosParaMigrar) {
+      // Criar pagamento baseado no valorPago existente
+      const pagamentoExistente: Pagamento = {
+        id: `${gasto.id}-pagamento-1`,
+        valor: gasto.valorPago || 0,
+        data: new Date().toISOString().slice(0, 10),
+        hora: new Date().toTimeString().slice(0, 5),
+        descricao: `Pagamento migrado`
+      };
+      
+      const gastoMigrado = {
+        ...gasto,
+        pagamentos: [pagamentoExistente],
+        fracionado: false // Por padrão, gastos existentes não são fracionados
+      };
+      
+      await saveGastoFixo(gastoMigrado);
+      setGastosFixos((prev: GastoFixo[]) => 
+        prev.map(g => g.id === gasto.id ? gastoMigrado : g)
+      );
+    }
+  };
+
   // Auto-limpar gastos fixos criados por dívidas na primeira carga da tela
   useEffect(() => {
     if (autoCleanRanRef.current) return;
@@ -106,6 +141,10 @@ export default function GastosFixosManager() {
       if (temAutomaticos) {
         limparGastosFixosAutomaticos();
       }
+      
+      // Migrar gastos existentes para nova estrutura
+      migrarGastosExistentes();
+      
     } finally {
       autoCleanRanRef.current = true;
     }
@@ -286,6 +325,8 @@ export default function GastosFixosManager() {
       categoria: formData.categoria,
         diaVencimento: diaVencimentoNumerico,
       pago: formData.pago,
+      fracionado: isFracionado,
+      pagamentos: [], // Array vazio para novos gastos
     };
 
       await saveGastoFixo(novoGasto);
@@ -314,6 +355,7 @@ export default function GastosFixosManager() {
       pago: false,
     });
     setEditingGasto(null);
+    setIsFracionado(false);
     setIsDialogOpen(false);
   };
 
@@ -342,6 +384,7 @@ export default function GastosFixosManager() {
       diaVencimento: gasto.diaVencimento.toString(),
       pago: gasto.pago,
     });
+    setIsFracionado(gasto.fracionado || false);
     setIsDialogOpen(true);
   };
 
@@ -357,6 +400,31 @@ export default function GastosFixosManager() {
   };
 
   const getStatusGasto = (gasto: GastoFixo) => {
+    // Para gastos migrados ou novos com array pagamentos
+    if (gasto.pagamentos && gasto.pagamentos.length > 0) {
+      const valorTotalPago = gasto.pagamentos.reduce((sum, p) => sum + p.valor, 0);
+      const valorTotal = gasto.valor;
+      
+      if (valorTotalPago === 0) {
+        return { status: 'Pendente', cor: 'text-red-600' };
+      }
+      
+      if (valorTotalPago >= valorTotal) {
+        const excedente = valorTotalPago - valorTotal;
+        return { 
+          status: excedente > 0 ? `Pago (+R$ ${excedente.toFixed(2)})` : 'Pago',
+          cor: 'text-green-600'
+        };
+      }
+      
+      const percentual = (valorTotalPago / valorTotal * 100).toFixed(0);
+      return { 
+        status: `Pago Parcial (${percentual}%)`,
+        cor: 'text-orange-600'
+      };
+    }
+    
+    // Para gastos antigos (compatibilidade)
     const valorPago = gasto.valorPago || 0;
     if (valorPago === 0) return { status: 'Pendente', cor: 'text-red-600' };
     if (valorPago >= gasto.valor) return { status: 'Pago', cor: 'text-green-600' };
@@ -365,8 +433,34 @@ export default function GastosFixosManager() {
 
   const abrirModalValorPago = (gasto: GastoFixo) => {
     setGastoSelecionado(gasto);
-    setValorPagoInput(gasto.valor.toFixed(2).replace('.', ','));
+    
+    // Para gastos com array pagamentos (novos ou migrados)
+    if (gasto.pagamentos && gasto.pagamentos.length > 0) {
+      const valorTotalPago = gasto.pagamentos.reduce((sum, p) => sum + p.valor, 0);
+      const valorRestante = Math.max(0, gasto.valor - valorTotalPago);
+      
+      // Se é fracionado e ainda há valor restante, sugerir o restante
+      if (gasto.fracionado && valorRestante > 0) {
+        setValorPagoInput(valorRestante.toFixed(2).replace('.', ','));
+      } else {
+        // Se não é fracionado ou já está completo, sugerir valor total
+        setValorPagoInput(gasto.valor.toFixed(2).replace('.', ','));
+      }
+    } else {
+      // Para gastos antigos (compatibilidade)
+      const valorPagoAtual = gasto.valorPago || 0;
+      const valorRestante = Math.max(0, gasto.valor - valorPagoAtual);
+      
+      if (valorRestante > 0) {
+        setValorPagoInput(valorRestante.toFixed(2).replace('.', ','));
+      } else {
+        setValorPagoInput(gasto.valor.toFixed(2).replace('.', ','));
+      }
+    }
+    
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
+    setDataPagamento(new Date().toISOString().slice(0, 10));
+    setHoraPagamento(new Date().toTimeString().slice(0, 5));
     setIsValorPagoOpen(true);
   };
 
@@ -405,6 +499,42 @@ export default function GastosFixosManager() {
     } catch (error) {
       console.error('Erro ao reverter pagamento:', error);
     }
+  };
+
+  const excluirPagamento = async (pagamentoId: string) => {
+    if (!editingGasto || !editingGasto.pagamentos) return;
+    
+    if (!confirm('Tem certeza que deseja excluir este pagamento?')) return;
+    
+    // Filtrar o pagamento específico
+    const pagamentosAtualizados = editingGasto.pagamentos.filter(p => p.id !== pagamentoId);
+    const valorTotalPago = pagamentosAtualizados.reduce((sum, p) => sum + p.valor, 0);
+    
+    // Criar gasto atualizado
+    const gastoAtualizado: GastoFixo = {
+      ...editingGasto,
+      pagamentos: pagamentosAtualizados,
+      valorPago: valorTotalPago,
+      pago: valorTotalPago >= editingGasto.valor
+    };
+    
+    // Debug: ver o que está sendo salvo
+    console.log('=== DEBUG SALVAMENTO ===');
+    console.log('Gasto antes:', editingGasto);
+    console.log('Gasto atualizado:', gastoAtualizado);
+    console.log('Pagamentos removidos:', editingGasto.pagamentos.length - pagamentosAtualizados.length);
+    console.log('========================');
+    
+    // Salvar no banco
+    await saveGastoFixo(gastoAtualizado);
+    
+    // Atualizar estado global (seguindo o padrão do projeto)
+    setGastosFixos((prev: GastoFixo[]) =>
+      prev.map(g => g.id === editingGasto.id ? gastoAtualizado : g)
+    );
+    
+    // Atualizar o estado local do modal
+    setEditingGasto(gastoAtualizado);
   };
 
   const confirmarValorPago = async () => {
@@ -469,32 +599,84 @@ export default function GastosFixosManager() {
         await atualizarProgressoComprasCartao(cardId);
       }
     } else {
-      // Para gastos manuais normais, salvar normalmente
-      const gastoAtualizado = { ...gastoSelecionado, valorPago, pago: valorPago >= gastoSelecionado.valor };
+      // Para gastos manuais normais
+      let gastoAtualizado: GastoFixo;
+      
+      // Se já tem array pagamentos (gasto migrado ou novo)
+      if (gastoSelecionado.pagamentos) {
+        const novoPagamento: Pagamento = {
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `${gastoSelecionado.id}-pagamento-${Date.now()}`,
+          valor: valorPago,
+          data: dataPagamento,
+          hora: horaPagamento,
+          descricao: 'Pagamento manual'
+        };
+        
+        const pagamentosAtualizados = [...(gastoSelecionado.pagamentos || []), novoPagamento];
+        const valorTotalPago = pagamentosAtualizados.reduce((sum, p) => sum + p.valor, 0);
+        
+        gastoAtualizado = {
+          ...gastoSelecionado,
+          valorPago: valorTotalPago,
+          pagamentos: pagamentosAtualizados,
+          pago: valorTotalPago >= gastoSelecionado.valor
+        };
+      } else {
+        // Para gastos antigos (compatibilidade) - migrar para nova estrutura
+        const pagamentoExistente: Pagamento = {
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `${gastoSelecionado.id}-pagamento-1`,
+          valor: valorPago,
+          data: dataPagamento,
+          hora: horaPagamento,
+          descricao: 'Pagamento migrado'
+        };
+        
+        gastoAtualizado = {
+          ...gastoSelecionado,
+          valorPago,
+          pagamentos: [pagamentoExistente],
+          fracionado: false,
+          pago: valorPago >= gastoSelecionado.valor
+        };
+      }
+      
       await saveGastoFixo(gastoAtualizado);
       setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoSelecionado.id ? gastoAtualizado : g));
       
-      // Atualizar saldo do caixa e salvar transação
-      if (caixa) {
-        const novoSaldo = caixa.saldo - valorPago;
-        await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
+      // Atualizar saldo do caixa e criar transação automaticamente
+      const caixaAtual = caixas?.find(c => c.id === caixaPagamento);
+      if (caixaAtual) {
+        const novoSaldo = caixaAtual.saldo - valorPago;
+        if (novoSaldo < 0) {
+          alert('Saldo insuficiente no caixa selecionado. A operação foi bloqueada.');
+          return;
+        }
         
-        await (saveTransacao && saveTransacao({
+        // Atualizar saldo do caixa
+        await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
+        
+        // Criar transação automaticamente para o pagamento
+        const novaTransacao: Transacao = {
           id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
           caixaId: caixaPagamento,
           tipo: 'saida',
           valor: valorPago,
-          descricao: `Gasto fixo pago: ${gastoSelecionado.descricao}`,
-          categoria: gastoSelecionado.categoria || 'Outros',
-          data: new Date().toISOString().slice(0,10),
-          hora: new Date().toTimeString().slice(0,5)
-        }));
+          descricao: `Gasto Fixo: ${gastoSelecionado.descricao}`,
+          categoria: gastoSelecionado.categoria,
+          data: dataPagamento,
+          hora: horaPagamento,
+        };
+
+        // Salvar transação
+        await saveTransacao(novaTransacao);
       }
     }
     
     setIsValorPagoOpen(false);
     setGastoSelecionado(null);
     setValorPagoInput('');
+    setDataPagamento('');
+    setHoraPagamento('');
   };
 
   const togglePago = (id: string) => {
@@ -836,6 +1018,28 @@ export default function GastosFixosManager() {
                 Valor total: R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="dataPagamento">Data do pagamento</Label>
+                <Input
+                  id="dataPagamento"
+                  type="date"
+                  value={dataPagamento}
+                  onChange={(e) => setDataPagamento(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="horaPagamento">Hora do pagamento</Label>
+                <Input
+                  id="horaPagamento"
+                  type="time"
+                  value={horaPagamento}
+                  onChange={(e) => setHoraPagamento(e.target.value)}
+                />
+              </div>
+            </div>
+            
             <div className="space-y-2">
               <Label htmlFor="caixaPagamento">Caixa para débito</Label>
               <Select value={caixaPagamento || ''} onValueChange={setCaixaPagamento}>
@@ -860,7 +1064,11 @@ export default function GastosFixosManager() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsValorPagoOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => {
+              setIsValorPagoOpen(false);
+              setDataPagamento('');
+              setHoraPagamento('');
+            }}>Cancelar</Button>
             <Button onClick={confirmarValorPago}>Confirmar</Button>
           </DialogFooter>
         </DialogContent>
@@ -1032,6 +1240,60 @@ export default function GastosFixosManager() {
                 />
                 <Label htmlFor="pago">Gasto já pago neste mês</Label>
               </div>
+              
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="fracionado"
+                  checked={isFracionado}
+                  onCheckedChange={setIsFracionado}
+                />
+                <Label htmlFor="fracionado">Permitir múltiplos pagamentos (ex: feira, supermercado)</Label>
+              </div>
+              
+              {/* Histórico de Pagamentos */}
+              {editingGasto && editingGasto.pagamentos && editingGasto.pagamentos.length > 0 && (
+                <div className="space-y-3">
+                  <Separator />
+                  <div>
+                    <h4 className="font-medium mb-2">Histórico de Pagamentos</h4>
+                    <div className="space-y-2 max-h-32 overflow-y-auto bg-gray-50 dark:bg-gray-800 rounded p-3">
+                      {editingGasto.pagamentos.map((pagamento, index) => (
+                        <div key={`pagamento-${pagamento.id}-${index}`} className="flex justify-between items-center text-sm">
+                          <div className="flex flex-col flex-1">
+                            <span className="font-medium">{pagamento.descricao || `Pagamento ${index + 1}`}</span>
+                            <span className="text-muted-foreground text-xs">
+                              {pagamento.hora && `${pagamento.hora} em `}
+                              {new Date(pagamento.data).toLocaleDateString('pt-BR')}
+                              {/* Debug: {JSON.stringify(pagamento)} */}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-green-600">
+                              R$ {pagamento.valor.toFixed(2).replace('.', ',')}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => excluirPagamento(pagamento.id)}
+                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            >
+                              ×
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="border-t pt-2 mt-2">
+                        <div className="flex justify-between items-center font-medium">
+                          <span>Total Pago:</span>
+                          <span className="text-green-600">
+                            R$ {editingGasto.pagamentos.reduce((sum, p) => sum + p.valor, 0).toFixed(2).replace('.', ',')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={resetForm} disabled={isSaving}>
