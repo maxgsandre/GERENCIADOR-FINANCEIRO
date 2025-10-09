@@ -41,17 +41,41 @@ export const getMonthlyDue = (d: Divida | CompraCartao, selectedMonth: string): 
 };
 
 // Função para calcular valor pago no mês (considera pagamentos via transações)
-export const getMonthlyPaid = (d: Divida | CompraCartao, transacoes: any[], selectedMonth: string): number => {
+export const getMonthlyPaid = (d: Divida | CompraCartao, transacoes: any[], selectedMonth: string, cartoes?: any[]): number => {
   // Se é uma dívida marcada como paga diretamente, retorna o valor devido no mês
   if ('pago' in d && d.pago) {
     return getMonthlyDue(d, selectedMonth);
   }
   
-  // Buscar transações de pagamento
-  const descricaoBusca = d.id && d.id.includes('purchase:') ? 
-    `Pagamento cartão: ${d.descricao.replace(/^Cartão [^:]+: /, '')}` : 
-    `Pagamento dívida: ${d.descricao}`;
+  // Para compras de cartão mapeadas como dívidas, usar lógica de fatura
+  if (d.id && d.id.includes('purchase:')) {
+    const cardId = (d as any).cardId;
+    const cartao = cartoes?.find(c => c.id === cardId);
+    const nomeCartao = cartao?.nome || '';
     
+    // Verificar se há transação de pagamento da fatura para este cartão no mês selecionado
+    const transacoesFatura = transacoes.filter(t => 
+      t.descricao.includes(`Fatura ${nomeCartao}`) ||
+      t.descricao.includes(`Pagamento fatura: ${nomeCartao}`)
+    );
+    
+    // Verificar se há transação de pagamento da fatura no mês atual
+    const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
+    const mesAtual = `${anoSelecionado}-${String(mesSelecionado).padStart(2, '0')}`;
+    const transacaoFaturaMes = transacoesFatura.find(t => 
+      t.data.startsWith(mesAtual)
+    );
+    
+    // Se encontrou transação de fatura no mês, retorna o valor devido
+    if (transacaoFaturaMes) {
+      return getMonthlyDue(d, selectedMonth);
+    }
+    
+    return 0;
+  }
+  
+  // Para dívidas normais, buscar transações de pagamento
+  const descricaoBusca = `Pagamento dívida: ${d.descricao}`;
   const transacoesPagamento = transacoes.filter(t => 
     t.descricao === descricaoBusca
   );
@@ -90,6 +114,7 @@ export const mapPurchasesAsDividas = (
       categoria: 'Cartão de Crédito',
       tipo: c.parcelas > 1 ? 'parcelada' : 'total',
       pago: false, // Adicionar campo pago para compatibilidade
+      cardId: c.cardId, // Incluir cardId para referência
     };
   });
 };
@@ -106,11 +131,11 @@ export const calculateMonthlyTotals = (
   
   // Totais das dívidas originais
   const monthlyTotalDividas = dividas.reduce((sum, d) => sum + getMonthlyDue(d, selectedMonth), 0);
-  const monthlyPaidDividas = dividas.reduce((sum, d) => sum + getMonthlyPaid(d, transacoes, selectedMonth), 0);
+  const monthlyPaidDividas = dividas.reduce((sum, d) => sum + getMonthlyPaid(d, transacoes, selectedMonth, cartoes), 0);
   
   // Totais incluindo compras de cartão
   const monthlyTotal = monthlyTotalDividas + purchasesAsDividas.reduce((sum, d) => sum + getMonthlyDue(d, selectedMonth), 0);
-  const monthlyPaid = monthlyPaidDividas + purchasesAsDividas.reduce((sum, d) => sum + getMonthlyPaid(d, transacoes, selectedMonth), 0);
+  const monthlyPaid = monthlyPaidDividas + purchasesAsDividas.reduce((sum, d) => sum + getMonthlyPaid(d, transacoes, selectedMonth, cartoes), 0);
   const monthlyRemaining = Math.max(0, monthlyTotal - monthlyPaid);
   const monthlyCount = dividas.filter(d => getMonthlyDue(d, selectedMonth) > 0).length + 
     purchasesAsDividas.filter(d => getMonthlyDue(d, selectedMonth) > 0).length;
