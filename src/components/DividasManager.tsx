@@ -1316,9 +1316,12 @@ export default function DividasManager() {
     return sum + cardInvoiceTotalForSelectedMonth(cartao.id);
   }, 0);
   
-  const totalPagoCartao = (transacoes || []).reduce((sum, t) => {
-    if (t.descricao.includes('Pagamento fatura:') && t.categoria === 'Cartão de Crédito') {
-      return sum + t.valor;
+  // Calcular total pago das faturas de cartão baseado no status "pago"
+  const totalPagoCartao = (cartoes || []).reduce((sum, cartao) => {
+    const statusCartao = getStatusCartao(cartao.id);
+    // Se o cartão está marcado como "pago", incluir o valor da fatura no total pago
+    if (statusCartao.status === '✓ Pago') {
+      return sum + cardInvoiceTotalForSelectedMonth(cartao.id);
     }
     return sum;
   }, 0);
