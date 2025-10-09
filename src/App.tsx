@@ -46,6 +46,17 @@ export interface GastoFixo {
   diaVencimento: number;
   pago: boolean;
   valorPago?: number;
+  // Novos campos para gastos fracionados (opcionais para compatibilidade)
+  pagamentos?: Pagamento[];
+  fracionado?: boolean;
+}
+
+export interface Pagamento {
+  id: string;
+  valor: number;
+  data: string;
+  hora?: string;
+  descricao?: string;
 }
 
 export interface Divida {
