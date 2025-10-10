@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -17,6 +17,20 @@ export default function CreditCardsManager() {
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const scrollBeforeDialogRef = useRef<number>(0);
+
+  // Detectar se é mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const [cardName, setCardName] = useState('');
 
@@ -110,13 +124,16 @@ export default function CreditCardsManager() {
           <p className="text-muted-foreground">Gerencie seus cartões e compras</p>
         </div>
         <div className="flex gap-2">
-          <Dialog open={isCardDialogOpen} onOpenChange={setIsCardDialogOpen}>
+          <Dialog open={isCardDialogOpen} onOpenChange={(o) => { setIsCardDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" /> Novo Cartão
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent 
+              className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+              style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+            >
               <DialogHeader>
                 <DialogTitle>Novo Cartão</DialogTitle>
                 <DialogDescription>Informe o nome do cartão</DialogDescription>
@@ -134,13 +151,16 @@ export default function CreditCardsManager() {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={isPurchaseDialogOpen} onOpenChange={setIsPurchaseDialogOpen}>
+          <Dialog open={isPurchaseDialogOpen} onOpenChange={(o) => { setIsPurchaseDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
             <DialogTrigger asChild>
               <Button variant="secondary">
                 <Plus className="h-4 w-4 mr-2" /> Nova Compra
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent 
+              className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+              style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+            >
               <DialogHeader>
                 <DialogTitle>Nova Compra</DialogTitle>
                 <DialogDescription>Adicione uma compra ao cartão selecionado</DialogDescription>

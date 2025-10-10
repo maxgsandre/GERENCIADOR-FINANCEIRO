@@ -1810,7 +1810,10 @@ export default function DividasManager() {
                 <DialogTrigger asChild>
                   <Button size="sm" className="h-7 px-2 text-xs"><Plus className="h-3 w-3 mr-1" /> Novo Cartão</Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent 
+                  className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+                  style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+                >
                   <DialogHeader>
                     <DialogTitle>Novo Cartão</DialogTitle>
                     <DialogDescription>
@@ -1842,7 +1845,10 @@ export default function DividasManager() {
                 <DialogTrigger asChild>
                   <Button size="sm" variant="secondary" className="h-7 px-2 text-xs"><Plus className="h-3 w-3 mr-1" /> Nova Compra</Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent 
+                  className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+                  style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+                >
                   <DialogHeader>
                     <DialogTitle>Nova Compra no Cartão</DialogTitle>
                     <DialogDescription>
