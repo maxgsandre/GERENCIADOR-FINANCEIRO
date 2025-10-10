@@ -118,8 +118,8 @@ export default function GastosFixosManager() {
       const pagamentoExistente: Pagamento = {
         id: `${gasto.id}-pagamento-1`,
         valor: gasto.valorPago || 0,
-        data: new Date().toISOString().slice(0, 10),
-        hora: new Date().toTimeString().slice(0, 5),
+        data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+        hora: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
         descricao: `Pagamento migrado`
       };
       
@@ -464,8 +464,8 @@ export default function GastosFixosManager() {
     }
     
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
-    setDataPagamento(new Date().toISOString().slice(0, 10));
-    setHoraPagamento(new Date().toTimeString().slice(0, 5));
+    setDataPagamento(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
+    setHoraPagamento(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }));
     setIsValorPagoOpen(true);
   };
 

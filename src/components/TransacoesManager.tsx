@@ -46,8 +46,8 @@ export default function TransacoesManager() {
     valor: '',
     descricao: '',
     categoria: '',
-    data: new Date().toISOString().split('T')[0],
-    hora: new Date().toTimeString().slice(0, 5),
+    data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+    hora: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,8 +108,8 @@ export default function TransacoesManager() {
       valor: '',
       descricao: '',
       categoria: '',
-      data: new Date().toISOString().split('T')[0],
-      hora: new Date().toTimeString().slice(0, 5),
+      data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+      hora: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
     });
     setAdicionarDivida(false);
     setIsDialogOpen(false);
