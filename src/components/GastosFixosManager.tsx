@@ -47,9 +47,7 @@ export default function GastosFixosManager() {
   
   // Função para limpar gastos fixos criados automaticamente por dívidas
   const limparGastosFixosAutomaticos = async () => {
-    if (!gastosFixos || !Array.isArray(gastosFixos)) {
-      return;
-    }
+    if (!gastosFixos || !Array.isArray(gastosFixos)) return;
 
     // Identificar gastos fixos criados automaticamente por dívidas
     const gastosAutomaticos = (gastosFixos as GastoFixo[]).filter(gasto => 
@@ -88,6 +86,11 @@ export default function GastosFixosManager() {
 
     // Para cada gasto fixo marcado como pago (pago: true ou valorPago > 0), verificar se tem transação correspondente
     (gastosFixos as GastoFixo[]).forEach(gasto => {
+      // NÃO verificar gastos que têm array pagamentos (novos gastos fracionados)
+      if (gasto.pagamentos && gasto.pagamentos.length > 0) {
+        return;
+      }
+      
       const isPago = gasto.pago || (gasto.valorPago && gasto.valorPago > 0);
       
       if (isPago) {
@@ -136,6 +139,7 @@ export default function GastosFixosManager() {
   // Auto-limpar gastos fixos criados por dívidas na primeira carga da tela
   useEffect(() => {
     if (autoCleanRanRef.current) return;
+    
     try {
       const temAutomaticos = Array.isArray(gastosFixos) && (gastosFixos as GastoFixo[]).some(g => g.id.startsWith('divida:') || g.id.startsWith('cartao:'));
       if (temAutomaticos) {
@@ -161,7 +165,7 @@ export default function GastosFixosManager() {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [transacoes, gastosFixos]); // Executa quando transacoes ou gastosFixos mudam
+  }, [transacoes, gastosFixos]);
   const valorPagamentoNum = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
   const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < valorPagamentoNum) : false;
 
@@ -326,7 +330,8 @@ export default function GastosFixosManager() {
         diaVencimento: diaVencimentoNumerico,
       pago: formData.pago,
       fracionado: isFracionado,
-      pagamentos: [], // Array vazio para novos gastos
+      // Preservar pagamentos existentes ao editar; iniciar vazio apenas para novo
+      pagamentos: editingGasto?.pagamentos ? [...editingGasto.pagamentos] : [],
     };
 
       await saveGastoFixo(novoGasto);
@@ -518,13 +523,6 @@ export default function GastosFixosManager() {
       pago: valorTotalPago >= editingGasto.valor
     };
     
-    // Debug: ver o que está sendo salvo
-    console.log('=== DEBUG SALVAMENTO ===');
-    console.log('Gasto antes:', editingGasto);
-    console.log('Gasto atualizado:', gastoAtualizado);
-    console.log('Pagamentos removidos:', editingGasto.pagamentos.length - pagamentosAtualizados.length);
-    console.log('========================');
-    
     // Salvar no banco
     await saveGastoFixo(gastoAtualizado);
     
@@ -679,7 +677,7 @@ export default function GastosFixosManager() {
     setHoraPagamento('');
   };
 
-  const togglePago = (id: string) => {
+  const togglePago = async (id: string) => {
     // Se for um gasto consolidado de cartão, marcar todas as parcelas
     if (id.startsWith('cartao:') && id.includes(selectedMonth)) {
       const parts = id.split(':');
@@ -752,9 +750,10 @@ export default function GastosFixosManager() {
       setIsPagamentoOpen(true);
       return;
     }
+    
     const atualizado = { ...gasto, pago: !gasto.pago };
     setGastosFixos(prev => prev.map(g => g.id === id ? atualizado : g));
-    saveGastoFixo && saveGastoFixo(atualizado);
+    await saveGastoFixo(atualizado);
   };
 
   const ymToIndex = (year: number, month1to12: number) => year * 12 + (month1to12 - 1);
@@ -1264,7 +1263,6 @@ export default function GastosFixosManager() {
                             <span className="text-muted-foreground text-xs">
                               {pagamento.hora && `${pagamento.hora} em `}
                               {new Date(pagamento.data).toLocaleDateString('pt-BR')}
-                              {/* Debug: {JSON.stringify(pagamento)} */}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1274,6 +1272,7 @@ export default function GastosFixosManager() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              type="button"
                               onClick={() => excluirPagamento(pagamento.id)}
                               className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
                             >
