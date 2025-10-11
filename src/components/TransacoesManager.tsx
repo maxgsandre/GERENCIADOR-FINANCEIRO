@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, ArrowUp, ArrowDown, Filter, Tag, Edit } from 'lucide-react';
+import { Trash2, Plus, ArrowUp, ArrowDown, Filter, Tag, Edit, ArrowLeftRight } from 'lucide-react';
 import { Switch } from './ui/switch';
 import { FinanceiroContext, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
@@ -314,12 +314,14 @@ export default function TransacoesManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold">Transações</h2>
-          <p className="text-muted-foreground">
-            Gerencie suas entradas e saídas
-          </p>
+      {/* Cabeçalho compacto */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pb-2 border-b">
+        <div className="flex items-center gap-2">
+          <ArrowLeftRight className="h-6 w-6 text-primary" />
+          <div>
+            <h2 className="text-2xl font-bold">Transações</h2>
+            <p className="text-sm text-muted-foreground">Gerencie suas entradas e saídas</p>
+          </div>
         </div>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

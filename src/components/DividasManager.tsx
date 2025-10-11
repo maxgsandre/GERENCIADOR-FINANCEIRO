@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign, Wallet } from 'lucide-react';
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
 
@@ -1415,17 +1415,9 @@ export default function DividasManager() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold">Gestão de Dívidas</h2>
-          <p className="text-muted-foreground">
-            Controle suas dívidas totais e parceladas
-          </p>
-        </div>
-        
-        <Dialog open={isDialogOpen} onOpenChange={(o) => { setIsDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 60); } catch {} } }}>
+      <Dialog open={isDialogOpen} onOpenChange={(o) => { setIsDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 60); } catch {} } }}>
           <DialogTrigger asChild>
-            <Button onClick={resetForm}>
+            <Button onClick={resetForm} className="hidden">
               <Plus className="h-4 w-4 mr-2" />
               Nova Dívida
             </Button>
@@ -1629,7 +1621,6 @@ export default function DividasManager() {
             </form>
           </DialogContent>
         </Dialog>
-      </div>
 
       {/* Dialog de pagamento */}
       <Dialog open={isPagamentoOpen} onOpenChange={(o) => { setIsPagamentoOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
@@ -1715,11 +1706,36 @@ export default function DividasManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Cards de resumo do mês selecionado */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-muted-foreground">Mês</div>
-        <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px]" />
+      {/* Cabeçalho compacto */}
+      <div className="flex flex-col gap-3 pb-2 border-b mb-4">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Wallet className="h-6 w-6 text-primary" />
+            <div>
+              <h2 className="text-2xl font-bold">Dívidas e Cartões</h2>
+              <p className="text-sm text-muted-foreground">Gerencie suas dívidas e cartões de crédito</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => {
+              resetForm();
+              scrollBeforeDialogRef.current = window.scrollY;
+              setIsDialogOpen(true);
+            }}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nova Dívida
+            </Button>
+            <Input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(e.target.value)} 
+              className="w-[160px] sm:w-[180px]" 
+            />
+          </div>
+        </div>
       </div>
+      
+      {/* Cards de resumo do mês selecionado */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card>
           <CardHeader className="pb-2">
