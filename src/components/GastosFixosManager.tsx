@@ -307,7 +307,7 @@ export default function GastosFixosManager() {
       return;
     }
 
-    const valorNumerico = parseFloat(formData.valor);
+    const valorNumerico = parseFloat(formData.valor.replace(',', '.'));
     if (isNaN(valorNumerico) || valorNumerico <= 0) {
       alert('Por favor, insira um valor válido maior que zero.');
       return;
@@ -537,7 +537,7 @@ export default function GastosFixosManager() {
 
   const confirmarValorPago = async () => {
     if (!gastoSelecionado || !caixaPagamento) return;
-    const valorPago = parseFloat(valorPagoInput) || 0;
+    const valorPago = parseFloat(valorPagoInput.replace(',', '.')) || 0;
     
     if (valorPago <= 0) {
       alert('Valor deve ser maior que zero.');
@@ -1055,7 +1055,7 @@ export default function GastosFixosManager() {
               </Select>
               {caixaPagamento && (() => {
                 const caixa = caixas?.find((c: any) => c.id === caixaPagamento);
-                const valorPago = parseFloat(valorPagoInput) || 0;
+                const valorPago = parseFloat(valorPagoInput.replace(',', '.')) || 0;
                 return caixa && valorPago > caixa.saldo ? (
                   <p className="text-sm text-red-600">Saldo insuficiente no caixa selecionado</p>
                 ) : null;

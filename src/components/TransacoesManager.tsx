@@ -58,7 +58,7 @@ export default function TransacoesManager() {
       id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
       caixaId: formData.caixaId,
       tipo: formData.tipo,
-      valor: parseFloat(formData.valor),
+      valor: parseFloat(formData.valor.replace(',', '.')),
       descricao: formData.descricao,
       categoria: formData.categoria,
       data: formData.data,
@@ -67,7 +67,7 @@ export default function TransacoesManager() {
 
     const caixaAtual = caixas.find(c => c.id === formData.caixaId);
     if (caixaAtual) {
-      const novoSaldo = formData.tipo === 'entrada' 
+        const novoSaldo = formData.tipo === 'entrada' 
         ? caixaAtual.saldo + novaTransacao.valor
         : caixaAtual.saldo - novaTransacao.valor;
       if (novoSaldo < 0) {
@@ -84,11 +84,11 @@ export default function TransacoesManager() {
       const novaDivida = {
         id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
         descricao: formData.descricao,
-        valorTotal: parseFloat(formData.valor),
-        valorPago: parseFloat(formData.valor), // Já foi pago via transação
+        valorTotal: parseFloat(formData.valor.replace(',', '.')),
+        valorPago: parseFloat(formData.valor.replace(',', '.')), // Já foi pago via transação
         parcelas: 1,
         parcelasPagas: 1,
-        valorParcela: parseFloat(formData.valor),
+        valorParcela: parseFloat(formData.valor.replace(',', '.')),
         dataVencimento: formData.data,
         tipo: 'total' as 'parcelada' | 'total',
         categoria: formData.categoria,
@@ -193,7 +193,7 @@ export default function TransacoesManager() {
     
     const caixaAtual = caixas.find(c => c.id === transacao.caixaId);
     if (caixaAtual) {
-      const novoSaldo = transacao.tipo === 'entrada' 
+          const novoSaldo = transacao.tipo === 'entrada' 
         ? caixaAtual.saldo - transacao.valor
         : caixaAtual.saldo + transacao.valor;
       await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
@@ -247,7 +247,7 @@ export default function TransacoesManager() {
       id: editingTransacao.id,
       caixaId: formData.caixaId,
       tipo: formData.tipo,
-      valor: parseFloat(formData.valor),
+      valor: parseFloat(formData.valor.replace(',', '.')),
       descricao: formData.descricao,
       categoria: formData.categoria,
       data: formData.data,
@@ -282,7 +282,7 @@ export default function TransacoesManager() {
   const transacoesFiltradas = transacoes.filter(transacao => {
     const passaCaixa = !selectedCaixaId || transacao.caixaId === selectedCaixaId;
     const passaTipoFiltro = filtroTipo === 'todos' || transacao.tipo === filtroTipo;
-
+    
     let passaPeriodo = true;
     const dataTransacao = new Date(transacao.data + 'T00:00:00');
     if (filtroDe) {
@@ -618,7 +618,7 @@ export default function TransacoesManager() {
               placeholder="De"
             />
             <span className="text-sm text-muted-foreground">até</span>
-            <Input
+          <Input
               type="date"
               value={filtroAte}
               onChange={(e) => setFiltroAte(e.target.value)}
@@ -672,14 +672,14 @@ export default function TransacoesManager() {
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(transacao)}
-                        className="text-red-600 hover:text-red-700 p-1"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(transacao)}
+                      className="text-red-600 hover:text-red-700 p-1"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                     </div>
                   </div>
                   
@@ -774,14 +774,14 @@ export default function TransacoesManager() {
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(transacao)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(transacao)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                         </div>
                       </TableCell>
                     </TableRow>
