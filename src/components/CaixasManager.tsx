@@ -471,19 +471,10 @@ export default function CaixasManager() {
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho compacto */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pb-2 border-b">
-        <div className="flex items-center gap-2">
-          <Wallet className="h-6 w-6 text-primary" />
-          <div>
-            <h2 className="text-2xl font-bold">Gestão de Caixas</h2>
-            <p className="text-sm text-muted-foreground">Gerencie suas contas, carteiras e investimentos</p>
-          </div>
-        </div>
-        
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      {/* Dialog de caixa (compartilhado) */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => resetForm()}>
+            <Button onClick={() => resetForm()} className="hidden">
               <Plus className="h-4 w-4 mr-2" />
               Nova Caixa
             </Button>
@@ -555,6 +546,40 @@ export default function CaixasManager() {
             </form>
           </DialogContent>
         </Dialog>
+
+      {/* Cabeçalho compacto */}
+      <div className="flex flex-col gap-3 pb-2 border-b">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Wallet className="h-6 w-6 text-primary" />
+            <div>
+              <h2 className="text-2xl font-bold">Gestão de Caixas</h2>
+              <p className="text-sm text-muted-foreground">Gerencie suas contas, carteiras e investimentos</p>
+            </div>
+          </div>
+          
+          {/* Controles - Desktop/Tablet */}
+          <div className="hidden md:flex items-center gap-2">
+            <Button onClick={() => {
+              resetForm();
+              setIsDialogOpen(true);
+            }}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nova Caixa
+            </Button>
+          </div>
+        </div>
+        
+        {/* Controles - Mobile */}
+        <div className="flex md:hidden items-center gap-2">
+          <Button onClick={() => {
+            resetForm();
+            setIsDialogOpen(true);
+          }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nova Caixa
+          </Button>
+        </div>
       </div>
 
       {/* Card com total geral */}
