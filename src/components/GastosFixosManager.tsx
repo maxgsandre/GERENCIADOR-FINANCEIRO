@@ -9,7 +9,7 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign, Lock } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign, Lock, Receipt } from 'lucide-react';
 import { FinanceiroContext, GastoFixo, Divida, Pagamento, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
 
@@ -1073,18 +1073,9 @@ export default function GastosFixosManager() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold">Gastos Fixos</h2>
-          <p className="text-muted-foreground">
-            Gerencie seus gastos recorrentes mensais
-          </p>
-        </div>
-        
-        <div className="flex items-center">
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={resetForm}>
+            <Button onClick={resetForm} className="hidden">
               <Plus className="h-4 w-4 mr-2" />
               Novo Gasto Fixo
             </Button>
@@ -1305,15 +1296,36 @@ export default function GastosFixosManager() {
             </form>
           </DialogContent>
         </Dialog>
-          {/* Botão de limpeza removido a pedido do usuário */}
+
+      {/* Cabeçalho compacto */}
+      <div className="flex flex-col gap-3 pb-2 border-b mb-4">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Receipt className="h-6 w-6 text-primary" />
+            <div>
+              <h2 className="text-2xl font-bold">Gastos Fixos</h2>
+              <p className="text-sm text-muted-foreground">Gerencie seus gastos recorrentes</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => {
+              resetForm();
+              setIsDialogOpen(true);
+            }}>
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Gasto Fixo
+            </Button>
+            <Input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(e.target.value)} 
+              className="w-[160px] sm:w-[180px]" 
+            />
+          </div>
         </div>
       </div>
-
+      
       {/* Cards de resumo */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-muted-foreground">Mês</div>
-        <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px]" />
-      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         <Card>
           <CardHeader className="pb-2">

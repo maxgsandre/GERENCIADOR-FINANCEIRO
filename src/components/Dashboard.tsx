@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, LabelList } from 'recharts';
 import { FinanceiroContext } from '../App';
-import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, DollarSign, ArrowUpCircle, ArrowDownCircle, Target } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, DollarSign, ArrowUpCircle, ArrowDownCircle, Target, LayoutDashboard } from 'lucide-react';
 import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
 
 export default function Dashboard() {
@@ -206,17 +206,22 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Seletor de mês */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold">Dashboard</h2>
-          <p className="text-muted-foreground">
-            Visão geral das suas finanças
-          </p>
+      {/* Cabeçalho compacto */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pb-2 border-b">
+        <div className="flex items-center gap-2">
+          <LayoutDashboard className="h-6 w-6 text-primary" />
+          <div>
+            <h2 className="text-2xl font-bold">Dashboard</h2>
+            <p className="text-sm text-muted-foreground">Visão geral das suas finanças</p>
+          </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <div className="text-sm text-muted-foreground">Mês</div>
-          <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px]" />
+        <div className="flex items-center gap-2">
+          <Input 
+            type="month" 
+            value={selectedMonth} 
+            onChange={(e) => setSelectedMonth(e.target.value)} 
+            className="w-[160px] sm:w-[180px]" 
+          />
         </div>
       </div>
 

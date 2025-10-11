@@ -213,9 +213,23 @@ export default function CreditCardsManager() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">Mês</div>
-        <Input type="month" value={mesSelecionado} onChange={(e) => setMesSelecionado(e.target.value)} className="w-[180px]" />
+      {/* Cabeçalho compacto */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pb-2 border-b mb-4">
+        <div className="flex items-center gap-2">
+          <CreditCard className="h-6 w-6 text-primary" />
+          <div>
+            <h2 className="text-2xl font-bold">Cartões de Crédito</h2>
+            <p className="text-sm text-muted-foreground">Gerencie seus cartões e compras</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input 
+            type="month" 
+            value={mesSelecionado} 
+            onChange={(e) => setMesSelecionado(e.target.value)} 
+            className="w-[160px] sm:w-[180px]" 
+          />
+        </div>
       </div>
 
       <Card>

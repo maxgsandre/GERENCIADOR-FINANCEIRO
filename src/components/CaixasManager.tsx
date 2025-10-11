@@ -471,12 +471,14 @@ export default function CaixasManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold">Gestão de Caixas</h2>
-          <p className="text-muted-foreground">
-            Gerencie suas contas, carteiras e investimentos
-          </p>
+      {/* Cabeçalho compacto */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pb-2 border-b">
+        <div className="flex items-center gap-2">
+          <Wallet className="h-6 w-6 text-primary" />
+          <div>
+            <h2 className="text-2xl font-bold">Gestão de Caixas</h2>
+            <p className="text-sm text-muted-foreground">Gerencie suas contas, carteiras e investimentos</p>
+          </div>
         </div>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
