@@ -567,6 +567,12 @@ export default function CaixasManager() {
               <Plus className="h-4 w-4 mr-2" />
               Nova Caixa
             </Button>
+            <Input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(e.target.value)} 
+              className="w-[180px]" 
+            />
           </div>
         </div>
         
@@ -579,22 +585,20 @@ export default function CaixasManager() {
             <Plus className="h-4 w-4 mr-2" />
             Nova Caixa
           </Button>
+          <Input 
+            type="month" 
+            value={selectedMonth} 
+            onChange={(e) => setSelectedMonth(e.target.value)} 
+            className="w-[160px]" 
+          />
         </div>
       </div>
 
       {/* Card com total geral */}
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle>Total Geral</CardTitle>
-              <CardDescription>Soma de todas as caixas</CardDescription>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="text-sm text-muted-foreground">Mês</div>
-              <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-[180px]" />
-            </div>
-          </div>
+          <CardTitle>Total Geral</CardTitle>
+          <CardDescription>Soma de todas as caixas</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-green-600">
