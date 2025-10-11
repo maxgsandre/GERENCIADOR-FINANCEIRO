@@ -207,20 +207,34 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Cabeçalho compacto */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 pb-2 border-b">
-        <div className="flex items-center gap-2">
-          <LayoutDashboard className="h-6 w-6 text-primary" />
-          <div>
-            <h2 className="text-2xl font-bold">Dashboard</h2>
-            <p className="text-sm text-muted-foreground">Visão geral das suas finanças</p>
+      <div className="flex flex-col gap-3 pb-2 border-b">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <LayoutDashboard className="h-6 w-6 text-primary" />
+            <div>
+              <h2 className="text-2xl font-bold">Dashboard</h2>
+              <p className="text-sm text-muted-foreground">Visão geral das suas finanças</p>
+            </div>
+          </div>
+          
+          {/* Controles - Desktop/Tablet */}
+          <div className="hidden md:flex items-center gap-2">
+            <Input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(e.target.value)} 
+              className="w-[180px]" 
+            />
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        
+        {/* Controles - Mobile */}
+        <div className="flex md:hidden items-center gap-2">
           <Input 
             type="month" 
             value={selectedMonth} 
             onChange={(e) => setSelectedMonth(e.target.value)} 
-            className="w-[160px] sm:w-[180px]" 
+            className="w-[160px]" 
           />
         </div>
       </div>

@@ -1708,7 +1708,7 @@ export default function DividasManager() {
 
       {/* Cabeçalho compacto */}
       <div className="flex flex-col gap-3 pb-2 border-b mb-4">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Wallet className="h-6 w-6 text-primary" />
             <div>
@@ -1716,7 +1716,9 @@ export default function DividasManager() {
               <p className="text-sm text-muted-foreground">Gerencie suas dívidas e cartões de crédito</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          
+          {/* Controles - Desktop/Tablet */}
+          <div className="hidden md:flex items-center gap-2">
             <Button onClick={() => {
               resetForm();
               scrollBeforeDialogRef.current = window.scrollY;
@@ -1729,9 +1731,27 @@ export default function DividasManager() {
               type="month" 
               value={selectedMonth} 
               onChange={(e) => setSelectedMonth(e.target.value)} 
-              className="w-[160px] sm:w-[180px]" 
+              className="w-[180px]" 
             />
           </div>
+        </div>
+        
+        {/* Controles - Mobile */}
+        <div className="flex md:hidden items-center gap-2">
+          <Button onClick={() => {
+            resetForm();
+            scrollBeforeDialogRef.current = window.scrollY;
+            setIsDialogOpen(true);
+          }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nova Dívida
+          </Button>
+          <Input 
+            type="month" 
+            value={selectedMonth} 
+            onChange={(e) => setSelectedMonth(e.target.value)} 
+            className="w-[160px]" 
+          />
         </div>
       </div>
       
