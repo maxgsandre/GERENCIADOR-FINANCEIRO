@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Wallet, PiggyBank, CreditCard, TrendingUp, Target, Percent, DollarSign, CheckCircle, Circle } from 'lucide-react';
+import { Trash2, Plus, Edit, Wallet, PiggyBank, CreditCard, TrendingUp, Target, Percent, DollarSign, CheckCircle, Circle, Calendar } from 'lucide-react';
 import { FinanceiroContext, Caixa, Cofrinho, ReceitaPrevista } from '../App';
 
 const tiposIcon = {
@@ -684,46 +684,51 @@ export default function CaixasManager() {
 
           <div className="space-y-3">
             {receitasComDataAjustada.map((receita) => (
-              <div key={receita.id} className="flex items-center justify-between p-4 border rounded-lg bg-gray-50 dark:bg-gray-800">
-                <div className="flex items-center space-x-3">
-                  <button
-                    onClick={() => toggleReceitaRecebida(receita)}
-                    className={`p-1 rounded-full ${receita.recebido 
-                      ? 'text-green-600 hover:text-green-700' 
-                      : 'text-gray-400 hover:text-gray-600'}`}
-                  >
-                    {receita.recebido ? (
-                      <CheckCircle className="h-5 w-5" />
-                    ) : (
-                      <Circle className="h-5 w-5" />
-                    )}
-                  </button>
-                  <div>
-                    <p className={`font-medium ${receita.recebido ? 'line-through text-muted-foreground' : ''}`}>
+              <div key={receita.id} className="border rounded-lg p-3 bg-gray-50 dark:bg-gray-800">
+                {/* Linha 1: Status + Descrição + Valor */}
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <button
+                      onClick={() => toggleReceitaRecebida(receita)}
+                      className={`flex-shrink-0 ${receita.recebido 
+                        ? 'text-green-600 hover:text-green-700' 
+                        : 'text-gray-400 hover:text-gray-600'}`}
+                    >
+                      {receita.recebido ? (
+                        <CheckCircle className="h-5 w-5" />
+                      ) : (
+                        <Circle className="h-5 w-5" />
+                      )}
+                    </button>
+                    <p className={`font-medium truncate ${receita.recebido ? 'text-muted-foreground' : ''}`}>
                       {receita.descricao}
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                      Vencimento: {new Date(receita.dataVencimentoAjustada).toLocaleDateString('pt-BR')}
-                    </p>
                   </div>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <span className={`font-bold ${receita.recebido ? 'text-green-600' : 'text-blue-600'}`}>
+                  <span className={`font-bold flex-shrink-0 ${receita.recebido ? 'text-green-600' : 'text-blue-600'}`}>
                     R$ {receita.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </span>
-                  <div className="flex space-x-2">
+                </div>
+
+                {/* Linha 2: Data + Ações */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <Calendar className="h-4 w-4" />
+                    <span>Vencimento: {new Date(receita.dataVencimentoAjustada).toLocaleDateString('pt-BR')}</span>
+                  </div>
+                  <div className="flex gap-2">
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={() => handleEditReceita(receita)}
+                      className="h-8 w-8 p-0"
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={() => handleDeleteReceita(receita.id)}
-                      className="text-red-600 hover:text-red-700"
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
