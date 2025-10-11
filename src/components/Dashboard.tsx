@@ -223,7 +223,7 @@ export default function Dashboard() {
               type="month" 
               value={selectedMonth} 
               onChange={(e) => setSelectedMonth(e.target.value)} 
-              className="w-[180px]" 
+              className="w-[180px] !h-8" 
             />
           </div>
         </div>
@@ -234,7 +234,7 @@ export default function Dashboard() {
             type="month" 
             value={selectedMonth} 
             onChange={(e) => setSelectedMonth(e.target.value)} 
-            className="w-[160px]" 
+            className="w-[160px] h-9" 
           />
         </div>
       </div>

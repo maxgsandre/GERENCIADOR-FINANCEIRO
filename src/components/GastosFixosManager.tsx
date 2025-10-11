@@ -1310,10 +1310,7 @@ export default function GastosFixosManager() {
           
           {/* Controles - Desktop/Tablet */}
           <div className="hidden md:flex items-center gap-2">
-            <Button onClick={() => {
-              resetForm();
-              setIsDialogOpen(true);
-            }}>
+            <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
               <Plus className="h-4 w-4 mr-2" />
               Novo Gasto Fixo
             </Button>
@@ -1328,10 +1325,7 @@ export default function GastosFixosManager() {
         
         {/* Controles - Mobile */}
         <div className="flex md:hidden items-center gap-2">
-          <Button onClick={() => {
-            resetForm();
-            setIsDialogOpen(true);
-          }}>
+          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
             <Plus className="h-4 w-4 mr-2" />
             Novo Gasto Fixo
           </Button>
