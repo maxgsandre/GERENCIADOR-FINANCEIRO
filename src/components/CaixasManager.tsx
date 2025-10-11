@@ -560,10 +560,7 @@ export default function CaixasManager() {
           
           {/* Controles - Desktop/Tablet */}
           <div className="hidden md:flex items-center gap-2">
-            <Button onClick={() => {
-              resetForm();
-              setIsDialogOpen(true);
-            }}>
+            <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
               <Plus className="h-4 w-4 mr-2" />
               Nova Caixa
             </Button>
@@ -578,10 +575,7 @@ export default function CaixasManager() {
         
         {/* Controles - Mobile */}
         <div className="flex md:hidden items-center gap-2">
-          <Button onClick={() => {
-            resetForm();
-            setIsDialogOpen(true);
-          }}>
+          <Button onClick={() => { resetForm(); setIsDialogOpen(true); }}>
             <Plus className="h-4 w-4 mr-2" />
             Nova Caixa
           </Button>

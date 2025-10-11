@@ -1719,11 +1719,13 @@ export default function DividasManager() {
           
           {/* Controles - Desktop/Tablet */}
           <div className="hidden md:flex items-center gap-2">
-            <Button onClick={() => {
-              resetForm();
-              scrollBeforeDialogRef.current = window.scrollY;
-              setIsDialogOpen(true);
-            }}>
+            <Button 
+              onClick={() => {
+                resetForm();
+                scrollBeforeDialogRef.current = window.scrollY;
+                setIsDialogOpen(true);
+              }}
+            >
               <Plus className="h-4 w-4 mr-2" />
               Nova Dívida
             </Button>
@@ -1738,11 +1740,13 @@ export default function DividasManager() {
         
         {/* Controles - Mobile */}
         <div className="flex md:hidden items-center gap-2">
-          <Button onClick={() => {
-            resetForm();
-            scrollBeforeDialogRef.current = window.scrollY;
-            setIsDialogOpen(true);
-          }}>
+          <Button 
+            onClick={() => {
+              resetForm();
+              scrollBeforeDialogRef.current = window.scrollY;
+              setIsDialogOpen(true);
+            }}
+          >
             <Plus className="h-4 w-4 mr-2" />
             Nova Dívida
           </Button>
