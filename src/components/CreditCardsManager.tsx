@@ -33,11 +33,13 @@ export default function CreditCardsManager() {
   }, []);
 
   const [cardName, setCardName] = useState('');
+  const [isSubmittingCard, setIsSubmittingCard] = useState(false);
 
   const [desc, setDesc] = useState('');
   const [valorTotal, setValorTotal] = useState('');
   const [parcelas, setParcelas] = useState('1');
   const [valorParcela, setValorParcela] = useState('');
+  const [isSubmittingPurchase, setIsSubmittingPurchase] = useState(false);
   const [startMonth, setStartMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
@@ -69,16 +71,20 @@ export default function CreditCardsManager() {
 
   const handleCreateCard = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingCard) return;
     if (!cardName.trim()) return;
+    setIsSubmittingCard(true);
     const card: CartaoCredito = { id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(), nome: cardName.trim() } as any;
     await saveCartao(card);
     setCartoes((prev: CartaoCredito[]) => [...prev, card]);
     setCardName('');
     setIsCardDialogOpen(false);
+    setIsSubmittingCard(false);
   };
 
   const handleCreatePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingPurchase) return;
     if (!selectedCardId || !desc || !valorTotal || !valorParcela || !startMonth) return;
     const p: CompraCartao = {
       id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(),
@@ -91,12 +97,14 @@ export default function CreditCardsManager() {
       dataCompra,
       parcelasPagas: 0,
     } as any;
+    setIsSubmittingPurchase(true);
     await saveCompraCartao(p);
     setComprasCartao((prev: CompraCartao[]) => [...prev, p]);
 
 
     setIsPurchaseDialogOpen(false);
     setDesc(''); setValorTotal(''); setParcelas('1'); setValorParcela('');
+    setIsSubmittingPurchase(false);
   };
 
   // Totais da fatura por mês (exibe para o mês atual)
@@ -143,9 +151,9 @@ export default function CreditCardsManager() {
                   <Label htmlFor="card-name">Nome</Label>
                   <Input id="card-name" value={cardName} onChange={(e) => setCardName(e.target.value)} placeholder="Ex: Nubank" required />
                 </div>
-                <DialogFooter>
+                  <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setIsCardDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit">Criar</Button>
+                  <Button type="submit" disabled={isSubmittingCard}>{isSubmittingCard ? 'Criando...' : 'Criar'}</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -205,7 +213,7 @@ export default function CreditCardsManager() {
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setIsPurchaseDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit">Adicionar</Button>
+                  <Button type="submit" disabled={isSubmittingPurchase}>{isSubmittingPurchase ? 'Adicionando...' : 'Adicionar'}</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
