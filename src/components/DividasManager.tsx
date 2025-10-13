@@ -233,18 +233,24 @@ export default function DividasManager() {
 
 
   // CRUD simples de cartões e compras (na própria seção de dívidas)
+  const [isSubmittingCreateCard, setIsSubmittingCreateCard] = useState(false);
   const handleCreateCard = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingCreateCard) return;
     if (!cardName.trim()) return;
+    setIsSubmittingCreateCard(true);
     const novo: CartaoCredito = { id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(), nome: cardName.trim(), limite: cardLimit ? parseFloat(cardLimit) : undefined, diaVencimento: parseInt(cardDueDay || '15') } as any;
     await saveCartao(novo);
     setCardName('');
     setIsCardDialogOpen(false);
     setCardName(''); setCardLimit(''); setCardDueDay('15');
+    setIsSubmittingCreateCard(false);
   };
 
+  const [isSubmittingCreatePurchase, setIsSubmittingCreatePurchase] = useState(false);
   const handleCreatePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingCreatePurchase) return;
     if (!selectedCardId || !purchaseDesc || !purchaseValorTotal || !purchaseValorParcela || !purchaseStartDate) return;
     const startMonth = purchaseStartDate.slice(0,7);
     const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
@@ -265,12 +271,14 @@ export default function DividasManager() {
       parcelasPagas: parcelasPagas,
       startDay,
     } as any;
+    setIsSubmittingCreatePurchase(true);
     await saveCompraCartao(p);
 
 
     setIsPurchaseDialogOpen(false);
     setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); setPurchaseStartDate(`${selectedMonth}-05`);
     setPurchaseEmAndamento(false); setPurchaseParcelaAtual(''); setPurchaseDataUltimoPagamento('');
+    setIsSubmittingCreatePurchase(false);
   };
 
   const handleDeleteCard = async (cardId: string) => {
@@ -327,11 +335,14 @@ export default function DividasManager() {
     }
   };
 
+  const [isSubmittingEditCard, setIsSubmittingEditCard] = useState(false);
   const handleSaveEditCard = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingEditCard) return;
     if (!editingCard) return;
     const atualizado: CartaoCredito = { ...editingCard, nome: cardName.trim() || editingCard.nome, limite: cardLimit ? parseFloat(cardLimit) : undefined, diaVencimento: parseInt(cardDueDay || '15') } as any;
     try {
+      setIsSubmittingEditCard(true);
       await saveCartao(atualizado);
       setCartoes((prev: CartaoCredito[]) => prev.map(c => c.id === atualizado.id ? atualizado : c));
       setIsEditCardDialogOpen(false);
@@ -340,10 +351,13 @@ export default function DividasManager() {
     } catch (e) {
       alert('Não foi possível salvar o cartão.');
     }
+    setIsSubmittingEditCard(false);
   };
 
+  const [isSubmittingEditPurchase, setIsSubmittingEditPurchase] = useState(false);
   const handleSaveEditPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingEditPurchase) return;
     if (!editingPurchase || !selectedCardId) return;
     
     const startMonth = purchaseStartDate.slice(0,7);
@@ -365,6 +379,7 @@ export default function DividasManager() {
     } as any;
     
     try {
+      setIsSubmittingEditPurchase(true);
       await saveCompraCartao(atualizado);
       setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === atualizado.id ? atualizado : p));
       setIsEditPurchaseDialogOpen(false);
@@ -374,6 +389,7 @@ export default function DividasManager() {
     } catch (e) {
       alert('Não foi possível salvar a compra.');
     }
+    setIsSubmittingEditPurchase(false);
   };
 
   const handleEdit = (divida: Divida) => {
