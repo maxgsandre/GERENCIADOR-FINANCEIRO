@@ -20,6 +20,7 @@ export default function TransacoesManager() {
   const { caixas, setCaixas, transacoes, setTransacoes, categorias, setCategorias, saveCaixa, saveTransacao, deleteTransacao, saveCategoria, selectedCaixaId, setSelectedCaixaId, dividas, setDividas, saveDivida, deleteDivida, comprasCartao, setComprasCartao, saveCompraCartao } = context;
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingTransacao, setEditingTransacao] = useState<Transacao | null>(null);
   const [isCategoriaDialogOpen, setIsCategoriaDialogOpen] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'entrada' | 'saida'>('todos');
@@ -52,8 +53,9 @@ export default function TransacoesManager() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!formData.caixaId || !formData.valor || !formData.descricao || !formData.categoria) return;
-
+    setIsSubmitting(true);
     const novaTransacao: Transacao = {
       id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
       caixaId: formData.caixaId,
@@ -99,6 +101,7 @@ export default function TransacoesManager() {
     }
     
     resetForm();
+    setIsSubmitting(false);
   };
 
   const resetForm = () => {
@@ -240,8 +243,10 @@ export default function TransacoesManager() {
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!editingTransacao) return;
     if (!formData.caixaId || !formData.valor || !formData.descricao || !formData.categoria) return;
+    setIsSubmitting(true);
 
     const transacaoAtualizada: Transacao = {
       id: editingTransacao.id,
@@ -276,6 +281,7 @@ export default function TransacoesManager() {
 
     await saveTransacao(transacaoAtualizada);
     resetForm();
+    setIsSubmitting(false);
   };
 
   // Filtrar transações (por tipo/período e, se houver, por caixa selecionada)
@@ -520,8 +526,8 @@ export default function TransacoesManager() {
                 <Button type="button" variant="outline" onClick={resetForm}>
                   Cancelar
                 </Button>
-                <Button type="submit">
-                  Salvar
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? 'Salvando...' : 'Salvar'}
                 </Button>
               </DialogFooter>
             </form>
