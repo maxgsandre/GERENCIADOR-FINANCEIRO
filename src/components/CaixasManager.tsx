@@ -55,8 +55,11 @@ export default function CaixasManager() {
   });
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSubmittingCaixa, setIsSubmittingCaixa] = useState(false);
   const [isCofrinhoDialogOpen, setIsCofrinhoDialogOpen] = useState(false);
+  const [isSubmittingCofrinho, setIsSubmittingCofrinho] = useState(false);
   const [isReceitaDialogOpen, setIsReceitaDialogOpen] = useState(false);
+  const [isSubmittingReceita, setIsSubmittingReceita] = useState(false);
   const [editingCaixa, setEditingCaixa] = useState<Caixa | null>(null);
   const [editingCofrinho, setEditingCofrinho] = useState<Cofrinho | null>(null);
   const [editingReceita, setEditingReceita] = useState<ReceitaPrevista | null>(null);
@@ -168,8 +171,10 @@ export default function CaixasManager() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingCaixa) return;
     
     if (!formData.nome || !formData.saldo) return;
+    setIsSubmittingCaixa(true);
 
     const novaCaixa: Caixa = {
       id: editingCaixa?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
@@ -191,6 +196,7 @@ export default function CaixasManager() {
     });
 
     resetForm();
+    setIsSubmittingCaixa(false);
   };
 
   const resetForm = () => {
@@ -219,6 +225,7 @@ export default function CaixasManager() {
   // Funções para cofrinhos
   const handleCofrinhoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingCofrinho) return;
     
     if (!cofrinhoFormData.nome) return;
     if (cofrinhoFormData.tipo === 'cdi') {
@@ -241,6 +248,7 @@ export default function CaixasManager() {
       cor: cofrinhoFormData.cor,
     };
 
+    setIsSubmittingCofrinho(true);
     await saveCofrinho(novoCofrinho);
     setCofrinhos(prev => {
       const index = prev.findIndex(c => c.id === novoCofrinho.id);
@@ -253,6 +261,7 @@ export default function CaixasManager() {
     });
 
     resetCofrinhoForm();
+    setIsSubmittingCofrinho(false);
   };
 
   const resetCofrinhoForm = () => {
@@ -283,6 +292,7 @@ export default function CaixasManager() {
   // Funções para receitas previstas
   const handleReceitaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingReceita) return;
     
     if (!receitaFormData.descricao || !receitaFormData.valor || !receitaFormData.dataVencimento) return;
 
@@ -294,8 +304,10 @@ export default function CaixasManager() {
       dataVencimento: receitaFormData.dataVencimento,
     };
 
+    setIsSubmittingReceita(true);
     await saveReceitaPrevista(novaReceita);
     resetReceitaForm();
+    setIsSubmittingReceita(false);
   };
 
   const resetReceitaForm = () => {
@@ -539,8 +551,8 @@ export default function CaixasManager() {
                 <Button type="button" variant="outline" onClick={resetForm}>
                   Cancelar
                 </Button>
-                <Button type="submit">
-                  {editingCaixa ? 'Salvar' : 'Criar'}
+                <Button type="submit" disabled={isSubmittingCaixa}>
+                  {isSubmittingCaixa ? 'Salvando...' : (editingCaixa ? 'Salvar' : 'Criar')}
                 </Button>
               </DialogFooter>
             </form>
@@ -673,8 +685,8 @@ export default function CaixasManager() {
                     <Button type="button" variant="outline" onClick={resetReceitaForm}>
                       Cancelar
                     </Button>
-                    <Button type="submit">
-                      {editingReceita ? 'Salvar' : 'Criar'}
+                    <Button type="submit" disabled={isSubmittingReceita}>
+                      {isSubmittingReceita ? 'Salvando...' : (editingReceita ? 'Salvar' : 'Criar')}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -969,9 +981,9 @@ export default function CaixasManager() {
                   <Button type="button" variant="outline" onClick={resetCofrinhoForm}>
                     Cancelar
                   </Button>
-                  <Button type="submit">
-                    {editingCofrinho ? 'Salvar' : 'Criar'}
-                  </Button>
+                <Button type="submit" disabled={isSubmittingCofrinho}>
+                  {isSubmittingCofrinho ? 'Salvando...' : (editingCofrinho ? 'Salvar' : 'Criar')}
+                </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
