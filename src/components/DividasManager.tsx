@@ -1630,7 +1630,7 @@ export default function DividasManager() {
                 <Button type="button" variant="outline" onClick={resetForm} disabled={isSaving}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={isSaving}>
+              <Button type="submit" disabled={isSaving}>
                   {isSaving ? 'Salvando...' : editingDivida ? 'Salvar' : 'Criar'}
                 </Button>
               </DialogFooter>
@@ -1891,7 +1891,7 @@ export default function DividasManager() {
                     </div>
                     <DialogFooter>
                       <Button variant="outline" type="button" onClick={() => setIsCardDialogOpen(false)}>Cancelar</Button>
-                      <Button type="submit">Criar</Button>
+                      <Button type="submit" disabled={isSubmittingCreateCard}>{isSubmittingCreateCard ? 'Criando...' : 'Criar'}</Button>
                     </DialogFooter>
                   </form>
                 </DialogContent>
@@ -2013,7 +2013,7 @@ export default function DividasManager() {
                         setPurchaseStartDate(`${selectedMonth}-05`); setPurchaseDate(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
                         setPurchaseEmAndamento(false); setPurchaseParcelaAtual(''); setPurchaseDataUltimoPagamento('');
                       }}>Cancelar</Button>
-                      <Button type="submit">Adicionar</Button>
+                      <Button type="submit" disabled={isSubmittingCreatePurchase}>{isSubmittingCreatePurchase ? 'Adicionando...' : 'Adicionar'}</Button>
                     </DialogFooter>
                   </form>
                 </DialogContent>
