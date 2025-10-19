@@ -7,6 +7,8 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Separator } from '../ui/separator';
 import { Eye, EyeOff, Mail, Lock, User, Info } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { fetchSignInMethodsForEmail } from 'firebase/auth';
+import { auth } from '../../lib/firebase';
 
 interface RegisterProps {
   onToggleMode: () => void;
@@ -32,6 +34,12 @@ export default function Register({ onToggleMode }: RegisterProps) {
     try {
       setError('');
       setLoading(true);
+      // Se já existir senha para este email, orientar login/esqueci senha
+      const methods = await fetchSignInMethodsForEmail(auth, email);
+      if (methods && methods.includes('password')) {
+        setError('Este email já possui cadastro. Use Entrar ou Esqueci minha senha.');
+        return;
+      }
       // Guarda nome localmente para usar na finalização
       localStorage.setItem('signup_name', `${name} ${lastName}`.trim());
       localStorage.setItem('signup_email', email);
