@@ -34,16 +34,17 @@ export default function Register({ onToggleMode }: RegisterProps) {
     try {
       setError('');
       setLoading(true);
+      const normalizedEmail = email.trim().toLowerCase();
       // Se já existir senha para este email, orientar login/esqueci senha
-      const methods = await fetchSignInMethodsForEmail(auth, email);
+      const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
       if (methods && methods.includes('password')) {
         setError('Este email já possui cadastro. Use Entrar ou Esqueci minha senha.');
         return;
       }
       // Guarda nome localmente para usar na finalização
       localStorage.setItem('signup_name', `${name} ${lastName}`.trim());
-      localStorage.setItem('signup_email', email);
-      await sendSignUpLink(email);
+      localStorage.setItem('signup_email', normalizedEmail);
+      await sendSignUpLink(normalizedEmail);
     } catch (error: any) {
       console.error('Erro no registro:', error);
       
@@ -55,6 +56,12 @@ export default function Register({ onToggleMode }: RegisterProps) {
             break;
           case 'auth/invalid-email':
             setError('Email inválido.');
+            break;
+          case 'auth/operation-not-allowed':
+            setError('Envio por link não habilitado no momento. Use Entrar ou Esqueci minha senha.');
+            break;
+          case 'auth/too-many-requests':
+            setError('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
             break;
           default:
             setError('Erro ao enviar link. Tente novamente.');
