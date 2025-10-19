@@ -10,7 +10,11 @@ import {
   sendEmailVerification,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  updatePassword
+  updatePassword,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
+  linkWithCredential
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 // Modo demo removido
@@ -23,6 +27,8 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   updateName: (name: string) => Promise<void>;
+  sendSignUpLink: (email: string) => Promise<void>;
+  finalizeSignUp: (email: string, password: string, displayName?: string) => Promise<void>;
   loading: boolean;
 }
 
@@ -92,6 +98,31 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Registro por link (apenas email) - envia link de finalização
+  const sendSignUpLink = async (email: string) => {
+    const actionCodeSettings = {
+      url: `${window.location.origin}/?mode=finalizeSignUp`,
+      handleCodeInApp: true,
+    } as const;
+    await sendSignInLinkToEmail(auth, email, actionCodeSettings as any);
+  };
+
+  // Finalizar cadastro: consumir link, criar sessão e vincular senha
+  const finalizeSignUp = async (email: string, password: string, displayName?: string) => {
+    if (!isSignInWithEmailLink(auth, window.location.href)) {
+      throw new Error('Link inválido ou expirado.');
+    }
+    // Conclui o sign-in via link
+    const userCredential = await signInWithEmailLink(auth, email, window.location.href);
+    const user = userCredential.user;
+    // Vincula provider de senha
+    const credential = EmailAuthProvider.credential(email, password);
+    await linkWithCredential(user, credential);
+    if (displayName) {
+      await updateProfile(user, { displayName });
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
@@ -112,6 +143,8 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
     resetPassword,
     changePassword,
     updateName,
+    sendSignUpLink,
+    finalizeSignUp,
     loading
   };
 

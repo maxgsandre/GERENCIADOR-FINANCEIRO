@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import Login from './Login';
 import Register from './Register';
 import ResetPassword from './ResetPassword';
+import FinalizePassword from './FinalizePassword';
 
 export default function AuthWrapper() {
   const [isLogin, setIsLogin] = useState(true);
@@ -9,6 +10,10 @@ export default function AuthWrapper() {
 
   if (mode === 'resetPassword') {
     return <ResetPassword />;
+  }
+
+  if (mode === 'finalizeSignUp') {
+    return <FinalizePassword />;
   }
 
   return isLogin ? (
