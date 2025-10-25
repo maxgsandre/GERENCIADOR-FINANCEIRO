@@ -2,24 +2,34 @@ import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { LogOut, User, Moon, Sun, Lock, Pencil } from 'lucide-react';
+import { LogOut, User, Moon, Sun, Lock, Pencil, Download } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from 'next-themes';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
+import { useContext, useMemo } from 'react';
+import { FinanceiroContext } from '../App';
+import { exportMonthToXlsx } from '../utils/exportXlsx';
 
 export default function UserMenu() {
   const { currentUser, logout, changePassword, updateName } = useAuth();
   const { theme, setTheme } = useTheme();
   const [isChangeOpen, setIsChangeOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [name, setName] = useState(currentUser?.displayName || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const ctx = useContext(FinanceiroContext);
+  const todayDefault = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
+  const [exportMonth, setExportMonth] = useState<string>(todayDefault);
 
   const handleLogout = async () => {
     try {
@@ -76,6 +86,11 @@ export default function UserMenu() {
         <DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
           {theme === 'dark' ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
           <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setIsExportOpen(true)}>
+          <Download className="mr-2 h-4 w-4" />
+          <span>Exportar Dados</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>
@@ -154,6 +169,33 @@ export default function UserMenu() {
                 setLoading(false);
               }
             }}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Exportar Dados */}
+      <Dialog open={isExportOpen} onOpenChange={setIsExportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Exportar Dados</DialogTitle>
+            <DialogDescription>Selecione o mês para gerar o arquivo .xlsx</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="export-month">Mês</Label>
+              <Input id="export-month" type="month" value={exportMonth}
+                     onChange={(e) => setExportMonth(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsExportOpen(false)}>Cancelar</Button>
+            <Button onClick={() => {
+              if (!ctx) return;
+              const { caixas, transacoes, dividas, receitasPrevistas, comprasCartao, cartoes, gastosFixos, cofrinhos } = ctx as any;
+              const month = exportMonth || todayDefault;
+              exportMonthToXlsx(month, { caixas, transacoes, dividas, receitasPrevistas, comprasCartao, cartoes, gastosFixos, cofrinhos });
+              setIsExportOpen(false);
+            }}>Exportar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
