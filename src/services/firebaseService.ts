@@ -39,9 +39,9 @@ export const createUserDocument = async (user: User) => {
 const initializeUserData = async (userId: string) => {
   const initialData = {
     caixas: [
-      { id: '1', nome: 'Conta Corrente', saldo: 0, tipo: 'conta_corrente' },
-      { id: '2', nome: 'Poupança', saldo: 0, tipo: 'poupanca' },
-      { id: '3', nome: 'Carteira', saldo: 0, tipo: 'carteira' },
+      { id: '1', nome: 'Conta Corrente', saldo: 0, tipo: 'conta_corrente', initialByMonth: {} },
+      { id: '2', nome: 'Poupança', saldo: 0, tipo: 'poupanca', initialByMonth: {} },
+      { id: '3', nome: 'Carteira', saldo: 0, tipo: 'carteira', initialByMonth: {} },
     ],
     categorias: [
       { id: '1', nome: 'Trabalho' },

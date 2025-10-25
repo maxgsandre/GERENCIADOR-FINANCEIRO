@@ -25,6 +25,8 @@ export interface Caixa {
   nome: string;
   saldo: number;
   tipo: 'conta_corrente' | 'poupanca' | 'carteira' | 'investimento';
+  // Valor inicial por mês (YYYY-MM -> valor inicial). Usado para calcular saldo final do mês.
+  initialByMonth?: Record<string, number>;
 }
 
 export interface Transacao {
