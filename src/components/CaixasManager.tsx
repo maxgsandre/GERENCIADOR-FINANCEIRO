@@ -85,6 +85,64 @@ export default function CaixasManager() {
   // Helpers: CDI/IOF/IR
   const CDI_ANUAL_PERCENT = 10.75; // fixo conforme solicitado
   const dailyRateFromAnnual = (annualPercent: number) => Math.pow(1 + annualPercent / 100, 1 / 252) - 1;
+  // Helpers de mês (YYYY-MM) para cálculo de saldo mensal por caixa
+  const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
+  const parseYM = (ym: string) => {
+    const [yy, mm] = ym.split('-').map(Number);
+    return { y: yy, m: mm };
+  };
+  const nextYM = (y: number, m: number) => {
+    const nm = m === 12 ? 1 : m + 1;
+    const ny = m === 12 ? y + 1 : y;
+    return { y: ny, m: nm };
+  };
+  const formatYM = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
+
+  const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
+    return transacoes
+      .filter(t => t.caixaId === caixaId)
+      .filter(t => {
+        const d = new Date(t.data + 'T00:00:00');
+        return d.getFullYear() === y && d.getMonth() === (m - 1);
+      })
+      .reduce((s, t) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+  };
+
+  // Calcula valor inicial efetivo do mês: usa initialByMonth[mes] se existir, senão carrega do último mês conhecido somando os lançamentos mês a mês
+  const computeInitialForMonth = (caixa: Caixa, ym: string) => {
+    const init = (caixa as any).initialByMonth as Record<string, number> | undefined;
+    if (init && Object.prototype.hasOwnProperty.call(init, ym)) {
+      return (init as any)[ym] ?? 0;
+    }
+    const { y: ty, m: tm } = parseYM(ym);
+    // Encontrar último mês com inicial definido anterior ao target
+    let bestKey: string | null = null;
+    if (init) {
+      Object.keys(init).forEach(k => {
+        const { y, m } = parseYM(k);
+        if (ymToIndex(y, m) <= ymToIndex(ty, tm)) {
+          if (bestKey === null) {
+            bestKey = k;
+          } else {
+            const { y: by, m: bm } = parseYM(bestKey);
+            if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k;
+          }
+        }
+      });
+    }
+    if (!bestKey) return 0;
+    const { y: sy, m: sm } = parseYM(bestKey);
+    let currentInitial = (init as any)[bestKey] ?? 0;
+    // Propagar até o mês alvo
+    let cy = sy, cm = sm;
+    while (!(cy === ty && cm === tm)) {
+      const total = monthlyTotalFor(caixa.id, cy, cm);
+      const n = nextYM(cy, cm);
+      currentInitial = currentInitial + total;
+      cy = n.y; cm = n.m;
+    }
+    return currentInitial;
+  };
   const approxBusinessDays = (from: string, to: string) => {
     const d1 = new Date(from + 'T00:00:00');
     const d2 = new Date(to + 'T00:00:00');
@@ -176,23 +234,33 @@ export default function CaixasManager() {
     if (!formData.nome || !formData.saldo) return;
     setIsSubmittingCaixa(true);
 
-    const novaCaixa: Caixa = {
-      id: editingCaixa?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
+    // Novo comportamento: editar o valor define o valor inicial do mês selecionado
+    const valorInicialMes = parseFloat(formData.saldo.replace(',', '.'));
+    const caixaId = editingCaixa?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString());
+    const caixaExistente = editingCaixa || { id: caixaId, nome: formData.nome, saldo: 0, tipo: formData.tipo } as Caixa;
+    const initialByMonth = { ...(caixaExistente.initialByMonth || {}) } as Record<string, number>;
+    initialByMonth[selectedMonth] = valorInicialMes;
+
+    const caixaAtualizada: Caixa = {
+      ...caixaExistente,
+      id: caixaId,
       nome: formData.nome,
-      saldo: parseFloat(formData.saldo),
       tipo: formData.tipo,
+      // Mantemos saldo legado inalterado; exibição mensal usa initialByMonth + extrato
+      saldo: caixaExistente.saldo ?? 0,
+      initialByMonth,
     };
 
-    await saveCaixa(novaCaixa);
-    // Atualização otimista da UI; o listener confirmará em seguida
+    await saveCaixa(caixaAtualizada);
+    // Atualização otimista
     setCaixas(prev => {
-      const index = prev.findIndex(c => c.id === novaCaixa.id);
+      const index = prev.findIndex(c => c.id === caixaAtualizada.id);
       if (index >= 0) {
         const clone = [...prev];
-        clone[index] = novaCaixa;
+        clone[index] = caixaAtualizada;
         return clone;
       }
-      return [...prev, novaCaixa];
+      return [...prev, caixaAtualizada];
     });
 
     resetForm();
@@ -207,9 +275,12 @@ export default function CaixasManager() {
 
   const handleEdit = (caixa: Caixa) => {
     setEditingCaixa(caixa);
+    // Pré-carregar com valor inicial do mês selecionado (ou 0 se ausente)
+    const initialByMonth = caixa.initialByMonth || {};
+    const saldoInicialMes = (initialByMonth as any)[selectedMonth] ?? '';
     setFormData({
       nome: caixa.nome,
-      saldo: caixa.saldo.toString(),
+      saldo: saldoInicialMes === '' ? '' : String(saldoInicialMes),
       tipo: caixa.tipo,
     });
     setIsDialogOpen(true);
@@ -517,7 +588,7 @@ export default function CaixasManager() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="saldo">Saldo Atual</Label>
+                <Label htmlFor="saldo">Valor inicial do mês ({selectedMonth})</Label>
                 <Input
                   id="saldo"
                   type="number"
@@ -793,6 +864,11 @@ export default function CaixasManager() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
         {caixas.map((caixa) => {
           const IconComponent = tiposIcon[caixa.tipo];
+          // Cálculo do saldo final do mês selecionado: valor inicial do mês + soma de lançamentos do mês
+          const valorInicial = computeInitialForMonth(caixa, selectedMonth);
+          const [ano, mes] = selectedMonth.split('-').map(Number);
+          const totalMes = monthlyTotalFor(caixa.id, ano, mes);
+          const saldoFinalMes = valorInicial + totalMes;
           
           return (
             <Card key={caixa.id} className="relative">
@@ -811,11 +887,19 @@ export default function CaixasManager() {
               <CardContent>
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm text-muted-foreground">Saldo</p>
-                    <p className={`text-2xl font-bold ${
-                      caixa.saldo >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      R$ {caixa.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    <p className="text-sm text-muted-foreground">Saldo inicial ({selectedMonth})</p>
+                    <p className="text-lg font-medium">R$ {valorInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Lançamentos do mês</p>
+                    <p className={`text-lg font-medium ${totalMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {totalMes >= 0 ? '+' : ''}R$ {Math.abs(totalMes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Saldo final ({selectedMonth})</p>
+                    <p className={`text-2xl font-bold ${saldoFinalMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      R$ {saldoFinalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </p>
                   </div>
                   
