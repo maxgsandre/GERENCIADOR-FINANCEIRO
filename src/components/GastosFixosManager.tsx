@@ -28,6 +28,7 @@ export default function GastosFixosManager() {
     valor: '',
     categoria: '',
     diaVencimento: '',
+    pago: false,
   });
   const [isPagamentoOpen, setIsPagamentoOpen] = useState(false);
   const [gastoSelecionado, setGastoSelecionado] = useState<GastoFixo | null>(null);
@@ -327,7 +328,7 @@ export default function GastosFixosManager() {
         valor: valorNumerico,
       categoria: formData.categoria,
         diaVencimento: diaVencimentoNumerico,
-      pago: editingGasto ? !!editingGasto.pago : false,
+      pago: formData.pago,
       fracionado: isFracionado,
       // Preservar pagamentos existentes ao editar; iniciar vazio apenas para novo
       pagamentos: editingGasto?.pagamentos ? [...editingGasto.pagamentos] : [],
@@ -356,6 +357,7 @@ export default function GastosFixosManager() {
       valor: '',
       categoria: '',
       diaVencimento: '',
+      pago: false,
     });
     setEditingGasto(null);
     setIsFracionado(false);
@@ -385,6 +387,7 @@ export default function GastosFixosManager() {
       valor: gasto.valor.toString(),
       categoria: gasto.categoria,
       diaVencimento: gasto.diaVencimento.toString(),
+      pago: gasto.pago,
     });
     setIsFracionado(gasto.fracionado || false);
     setIsDialogOpen(true);
@@ -1219,7 +1222,14 @@ export default function GastosFixosManager() {
                 </Select>
               </div>
               
-              {/* Checkbox de "Gasto já pago neste mês" removido por simplificação */}
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="pago"
+                  checked={formData.pago}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, pago: checked }))}
+                />
+                <Label htmlFor="pago">Gasto já pago neste mês</Label>
+              </div>
               
               <div className="flex items-center space-x-2">
                 <Switch
