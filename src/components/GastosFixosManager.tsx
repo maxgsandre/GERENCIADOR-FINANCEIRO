@@ -1043,11 +1043,24 @@ export default function GastosFixosManager() {
                   <SelectValue placeholder="Selecione o caixa" />
                 </SelectTrigger>
                 <SelectContent>
-                  {caixas?.map((caixa: any) => (
-                    <SelectItem key={caixa.id} value={caixa.id}>
-                      {caixa.nome} - R$ {caixa.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </SelectItem>
-                  ))}
+                  {caixas?.map((caixa: any) => {
+                    // Exibir o saldo final do mês selecionado, não o saldo persistido
+                    const [yy, mm] = selectedMonth.split('-').map(Number);
+                    const valorInicial = (caixa.initialByMonth && caixa.initialByMonth[selectedMonth]) ?? 0;
+                    const totalMes = (transacoes || [])
+                      .filter((t: any) => t.caixaId === caixa.id)
+                      .filter((t: any) => {
+                        const d = new Date(t.data + 'T00:00:00');
+                        return d.getFullYear() === yy && d.getMonth() === (mm - 1);
+                      })
+                      .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+                    const saldoFinalMes = valorInicial + totalMes;
+                    return (
+                      <SelectItem key={caixa.id} value={caixa.id}>
+                        {caixa.nome} - R$ {saldoFinalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               {caixaPagamento && (() => {
