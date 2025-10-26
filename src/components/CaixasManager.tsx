@@ -702,7 +702,101 @@ export default function CaixasManager() {
         </CardContent>
       </Card>
 
-      {/* Seção de Receitas Previstas */}
+      {/* Lista de caixas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+        {caixas.map((caixa) => {
+          const IconComponent = tiposIcon[caixa.tipo];
+          // Cálculo do saldo final do mês selecionado: valor inicial do mês + soma de lançamentos do mês
+          const valorInicial = computeInitialForMonth(caixa, selectedMonth);
+          const [ano, mes] = selectedMonth.split('-').map(Number);
+          const totalMes = monthlyTotalFor(caixa.id, ano, mes);
+          const saldoFinalMes = valorInicial + totalMes;
+          
+          return (
+            <Card key={caixa.id} className="relative">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <IconComponent className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle className="text-lg">{caixa.nome}</CardTitle>
+                  </div>
+                  <Badge variant="secondary">
+                    {tiposLabel[caixa.tipo]}
+                  </Badge>
+                </div>
+              </CardHeader>
+              
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Saldo inicial ({selectedMonth})</p>
+                    <p className="text-lg font-medium">R$ {formatBR2.format(valorInicial)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Lançamentos do mês</p>
+                    <p className={`text-lg font-medium ${totalMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {totalMes >= 0 ? '+' : ''}R$ {formatBR2.format(Math.abs(totalMes))}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Saldo final ({selectedMonth})</p>
+                    <p className={`text-2xl font-bold ${saldoFinalMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      R$ {formatBR2.format(saldoFinalMes)}
+                    </p>
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEdit(caixa)}
+                      className="flex-1"
+                    >
+                      <Edit className="h-4 w-4 md:mr-1" />
+                      <span className="hidden md:inline">Editar</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setSelectedCaixaId(caixa.id); goToTab('transacoes'); }}
+                      className="flex-1"
+                    >
+                      Extrato
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDelete(caixa.id)}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {caixas.length === 0 && (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-8">
+            <Wallet className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">Nenhuma caixa cadastrada</h3>
+            <p className="text-muted-foreground text-center mb-4">
+              Comece criando sua primeira caixa para organizar seus recursos financeiros.
+            </p>
+            <Button onClick={() => setIsDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Criar primeira caixa
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Separator className="my-8" />
+
+      {/* Seção de Receitas Previstas (movida para baixo dos caixas) */}
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
