@@ -1242,8 +1242,11 @@ export default function GastosFixosManager() {
                           <div className="flex flex-col flex-1">
                             <span className="font-medium">{pagamento.descricao || `Pagamento ${index + 1}`}</span>
                             <span className="text-muted-foreground text-xs">
-                              {pagamento.hora && `${pagamento.hora} em `}
-                              {new Date(pagamento.data).toLocaleDateString('pt-BR')}
+                              {(() => {
+                                const d = new Date(pagamento.data + 'T00:00:00');
+                                const dataStr = d.toLocaleDateString('pt-BR');
+                                return pagamento.hora ? `${pagamento.hora} em ${dataStr}` : dataStr;
+                              })()}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
