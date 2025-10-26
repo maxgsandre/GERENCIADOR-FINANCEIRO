@@ -82,6 +82,12 @@ export default function CaixasManager() {
     dataVencimento: '',
   });
 
+  // Formatter consistente para 2 casas decimais em pt-BR
+  const formatBR2 = new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
   // Helpers: CDI/IOF/IR
   const CDI_ANUAL_PERCENT = 10.75; // fixo conforme solicitado
   const dailyRateFromAnnual = (annualPercent: number) => Math.pow(1 + annualPercent / 100, 1 / 252) - 1;
@@ -290,7 +296,7 @@ export default function CaixasManager() {
     if (!confirm('Tem certeza que deseja excluir esta caixa?')) return;
     await deleteCaixa(id);
     // Atualização otimista da UI
-    setCaixas(prev => prev.filter(c => c.id !== id));
+      setCaixas(prev => prev.filter(c => c.id !== id));
   };
 
   // Funções para cofrinhos
@@ -357,7 +363,7 @@ export default function CaixasManager() {
   const handleDeleteCofrinho = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este cofrinho?')) return;
     await deleteCofrinho(id);
-    setCofrinhos(prev => prev.filter(c => c.id !== id));
+      setCofrinhos(prev => prev.filter(c => c.id !== id));
   };
 
   // Funções para receitas previstas
@@ -567,7 +573,7 @@ export default function CaixasManager() {
   return (
     <div className="space-y-6">
       {/* Dialog de caixa (compartilhado) */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={() => resetForm()} className="hidden">
               <Plus className="h-4 w-4 mr-2" />
@@ -691,7 +697,7 @@ export default function CaixasManager() {
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-green-600">
-            R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            R$ {formatBR2.format(totalGeral)}
           </div>
         </CardContent>
       </Card>
@@ -806,18 +812,18 @@ export default function CaixasManager() {
                 {/* Linha 1: Status + Descrição + Valor */}
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <button
-                      onClick={() => toggleReceitaRecebida(receita)}
+                  <button
+                    onClick={() => toggleReceitaRecebida(receita)}
                       className={`flex-shrink-0 ${receita.recebido 
-                        ? 'text-green-600 hover:text-green-700' 
-                        : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                      {receita.recebido ? (
-                        <CheckCircle className="h-5 w-5" />
-                      ) : (
-                        <Circle className="h-5 w-5" />
-                      )}
-                    </button>
+                      ? 'text-green-600 hover:text-green-700' 
+                      : 'text-gray-400 hover:text-gray-600'}`}
+                  >
+                    {receita.recebido ? (
+                      <CheckCircle className="h-5 w-5" />
+                    ) : (
+                      <Circle className="h-5 w-5" />
+                    )}
+                  </button>
                     <p className={`font-medium truncate ${receita.recebido ? 'text-muted-foreground' : ''}`}>
                       {receita.descricao}
                     </p>
@@ -900,18 +906,18 @@ export default function CaixasManager() {
                 <div className="space-y-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Saldo inicial ({selectedMonth})</p>
-                    <p className="text-lg font-medium">R$ {valorInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-lg font-medium">R$ {formatBR2.format(valorInicial)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Lançamentos do mês</p>
                     <p className={`text-lg font-medium ${totalMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {totalMes >= 0 ? '+' : ''}R$ {Math.abs(totalMes).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      {totalMes >= 0 ? '+' : ''}R$ {formatBR2.format(Math.abs(totalMes))}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Saldo final ({selectedMonth})</p>
                     <p className={`text-2xl font-bold ${saldoFinalMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      R$ {saldoFinalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      R$ {formatBR2.format(saldoFinalMes)}
                     </p>
                   </div>
                   
@@ -1048,19 +1054,19 @@ export default function CaixasManager() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {cofrinhoFormData.tipo === 'cdi' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="percentual-cdi">% do CDI</Label>
-                      <Input
-                        id="percentual-cdi"
-                        type="number"
-                        min="0"
-                        max="200"
-                        value={cofrinhoFormData.percentualCDI}
-                        onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, percentualCDI: e.target.value }))}
-                        placeholder="Ex: 100 (100% do CDI)"
-                        required
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="percentual-cdi">% do CDI</Label>
+                    <Input
+                      id="percentual-cdi"
+                      type="number"
+                      min="0"
+                      max="200"
+                      value={cofrinhoFormData.percentualCDI}
+                      onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, percentualCDI: e.target.value }))}
+                      placeholder="Ex: 100 (100% do CDI)"
+                      required
+                    />
+                  </div>
                   )}
                   <div className="space-y-2">
                     <Label htmlFor="cor">Cor</Label>
@@ -1079,7 +1085,7 @@ export default function CaixasManager() {
                   </Button>
                 <Button type="submit" disabled={isSubmittingCofrinho}>
                   {isSubmittingCofrinho ? 'Salvando...' : (editingCofrinho ? 'Salvar' : 'Criar')}
-                </Button>
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -1111,10 +1117,10 @@ export default function CaixasManager() {
                         {elapsedLabel(cofrinho)}
                       </Badge>
                       {cofrinho.tipo === 'cdi' && (
-                        <Badge variant="outline" className="flex items-center">
-                          <Percent className="h-3 w-3 mr-1" />
-                          {cofrinho.percentualCDI}% CDI
-                        </Badge>
+                    <Badge variant="outline" className="flex items-center">
+                      <Percent className="h-3 w-3 mr-1" />
+                      {cofrinho.percentualCDI}% CDI
+                    </Badge>
                       )}
                     </div>
                   </div>
@@ -1125,7 +1131,7 @@ export default function CaixasManager() {
                     <div>
                       <p className="text-sm text-muted-foreground">Saldo Líquido Atual</p>
                       <p className="text-2xl font-bold text-green-600">
-                        R$ {Number(cofrinho.tipo === 'cdi' ? cdiCalc.saldoLiquido : cofrinho.saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        R$ {formatBR2.format(Number(cofrinho.tipo === 'cdi' ? cdiCalc.saldoLiquido : cofrinho.saldo))}
                       </p>
                     </div>
                     
@@ -1134,13 +1140,13 @@ export default function CaixasManager() {
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Rendimento líquido</span>
                           <span className="font-medium text-green-600">+R$ {cdiCalc.rendimentoLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                        </div>
+                    </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Rentabilidade</span>
                           <div className="text-right">
                             <div className="font-medium">{cdiCalc.principal > 0 ? ((cdiCalc.rendimentoLiquido / cdiCalc.principal) * 100).toFixed(2) : '0.00'}%</div>
                             <div className="text-xs text-muted-foreground">IR: R$ {cdiCalc.totalIR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-                          </div>
+                        </div>
                         </div>
                         {mostrarIOF && (
                           <div className="flex justify-between text-xs text-muted-foreground">
