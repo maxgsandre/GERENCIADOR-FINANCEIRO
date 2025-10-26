@@ -491,7 +491,12 @@ function AppContent() {
                     {menuItems.map((item) => (
                       <button
                         key={item.key}
-                        onClick={() => handleTabChange(item.key)}
+                        onClick={() => {
+                          if (item.key === 'transacoes') {
+                            setSelectedCaixaId(null);
+                          }
+                          handleTabChange(item.key);
+                        }}
                         className={`w-full flex items-center px-4 py-3 rounded-lg transition-colors ${
                           activeTab === item.key
                             ? 'bg-primary text-primary-foreground'
@@ -522,7 +527,12 @@ function AppContent() {
               {menuItems.slice(0, 5).map((item) => (
                 <button
                   key={item.key}
-                  onClick={() => setActiveTab(item.key)}
+                  onClick={() => {
+                    if (item.key === 'transacoes') {
+                      setSelectedCaixaId(null);
+                    }
+                    handleTabChange(item.key);
+                  }}
                   className={`flex flex-col items-center px-3 py-2 rounded-lg transition-colors ${
                     activeTab === item.key
                       ? 'text-primary bg-primary/10'
@@ -556,7 +566,12 @@ function AppContent() {
                     {menuItems.map((item) => (
                       <SidebarMenuItem key={item.key}>
                         <SidebarMenuButton
-                          onClick={() => setActiveTab(item.key)}
+                          onClick={() => {
+                            if (item.key === 'transacoes') {
+                              setSelectedCaixaId(null);
+                            }
+                            setActiveTab(item.key);
+                          }}
                           isActive={activeTab === item.key}
                         >
                           <item.icon className="h-4 w-4" />
