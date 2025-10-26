@@ -93,6 +93,22 @@ export default function TransacoesManager() {
   };
   const [filtroDe, setFiltroDe] = useState('');
   const [filtroAte, setFiltroAte] = useState('');
+
+  // Preencher automaticamente o período do mês atual APENAS quando vazio
+  useEffect(() => {
+    if (!filtroDe && !filtroAte) {
+      const tz = 'America/Sao_Paulo';
+      const todayStr = new Date()
+        .toLocaleDateString('pt-BR', { timeZone: tz })
+        .split('/')
+        .reverse()
+        .join('-'); // YYYY-MM-DD
+      const [y, m] = todayStr.split('-');
+      const firstDay = `${y}-${m}-01`;
+      setFiltroDe(firstDay);
+      setFiltroAte(todayStr);
+    }
+  }, [filtroDe, filtroAte]);
   const [novaCategoria, setNovaCategoria] = useState('');
   const [adicionarDivida, setAdicionarDivida] = useState(false);
   const [formData, setFormData] = useState({
@@ -346,11 +362,11 @@ export default function TransacoesManager() {
     let passaPeriodo = true;
     const dataTransacao = new Date(transacao.data + 'T00:00:00');
     if (filtroDe) {
-      const ini = new Date(filtroDe);
+      const ini = new Date(filtroDe + 'T00:00:00');
       passaPeriodo = passaPeriodo && dataTransacao >= ini;
     }
     if (filtroAte) {
-      const fim = new Date(filtroAte);
+      const fim = new Date(filtroAte + 'T23:59:59');
       passaPeriodo = passaPeriodo && dataTransacao <= fim;
     }
 
