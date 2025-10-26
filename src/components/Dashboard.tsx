@@ -19,7 +19,54 @@ export default function Dashboard() {
   });
 
   // Calcular totais
-  const totalCaixas = caixas.reduce((sum, caixa) => sum + caixa.saldo, 0);
+  // Total em Caixas: alinhar com "Total Geral" da página Caixas
+  const [ySel, mSel] = selectedMonth.split('-').map(Number);
+  const initialForMonth = (caixa: any, ym: string) => {
+    const init = (caixa as any).initialByMonth as Record<string, number> | undefined;
+    if (init && Object.prototype.hasOwnProperty.call(init, ym)) {
+      return (init as any)[ym] ?? 0;
+    }
+    // Propagar a partir do último mês conhecido
+    const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
+    const parseYM = (ym2: string) => { const [yy, mm] = ym2.split('-').map(Number); return { y: yy, m: mm }; };
+    const nextYM = (y: number, m: number) => ({ y: m === 12 ? y + 1 : y, m: m === 12 ? 1 : m + 1 });
+    if (!init) return 0;
+    let bestKey: string | null = null;
+    Object.keys(init).forEach(k => {
+      const { y, m } = parseYM(k);
+      if (ymToIndex(y, m) <= ymToIndex(ySel, mSel)) {
+        if (bestKey === null) bestKey = k; else {
+          const { y: by, m: bm } = parseYM(bestKey);
+          if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k;
+        }
+      }
+    });
+    if (!bestKey) return 0;
+    const { y: sy, m: sm } = parseYM(bestKey);
+    let current = (init as any)[bestKey] ?? 0;
+    let cy = sy, cm = sm;
+    while (!(cy === ySel && cm === mSel)) {
+      const total = transacoes
+        .filter(t => t.caixaId === caixa.id)
+        .filter(t => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === cy && d.getMonth() === (cm - 1); })
+        .reduce((s, t) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+      const n = nextYM(cy, cm);
+      current = current + total;
+      cy = n.y; cm = n.m;
+    }
+    return current;
+  };
+  const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
+    return transacoes
+      .filter(t => t.caixaId === caixaId)
+      .filter(t => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
+      .reduce((s, t) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+  };
+  const totalCaixasSomenteCaixas = caixas.reduce((sum, c) => {
+    const inicial = initialForMonth(c, selectedMonth);
+    const totalMes = monthlyTotalFor(c.id, ySel, mSel);
+    return sum + (inicial + totalMes);
+  }, 0);
   const CDI_ANUAL_PERCENT = 10.75;
   const dailyRateFromAnnual = (annualPercent: number) => Math.pow(1 + annualPercent / 100, 1 / 252) - 1;
   const approxBusinessDays = (from: string, to: string) => {
@@ -74,6 +121,7 @@ export default function Dashboard() {
   };
 
   const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => sum + (cofrinho.tipo === 'cdi' ? computeCdiSaldoLiquido(cofrinho) : cofrinho.saldo), 0);
+  const totalCaixas = totalCaixasSomenteCaixas + totalCofrinhos;
   
   // Total de investimentos: soma de todos os cofrinhos já com rendimentos
   const totalInvestimentos = totalCofrinhos;
@@ -181,10 +229,11 @@ export default function Dashboard() {
 
 
   // Dados para gráfico de barras - distribuição por caixa
-  const dadosCaixas = caixas.map(caixa => ({
-    nome: caixa.nome,
-    saldo: caixa.saldo,
-  }));
+  const dadosCaixas = caixas.map(caixa => {
+    const inicial = initialForMonth(caixa, selectedMonth);
+    const totalMes = monthlyTotalFor(caixa.id, ySel, mSel);
+    return { nome: caixa.nome, saldo: inicial + totalMes };
+  });
 
   // Dados para gráfico de pizza - gastos por categoria (apenas do mês filtrado)
   const gastosPorCategoria = gastosFixosDoMes
