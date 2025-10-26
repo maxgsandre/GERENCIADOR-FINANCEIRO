@@ -37,6 +37,60 @@ export default function TransacoesManager() {
     
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Helpers para cálculo de saldo inicial mensal por caixa
+  const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
+  const parseYM = (ym: string) => {
+    const [yy, mm] = ym.split('-').map(Number);
+    return { y: yy, m: mm };
+  };
+  const nextYM = (y: number, m: number) => {
+    const nm = m === 12 ? 1 : m + 1;
+    const ny = m === 12 ? y + 1 : y;
+    return { y: ny, m: nm };
+  };
+  const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
+    return transacoes
+      .filter(t => t.caixaId === caixaId)
+      .filter(t => {
+        const d = new Date(t.data + 'T00:00:00');
+        return d.getFullYear() === y && d.getMonth() === (m - 1);
+      })
+      .reduce((s, t) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+  };
+  // Usa initialByMonth quando existir; senão propaga a partir do último mês conhecido
+  const computeInitialForMonth = (caixa: any, ym: string) => {
+    const init = (caixa as any).initialByMonth as Record<string, number> | undefined;
+    if (init && Object.prototype.hasOwnProperty.call(init, ym)) {
+      return (init as any)[ym] ?? 0;
+    }
+    const { y: ty, m: tm } = parseYM(ym);
+    let bestKey: string | null = null;
+    if (init) {
+      Object.keys(init).forEach(k => {
+        const { y, m } = parseYM(k);
+        if (ymToIndex(y, m) <= ymToIndex(ty, tm)) {
+          if (bestKey === null) {
+            bestKey = k;
+          } else {
+            const { y: by, m: bm } = parseYM(bestKey);
+            if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k;
+          }
+        }
+      });
+    }
+    if (!bestKey) return 0;
+    const { y: sy, m: sm } = parseYM(bestKey);
+    let currentInitial = (init as any)[bestKey] ?? 0;
+    let cy = sy, cm = sm;
+    while (!(cy === ty && cm === tm)) {
+      const total = monthlyTotalFor(caixa.id, cy, cm);
+      const n = nextYM(cy, cm);
+      currentInitial = currentInitial + total;
+      cy = n.y; cm = n.m;
+    }
+    return currentInitial;
+  };
   const [filtroDe, setFiltroDe] = useState('');
   const [filtroAte, setFiltroAte] = useState('');
   const [novaCategoria, setNovaCategoria] = useState('');
@@ -317,6 +371,16 @@ export default function TransacoesManager() {
   const totalSaidas = transacoesFiltradas
     .filter(t => t.tipo === 'saida')
     .reduce((sum, t) => sum + t.valor, 0);
+
+  // Saldo exibido: saldo inicial do mês (por caixa ou somado) + (entradas - saídas) do período filtrado
+  const ymForSaldo = (filtroDe || new Date().toISOString().slice(0,10)).slice(0,7); // YYYY-MM
+  const initialSum = selectedCaixaId
+    ? (() => {
+        const cx = caixas.find(c => c.id === selectedCaixaId);
+        return cx ? computeInitialForMonth(cx, ymForSaldo) : 0;
+      })()
+    : caixas.reduce((sum, cx) => sum + computeInitialForMonth(cx as any, ymForSaldo), 0);
+  const saldoComInicial = initialSum + (totalEntradas - totalSaidas);
 
   return (
     <div className="space-y-6">
@@ -603,10 +667,13 @@ export default function TransacoesManager() {
             <CardTitle className="text-sm">Saldo</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="text-sm text-muted-foreground mb-1">
+              {selectedCaixaId ? 'Saldo do mês (com inicial)' : 'Saldo do mês (todas as caixas)'}
+            </div>
             <div className={`text-2xl font-bold ${
-              (totalEntradas - totalSaidas) >= 0 ? 'text-green-600' : 'text-red-600'
+              saldoComInicial >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
-              R$ {(totalEntradas - totalSaidas).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {saldoComInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>
