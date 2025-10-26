@@ -505,23 +505,11 @@ export default function CaixasManager() {
     };
   }, [transacoes, receitasPrevistas]); // Executa quando transacoes ou receitasPrevistas mudam
 
-  // Mês/ano selecionados (usar antes dos cálculos)
-  const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
-
-  // Total Geral: soma do saldo final do mês de cada caixa + saldo líquido/atual de cada cofrinho
-  const totalCaixasMes = caixas.reduce((sum, caixa) => {
-    const valorInicial = computeInitialForMonth(caixa, selectedMonth);
-    const totalMes = monthlyTotalFor(caixa.id, anoSelecionado, mesSelecionado);
-    return sum + (valorInicial + totalMes);
-  }, 0);
-  const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => {
-    const valor = cofrinho.tipo === 'cdi' ? computeCdiRendimento(cofrinho).saldoLiquido : (cofrinho.saldo || 0);
-    return sum + valor;
-  }, 0);
-  const totalGeral = totalCaixasMes + totalCofrinhos;
+  const totalGeral = caixas.reduce((sum, caixa) => sum + caixa.saldo, 0);
   
   // Receitas previstas são recorrentes (como gastos fixos) - sempre mostram todas
   // Mas as datas de vencimento são ajustadas para o mês selecionado
+  const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   
   const receitasComDataAjustada = receitasPrevistas.map(receita => {
     // Validar se dataVencimento existe e é válida
@@ -687,7 +675,7 @@ export default function CaixasManager() {
       <Card>
         <CardHeader>
           <CardTitle>Total Geral</CardTitle>
-          <CardDescription>Saldo final dos caixas no mês + cofrinhos</CardDescription>
+          <CardDescription>Soma de todas as caixas</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-green-600">
