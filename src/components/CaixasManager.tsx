@@ -691,7 +691,7 @@ export default function CaixasManager() {
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold text-green-600">
-            R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </CardContent>
       </Card>
@@ -1125,7 +1125,7 @@ export default function CaixasManager() {
                     <div>
                       <p className="text-sm text-muted-foreground">Saldo Líquido Atual</p>
                       <p className="text-2xl font-bold text-green-600">
-                        R$ {(cofrinho.tipo === 'cdi' ? cdiCalc.saldoLiquido : cofrinho.saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        R$ {Number(cofrinho.tipo === 'cdi' ? cdiCalc.saldoLiquido : cofrinho.saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
                     
