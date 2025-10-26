@@ -18,6 +18,12 @@ export default function Dashboard() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
 
+  // Formatter consistente para 2 casas decimais em pt-BR
+  const formatBR2 = new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
   // Calcular totais
   // Total em Caixas: alinhar com "Total Geral" da página Caixas
   const [ySel, mSel] = selectedMonth.split('-').map(Number);
@@ -297,7 +303,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              R$ {totalCaixas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {formatBR2.format(totalCaixas)}
             </div>
           </CardContent>
         </Card>
@@ -357,7 +363,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-              R$ {totalInvestimentos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {formatBR2.format(totalInvestimentos)}
             </div>
           </CardContent>
         </Card>
@@ -545,8 +551,8 @@ export default function Dashboard() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium">Cofrinhos</h3>
-            <div className="text-sm text-muted-foreground">
-              Total: R$ {totalCofrinhos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <div className="text-sm text-muted-foreground">
+              Total: R$ {formatBR2.format(Number(totalCofrinhos))}
             </div>
           </div>
           
@@ -578,7 +584,7 @@ export default function Dashboard() {
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Saldo</span>
                         <span className="font-medium text-green-600">
-                          R$ {saldoMostrar.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          R$ {formatBR2.format(saldoMostrar)}
                         </span>
                       </div>
                       
