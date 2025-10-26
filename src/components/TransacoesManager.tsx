@@ -51,6 +51,20 @@ export default function TransacoesManager() {
     hora: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
   });
 
+  // Ao abrir a aba Transações, preencher automaticamente o período do mês atual
+  useEffect(() => {
+    const tz = 'America/Sao_Paulo';
+    const todayStr = new Date()
+      .toLocaleDateString('pt-BR', { timeZone: tz })
+      .split('/')
+      .reverse()
+      .join('-'); // YYYY-MM-DD
+    const [y, m] = todayStr.split('-');
+    const firstDay = `${y}-${m}-01`;
+    setFiltroDe(firstDay);
+    setFiltroAte(todayStr);
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
