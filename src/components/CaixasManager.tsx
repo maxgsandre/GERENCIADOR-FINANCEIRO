@@ -529,6 +529,18 @@ export default function CaixasManager() {
   // Receitas previstas são recorrentes (como gastos fixos) - sempre mostram todas
   // Mas as datas de vencimento são ajustadas para o mês selecionado
   
+  // Mapear descrições de receitas já recebidas no mês selecionado (derivado das transações)
+  const descricoesRecebidasNoMes = new Set(
+    (transacoes as any[] || [])
+      .filter(t => {
+        const d = new Date(t.data + 'T00:00:00');
+        return d.getFullYear() === anoSelecionado && d.getMonth() === (mesSelecionado - 1);
+      })
+      .map(t => t.descricao)
+      .filter((desc: string) => typeof desc === 'string' && desc.startsWith('Receita recebida: '))
+      .map((desc: string) => desc.replace('Receita recebida: ', ''))
+  );
+
   const receitasComDataAjustada = receitasPrevistas.map(receita => {
     // Validar se dataVencimento existe e é válida
     if (!receita.dataVencimento) {
@@ -562,13 +574,15 @@ export default function CaixasManager() {
     
     return {
       ...receita,
-      dataVencimentoAjustada: novaData.toISOString().split('T')[0]
-    };
+      dataVencimentoAjustada: novaData.toISOString().split('T')[0],
+      // Recebido no mês é derivado das transações do mês
+      recebidoNoMes: descricoesRecebidasNoMes.has(receita.descricao)
+    } as any;
   });
   
   const totalReceitasPrevistas = receitasPrevistas.reduce((sum, receita) => sum + receita.valor, 0);
-  const totalReceitasRecebidas = receitasPrevistas.filter(r => r.recebido).reduce((sum, receita) => sum + receita.valor, 0);
-  const totalReceitasAReceber = totalReceitasPrevistas - totalReceitasRecebidas;
+  const totalReceitasRecebidas = receitasComDataAjustada.filter((r: any) => r.recebidoNoMes).reduce((sum: number, receita: any) => sum + receita.valor, 0);
+  const totalReceitasAReceber = Math.max(0, totalReceitasPrevistas - totalReceitasRecebidas);
 
   return (
     <div className="space-y-6">
@@ -906,23 +920,23 @@ export default function CaixasManager() {
                 {/* Linha 1: Status + Descrição + Valor */}
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <button
-                    onClick={() => toggleReceitaRecebida(receita)}
-                      className={`flex-shrink-0 ${receita.recebido 
-                      ? 'text-green-600 hover:text-green-700' 
-                      : 'text-gray-400 hover:text-gray-600'}`}
-                  >
-                    {receita.recebido ? (
-                      <CheckCircle className="h-5 w-5" />
-                    ) : (
-                      <Circle className="h-5 w-5" />
-                    )}
-                  </button>
-                    <p className={`font-medium truncate ${receita.recebido ? 'text-muted-foreground' : ''}`}>
+                    <button
+                      onClick={() => toggleReceitaRecebida(receita)}
+                      className={`flex-shrink-0 ${((receita as any).recebidoNoMes) 
+                        ? 'text-green-600 hover:text-green-700' 
+                        : 'text-gray-400 hover:text-gray-600'}`}
+                    >
+                      {((receita as any).recebidoNoMes) ? (
+                        <CheckCircle className="h-5 w-5" />
+                      ) : (
+                        <Circle className="h-5 w-5" />
+                      )}
+                    </button>
+                    <p className={`font-medium truncate ${(receita as any).recebidoNoMes ? 'text-muted-foreground' : ''}`}>
                       {receita.descricao}
                     </p>
                   </div>
-                  <span className={`font-bold flex-shrink-0 ${receita.recebido ? 'text-green-600' : 'text-blue-600'}`}>
+                  <span className={`font-bold flex-shrink-0 ${(receita as any).recebidoNoMes ? 'text-green-600' : 'text-blue-600'}`}>
                     R$ {receita.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
