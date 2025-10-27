@@ -329,6 +329,10 @@ export default function GastosFixosManager() {
     setIsSaving(true);
     
     try {
+    const pagamentosPreservados = editingGasto?.pagamentos ? [...editingGasto.pagamentos] : [];
+    const valorPagoCalculado = pagamentosPreservados.length > 0
+      ? pagamentosPreservados.reduce((sum, p) => sum + (p?.valor || 0), 0)
+      : (editingGasto?.valorPago ?? 0);
     const novoGasto: GastoFixo = {
         id: editingGasto?.id || ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString()),
       descricao: formData.descricao,
@@ -338,7 +342,9 @@ export default function GastosFixosManager() {
       pago: editingGasto ? !!editingGasto.pago : false,
       fracionado: isFracionado,
       // Preservar pagamentos existentes ao editar; iniciar vazio apenas para novo
-      pagamentos: editingGasto?.pagamentos ? [...editingGasto.pagamentos] : [],
+      pagamentos: pagamentosPreservados,
+      // Preservar/atualizar valorPago para compatibilidade com listas antigas
+      valorPago: valorPagoCalculado,
     };
 
       await saveGastoFixo(novoGasto);
