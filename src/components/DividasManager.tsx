@@ -12,6 +12,12 @@ import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSi
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
 
+type DividaView = Divida & { dataVencimentoExibida?: string };
+
+function getQuitYM(d: Divida): { y: number; m: number } | null {
+  return null;
+}
+
 export default function DividasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
@@ -1009,8 +1015,8 @@ export default function DividasManager() {
         }
       });
     }
-  }, [transacoes, selectedYM]); // Removido comprasCartao das dependências
-  
+  }, [transacoes, selectedYM]);
+
   const getMonthlyDue = (d: Divida): number => {
     if (d.tipo === 'parcelada') {
       const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
@@ -1033,86 +1039,59 @@ export default function DividasManager() {
   };
 
   const getParcelaDoMes = (divida: Divida) => {
-    if (divida.tipo !== 'parcelada') {
-      return null;
-    }
-    
+    if (divida.tipo !== 'parcelada') return null;
     const parcelaAtual = (divida.parcelasPagas || 0) + 1;
-    
-    if (parcelaAtual < 1 || parcelaAtual > divida.parcelas) {
-      return null;
-    }
-    
+    if (parcelaAtual < 1 || parcelaAtual > divida.parcelas) return null;
     return parcelaAtual;
   };
 
   const getParcelaCompraDoMes = (compra: CompraCartao) => {
     const parcelaAtual = (compra.parcelasPagas || 0) + 1;
-    
-    if (parcelaAtual < 1 || parcelaAtual > compra.parcelas) {
-      return null;
-    }
-    
+    if (parcelaAtual < 1 || parcelaAtual > compra.parcelas) return null;
     return parcelaAtual;
   };
 
-  // Função para determinar status do cartão baseado em transações de pagamento da fatura
   const getStatusCartao = (cardId: string) => {
     const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
-    
     if (comprasDoCartao.length === 0) {
       return { status: 'Sem compras', cor: 'text-muted-foreground' };
     }
-    
-    // Filtrar compras que têm parcela vencendo no mês selecionado
     const comprasDoMes = comprasDoCartao.filter(compra => {
       const [sy, sm] = compra.startMonth.split('-').map(Number);
       const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-      return idx >= 0 && idx < compra.parcelas; // Tem parcela neste mês
+      return idx >= 0 && idx < compra.parcelas;
     });
-    
     if (comprasDoMes.length === 0) {
       return { status: 'Sem parcelas este mês', cor: 'text-muted-foreground' };
     }
-    
-    // Buscar o cartão para obter o nome
     const cartao = (cartoes || []).find((c: any) => c.id === cardId);
     const nomeCartao = cartao?.nome || '';
-    
-    // Verificar se há transação de pagamento da fatura para este cartão no mês selecionado
     const transacoesFatura = (transacoes || []).filter(t => 
       t.descricao.includes(`Fatura ${nomeCartao}`) ||
       t.descricao.includes(`Pagamento fatura: ${nomeCartao}`)
     );
-    
-    // Verificar se há transação de pagamento da fatura no mês atual
     const mesAtual = `${selectedYM.y}-${String(selectedYM.m).padStart(2, '0')}`;
     const transacaoFaturaMes = transacoesFatura.find(t => 
       t.data.startsWith(mesAtual)
     );
-    
     if (transacaoFaturaMes) {
       return { status: '✓ Pago', cor: 'text-green-600' };
     }
-    
     return { status: '⏳ Pendente', cor: 'text-red-600' };
   };
 
-  // Função para determinar status e cores das parcelas baseado no pagamento do mês
   const getStatusParcela = (divida: Divida) => {
     const valorPago = divida.valorPago || 0;
     const valorTotal = divida.valorTotal;
     const parcelasPagas = divida.parcelasPagas || 0;
     const totalParcelas = divida.parcelas || 1;
     
-    // Para dívidas não parceladas
     if (divida.tipo === 'total') {
       if (valorPago === 0) return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
       if (valorPago >= valorTotal) return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
       return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
     }
     
-    // Para dívidas parceladas - verificar se a parcela do mês está paga
     const parcelaMes = getMonthlyDue(divida, selectedMonth);
     const parcelaMesPaga = getMonthlyPaid(divida, transacoes, selectedMonth);
     
@@ -1131,14 +1110,12 @@ export default function DividasManager() {
     const parcelasPagas = (compra as any).parcelasPagas || 0;
     const totalParcelas = compra.parcelas || 1;
     
-    // Para compras não parceladas (à vista)
     if (totalParcelas === 1) {
       if (valorPago === 0) return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
       if (valorPago >= valorTotal) return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
       return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
     }
     
-    // Para compras parceladas - verificar se a parcela do mês está paga
     const [sy, sm] = compra.startMonth.split('-').map(Number);
     const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
     const parcelaMes = idx >= 0 && idx < compra.parcelas ? purchaseInstallmentValue(compra, idx) : 0;
@@ -1153,12 +1130,12 @@ export default function DividasManager() {
     }
   };
 
-  // Datas sem deslocamento de fuso: tratar 'YYYY-MM-DD' como data local
   const formatDateBR = (s: string) => {
     if (!s) return '';
     const [y, m, d] = s.split('-');
     return `${d}/${m}/${y}`;
   };
+  
   const localDateFromYYYYMMDD = (s: string) => {
     const [y, m, d] = s.split('-').map(Number);
     return new Date(y, (m || 1) - 1, d || 1);
@@ -1180,18 +1157,15 @@ export default function DividasManager() {
   };
 
   const getMonthlyPaid = (d: Divida): number => {
-    // Se a dívida foi marcada como paga diretamente (criada via transação)
     if (d.pago) {
       const parcelaMes = getMonthlyDue(d);
-      return parcelaMes; // Retorna o valor da parcela do mês se estiver pago
+      return parcelaMes;
     }
     
-    // Buscar todas as transações de pagamento desta dívida
     const transacoesDivida = (transacoes as any[]).filter(t => 
       t.descricao === `Pagamento dívida: ${d.descricao}`
     );
     
-    // Somar o valor pago via transações
     const totalPagoViaTransacoes = transacoesDivida.reduce((sum, t) => sum + t.valor, 0);
     
     if (d.tipo === 'parcelada') {
@@ -1200,23 +1174,17 @@ export default function DividasManager() {
       if (idx < 0 || idx >= d.parcelas) return 0;
       
       const parcelaMes = getMonthlyDue(d);
-      
-      // Verificar quanto já foi pago desta parcela específica
-      // Como não temos pagamento por parcela, verificamos se o total pago cobre esta parcela
       const valorAteEstaParcela = (idx + 1) * d.valorParcela;
       
       if (totalPagoViaTransacoes >= valorAteEstaParcela) {
-        // Parcela completamente paga
         return parcelaMes;
       } else if (totalPagoViaTransacoes > idx * d.valorParcela) {
-        // Parcela parcialmente paga
         return Math.min(parcelaMes, totalPagoViaTransacoes - (idx * d.valorParcela));
       }
       
       return 0;
     }
     
-    // Para dívidas não parceladas
     const vencYM = parseYYYYMMDDtoYM(d.dataVencimento);
     if (vencYM.y === selectedYM.y && vencYM.m === selectedYM.m) {
       return totalPagoViaTransacoes;
@@ -1224,14 +1192,11 @@ export default function DividasManager() {
     return 0;
   };
 
-  // Função para calcular quanto foi pago da compra de cartão no mês
   const getMonthlyPaidCompra = (c: CompraCartao): number => {
-    // Buscar todas as transações de pagamento desta compra
     const transacoesCompra = (transacoes as any[]).filter(t => 
       t.descricao === `Pagamento cartão: ${c.descricao}`
     );
     
-    // Somar o valor pago via transações
     const totalPagoViaTransacoes = transacoesCompra.reduce((sum, t) => sum + t.valor, 0);
     
     const [sy, sm] = c.startMonth.split('-').map(Number);
@@ -1239,57 +1204,50 @@ export default function DividasManager() {
     if (idx < 0 || idx >= c.parcelas) return 0;
     
     const parcelaMes = purchaseInstallmentValue(c, idx);
-    
-    // Verificar quanto já foi pago desta parcela específica
     const valorAteEstaParcela = (idx + 1) * c.valorParcela;
     
     if (totalPagoViaTransacoes >= valorAteEstaParcela) {
-      // Parcela completamente paga
       return parcelaMes;
     } else if (totalPagoViaTransacoes > idx * c.valorParcela) {
-      // Parcela parcialmente paga
       return Math.min(parcelaMes, totalPagoViaTransacoes - (idx * c.valorParcela));
     }
     
     return 0;
   };
 
-  // Compras de cartão não são mais exibidas na lista de dívidas
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
-  // const purchasesAsDividas: Divida[] = []; // Removido - compras não aparecem mais como dívidas
-  // Ajustar datas das dívidas normais para o mês selecionado
-  const dividasComDataAjustada = dividas.map(divida => {
-    // Validar se dataVencimento existe e é válida
-    if (!divida.dataVencimento) {
-      return divida;
+
+  // Compras de cartão não são mais exibidas na lista de dívidas
+  const { y: selY, m: selM } = selectedYM;
+
+  const dividasFiltradas = dividas.filter((d) => {
+    const quitYM = getQuitYM(d);
+    if (quitYM && ((quitYM.y < selY) || (quitYM.y === selY && quitYM.m < selM))) {
+      return false;
     }
-    
-    const dataOriginal = new Date(divida.dataVencimento + 'T00:00:00');
-    const diaVencimento = dataOriginal.getDate();
-    
-    // Validar se a data é válida
-    if (isNaN(diaVencimento) || diaVencimento < 1 || diaVencimento > 31) {
-      return divida;
+
+    if (d.tipo === 'parcelada') {
+      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+      const idx = ymToIndex(selY, selM) - ymToIndex(startYM.y, startYM.m);
+      return idx >= 0 && idx < d.parcelas;
     }
-    
-    // Criar nova data com o dia original mas mês/ano selecionado
-    const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
-    
-    // Validar se a nova data é válida
-    if (isNaN(novaData.getTime())) {
-      return divida;
-    }
-    
-    const dataVencimentoAjustada = novaData.toISOString().split('T')[0];
-    
-    return {
-      ...divida,
-      dataVencimento: dataVencimentoAjustada
-    };
+
+    const { y: y0, m: m0 } = parseYYYYMMDDtoYM(d.dataVencimento);
+    return y0 === selY && m0 === selM;
   });
 
-  // Apenas dívidas reais são exibidas (compras de cartão removidas)
-  const allDividasForView: Divida[] = dividasComDataAjustada;
+  const allDividasForView: DividaView[] = dividasFiltradas.map((d) => {
+    const original = new Date(d.dataVencimento + 'T00:00:00');
+    const dia = original.getDate();
+    const nova = new Date(anoSelecionado, mesSelecionado - 1, dia);
+    return { ...d, dataVencimentoExibida: nova.toISOString().split('T')[0] };
+  });
+
+  const listDividasForMonth = allDividasForView.sort((a, b) => {
+    const A = a.dataVencimentoExibida ?? a.dataVencimento;
+    const B = b.dataVencimentoExibida ?? b.dataVencimento;
+    return new Date(A).getTime() - new Date(B).getTime();
+  });
 
   // Totais mensais usando utilitário compartilhado
   const { monthlyTotal, monthlyPaid, monthlyRemaining, monthlyCount } = calculateMonthlyTotals(
@@ -1299,15 +1257,6 @@ export default function DividasManager() {
     selectedMonth,
     transacoes
   );
-
-  // Mostrar na lista apenas o que tem parcela no mês selecionado
-  const listDividasForMonth: Divida[] = allDividasForView
-    .filter(d => getMonthlyDue(d) > 0)
-    .sort((a, b) => {
-      const dataA = new Date(a.dataVencimento);
-      const dataB = new Date(b.dataVencimento);
-      return dataA.getTime() - dataB.getTime(); // Mais próximas primeiro
-    });
 
   // Helpers para fatura do cartão
   const cardInvoiceTotalForSelectedMonth = (cardId: string): number => {
@@ -2425,7 +2374,7 @@ export default function DividasManager() {
                       </Badge>
                       <div className="flex items-center text-sm text-muted-foreground">
                         <Calendar className="h-4 w-4 mr-1" />
-                        {new Date(divida.dataVencimento + 'T00:00:00').toLocaleDateString('pt-BR')}
+                        {new Date(((divida as any).dataVencimentoExibida ?? divida.dataVencimento) + 'T00:00:00').toLocaleDateString('pt-BR')}
                       </div>
                     </div>
                     
@@ -2551,7 +2500,7 @@ export default function DividasManager() {
                       <TableCell>
                         <div className="flex items-center">
                           <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
-                          {new Date(divida.dataVencimento + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          {new Date(((divida as any).dataVencimentoExibida ?? divida.dataVencimento) + 'T00:00:00').toLocaleDateString('pt-BR')}
                         </div>
                       </TableCell>
                       <TableCell>
