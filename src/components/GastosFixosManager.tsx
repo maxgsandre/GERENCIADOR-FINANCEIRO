@@ -42,6 +42,14 @@ export default function GastosFixosManager() {
   const [horaPagamento, setHoraPagamento] = useState('');
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   const autoCleanRanRef = useRef(false);
+  // Detectar mobile para aplicar scroll nos modais
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   
   
   // Função para limpar gastos fixos criados automaticamente por dívidas
@@ -941,7 +949,10 @@ export default function GastosFixosManager() {
     <div className="space-y-6">
       {/* Modal pagamento vinculado a dívida */}
       <Dialog open={isPagamentoOpen} onOpenChange={setIsPagamentoOpen}>
-        <DialogContent>
+        <DialogContent 
+          className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+          style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+        >
           <DialogHeader>
             <DialogTitle>{modoPagamento === 'pay' ? 'Pagar gasto fixo' : 'Estornar gasto fixo'}</DialogTitle>
             <DialogDescription>
@@ -993,7 +1004,10 @@ export default function GastosFixosManager() {
 
       {/* Modal valor pago */}
       <Dialog open={isValorPagoOpen} onOpenChange={setIsValorPagoOpen}>
-        <DialogContent>
+        <DialogContent 
+          className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+          style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+        >
           <DialogHeader>
             <DialogTitle>Definir valor pago</DialogTitle>
             <DialogDescription>
@@ -1012,8 +1026,8 @@ export default function GastosFixosManager() {
               />
               <p className="text-sm text-muted-foreground">
                 Valor total: R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
+          </p>
+        </div>
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -1082,15 +1096,18 @@ export default function GastosFixosManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm} className="hidden">
               <Plus className="h-4 w-4 mr-2" />
               Novo Gasto Fixo
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent 
+            className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
+            style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
+          >
             <DialogHeader>
               <DialogTitle>
                 {editingGasto ? 'Editar Gasto Fixo' : 'Novo Gasto Fixo'}
@@ -1343,7 +1360,7 @@ export default function GastosFixosManager() {
           />
         </div>
       </div>
-      
+
       {/* Cards de resumo */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         <Card>
