@@ -167,6 +167,17 @@ export default function CaixasManager() {
     return 0.15;
   };
   const todayStr = new Date().toISOString().slice(0,10);
+  const computeManualRendimento = (cofrinho: Cofrinho) => {
+    if (!cofrinho || cofrinho.tipo !== 'manual') return { rendimentoPercentual: 0, totalInvestido: 0 };
+    // "Valor investido" = valor inicial aplicado (fixo, não soma aportes)
+    const totalInvestido = cofrinho.valorAplicado || 0;
+    if (totalInvestido === 0) return { rendimentoPercentual: 0, totalInvestido: 0 };
+    // Rentabilidade = (valor atual - valor investido inicial) / valor investido inicial * 100
+    // Exemplo: R$ 105 atual - R$ 100 inicial = R$ 5 / R$ 100 = 5%
+    const rendimentoPercentual = ((cofrinho.saldo - totalInvestido) / totalInvestido) * 100;
+    return { rendimentoPercentual, totalInvestido };
+  };
+
   const computeCdiRendimento = (cofrinho: Cofrinho) => {
     if (!cofrinho || (cofrinho.tipo !== 'cdi')) return { saldoLiquido: cofrinho?.saldo || 0, rendimentoLiquido: 0, rendimentoBruto: 0, totalIR: 0, totalIOF: 0, principal: (cofrinho?.valorAplicado || 0) + (cofrinho?.aportes?.reduce((s,a)=>s+a.valor,0) || 0) };
     const percentOfCDI = cofrinho.percentualCDI || 0;
@@ -198,7 +209,8 @@ export default function CaixasManager() {
   };
 
   const elapsedLabel = (cofrinho: Cofrinho) => {
-    const baseDate = (cofrinho.tipo === 'cdi' ? (cofrinho.dataAplicacao || cofrinho.dataCriacao) : cofrinho.dataCriacao) || todayStr;
+    // Para cofrinho manual, usar dataAplicacao se disponível, senão dataCriacao
+    const baseDate = cofrinho.dataAplicacao || cofrinho.dataCriacao || todayStr;
     const ms = new Date(todayStr).getTime() - new Date(baseDate + 'T00:00:00').getTime();
     const days = Math.max(0, Math.floor(ms / 86400000));
     if (days < 30) return `${days} ${days === 1 ? 'dia' : 'dias'}`;
@@ -210,22 +222,23 @@ export default function CaixasManager() {
   const [isAporteOpen, setIsAporteOpen] = useState(false);
   const [cofrinhoAporte, setCofrinhoAporte] = useState<Cofrinho | null>(null);
   const [aporteData, setAporteData] = useState(new Date().toISOString().slice(0,10));
+  const [aporteHora, setAporteHora] = useState(new Date().toTimeString().slice(0,5));
   const [aporteValor, setAporteValor] = useState('');
   const abrirAporte = (c: Cofrinho) => {
     setCofrinhoAporte(c);
     setAporteData(new Date().toISOString().slice(0,10));
+    setAporteHora(new Date().toTimeString().slice(0,5));
     setAporteValor('');
     setIsAporteOpen(true);
   };
   const confirmarAporte = async () => {
     if (!cofrinhoAporte) return;
     const valor = parseFloat(aporteValor);
-    if (!aporteData || isNaN(valor) || valor <= 0) return;
+    if (!aporteData || isNaN(valor) || valor === 0) return;
     const atualizado: Cofrinho = {
       ...cofrinhoAporte,
-      valorAplicado: (cofrinhoAporte.valorAplicado || 0) + valor,
       saldo: (cofrinhoAporte.saldo || 0) + valor,
-      aportes: [...(cofrinhoAporte.aportes || []), { data: aporteData, valor }],
+      aportes: [...(cofrinhoAporte.aportes || []), { data: aporteData, hora: aporteHora, valor }],
     };
     await saveCofrinho(atualizado);
     setCofrinhos(prev => prev.map(c => c.id === atualizado.id ? atualizado : c));
@@ -1186,6 +1199,65 @@ export default function CaixasManager() {
                     />
                   </div>
                 </div>
+
+                {/* Histórico de Aportes */}
+                {editingCofrinho && editingCofrinho.aportes && editingCofrinho.aportes.length > 0 && (
+                  <div className="space-y-3">
+                    <Separator />
+                    <div>
+                      <h4 className="font-medium mb-2">Histórico de Aportes</h4>
+                      <div className="space-y-2 max-h-48 overflow-y-auto bg-gray-50 dark:bg-gray-800 rounded p-3">
+                        {editingCofrinho.aportes.map((aporte, index) => (
+                          <div key={`aporte-${index}`} className="flex justify-between items-center text-sm">
+                            <div className="flex flex-col flex-1">
+                              <span className="font-medium">
+                                {aporte.valor >= 0 ? 'Aporte' : 'Retirada'}
+                              </span>
+                              <span className="text-muted-foreground text-xs">
+                                {aporte.hora ? `${aporte.hora} em ${new Date(aporte.data + 'T00:00:00').toLocaleDateString('pt-BR')}` : new Date(aporte.data + 'T00:00:00').toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-medium ${aporte.valor >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {aporte.valor >= 0 ? '+' : ''}R$ {aporte.valor.toFixed(2).replace('.', ',')}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                type="button"
+                                onClick={async () => {
+                                  if (!confirm('Excluir este aporte?')) return;
+                                  const novoSaldo = editingCofrinho.saldo - aporte.valor;
+                                  const novosAportes = [...(editingCofrinho.aportes || [])];
+                                  novosAportes.splice(index, 1);
+                                  const atualizado: Cofrinho = {
+                                    ...editingCofrinho,
+                                    saldo: novoSaldo,
+                                    aportes: novosAportes,
+                                  };
+                                  await saveCofrinho(atualizado);
+                                  setCofrinhos(prev => prev.map(c => c.id === atualizado.id ? atualizado : c));
+                                  handleEditCofrinho(atualizado);
+                                }}
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              >
+                                ×
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="border-t pt-2 mt-2">
+                          <div className="flex justify-between items-center font-medium">
+                            <span>Total Aportes:</span>
+                            <span className="text-green-600">
+                              R$ {editingCofrinho.aportes.reduce((sum, a) => sum + a.valor, 0).toFixed(2).replace('.', ',')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={resetCofrinhoForm}>
@@ -1243,7 +1315,7 @@ export default function CaixasManager() {
                       </p>
                     </div>
                     
-                    {cofrinho.tipo === 'cdi' && (
+                    {cofrinho.tipo === 'cdi' ? (
                       <div className="space-y-1">
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Rendimento líquido</span>
@@ -1263,6 +1335,24 @@ export default function CaixasManager() {
                           </div>
                         )}
                       </div>
+                    ) : (
+                      (() => {
+                        const manualCalc = computeManualRendimento(cofrinho);
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Total investido</span>
+                              <span className="font-medium">R$ {manualCalc.totalInvestido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Rentabilidade</span>
+                              <span className={`font-medium ${manualCalc.rendimentoPercentual >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {manualCalc.rendimentoPercentual >= 0 ? '+' : ''}{manualCalc.rendimentoPercentual.toFixed(2)}%
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()
                     )}
                     
                     <div className="flex space-x-2">
@@ -1373,14 +1463,18 @@ export default function CaixasManager() {
           {cofrinhoAporte ? `Adicionar aporte em ${cofrinhoAporte.nome}` : ''}
         </DialogDescription>
       </DialogHeader>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label>Data</Label>
-          <Input type="date" value={aporteData} onChange={(e) => setAporteData(e.target.value)} />
+          <Input type="date" value={aporteData} onChange={(e) => setAporteData(e.target.value)} required />
         </div>
         <div className="space-y-2">
-          <Label>Valor</Label>
-          <Input type="number" step="0.01" value={aporteValor} onChange={(e) => setAporteValor(e.target.value)} placeholder="0.00" />
+          <Label>Hora</Label>
+          <Input type="time" value={aporteHora} onChange={(e) => setAporteHora(e.target.value)} required />
+        </div>
+        <div className="space-y-2">
+          <Label>Valor (negativo para retirada)</Label>
+          <Input type="number" step="0.01" value={aporteValor} onChange={(e) => setAporteValor(e.target.value)} placeholder="0.00" required />
         </div>
       </div>
       <DialogFooter>
