@@ -316,10 +316,10 @@ export default function CaixasManager() {
       nome: cofrinhoFormData.nome,
       saldo: parseFloat(cofrinhoFormData.valorAplicado),
       tipo: cofrinhoFormData.tipo,
-      dataAplicacao: cofrinhoFormData.dataAplicacao,
+      dataAplicacao: cofrinhoFormData.dataAplicacao || new Date().toISOString().slice(0,10),
       valorAplicado: parseFloat(cofrinhoFormData.valorAplicado),
       aportes: [],
-      percentualCDI: cofrinhoFormData.tipo === 'cdi' ? parseFloat(cofrinhoFormData.percentualCDI) : undefined,
+      ...(cofrinhoFormData.tipo === 'cdi' && { percentualCDI: parseFloat(cofrinhoFormData.percentualCDI) }),
       rendimentoMensal: 0,
       dataCriacao: editingCofrinho?.dataCriacao || new Date().toISOString().split('T')[0],
       cor: cofrinhoFormData.cor,
@@ -1143,7 +1143,7 @@ export default function CaixasManager() {
                       type="date"
                       value={cofrinhoFormData.dataAplicacao}
                       onChange={(e) => setCofrinhoFormData(prev => ({ ...prev, dataAplicacao: e.target.value }))}
-                      disabled={cofrinhoFormData.tipo !== 'cdi'}
+                      required
                     />
                   </div>
                   <div className="space-y-2">
