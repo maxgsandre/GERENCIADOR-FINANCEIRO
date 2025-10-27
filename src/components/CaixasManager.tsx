@@ -920,18 +920,18 @@ export default function CaixasManager() {
                 {/* Linha 1: Status + Descrição + Valor */}
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <button
-                      onClick={() => toggleReceitaRecebida(receita)}
+                  <button
+                    onClick={() => toggleReceitaRecebida(receita)}
                       className={`flex-shrink-0 ${((receita as any).recebidoNoMes) 
-                        ? 'text-green-600 hover:text-green-700' 
-                        : 'text-gray-400 hover:text-gray-600'}`}
-                    >
+                      ? 'text-green-600 hover:text-green-700' 
+                      : 'text-gray-400 hover:text-gray-600'}`}
+                  >
                       {((receita as any).recebidoNoMes) ? (
-                        <CheckCircle className="h-5 w-5" />
-                      ) : (
-                        <Circle className="h-5 w-5" />
-                      )}
-                    </button>
+                      <CheckCircle className="h-5 w-5" />
+                    ) : (
+                      <Circle className="h-5 w-5" />
+                    )}
+                  </button>
                     <p className={`font-medium truncate ${(receita as any).recebidoNoMes ? 'text-muted-foreground' : ''}`}>
                       {receita.descricao}
                     </p>
