@@ -192,6 +192,16 @@ export default function GastosFixosManager() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
 
+  // Replicação idempotente de gastos fixos ao mudar de mês (usa meta no Firestore)
+  useEffect(() => {
+    (async () => {
+      try {
+        const svc = await import('../services/firebaseService');
+        (svc as any).replicateGastosIfNeeded && (context as any)?.currentUser?.uid && await (svc as any).replicateGastosIfNeeded((context as any).currentUser.uid, selectedMonth);
+      } catch {}
+    })();
+  }, [selectedMonth]);
+
   // Filtrar gastos fixos pelo mês selecionado
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   
@@ -205,7 +215,12 @@ export default function GastosFixosManager() {
     return true; // gastos fixos recorrentes (ex.: Aluguel)
   };
 
-  const filteredGastos = (gastosFixos as GastoFixo[]).filter(includeInSelectedMonth);
+  // Filtrar gastos do mês selecionado: preferir campo periodo quando existir; fallback para heurística por ID
+  const filteredGastos = (gastosFixos as GastoFixo[]).filter((g) => {
+    const periodo = (g as any).periodo as string | undefined;
+    if (periodo) return periodo === selectedMonth;
+    return includeInSelectedMonth(g);
+  });
   
   // Consolidar gastos de cartão por cartão e esporádicos em uma linha
   const gastosConsolidados = (() => {
@@ -345,6 +360,8 @@ export default function GastosFixosManager() {
       pagamentos: pagamentosPreservados,
       // Preservar/atualizar valorPago para compatibilidade com listas antigas
       valorPago: valorPagoCalculado,
+      // novo campo de competência
+      periodo: (editingGasto as any)?.periodo || selectedMonth,
     };
 
       await saveGastoFixo(novoGasto);
@@ -412,7 +429,9 @@ export default function GastosFixosManager() {
     }
     
     if (!confirm('Tem certeza que deseja excluir este gasto fixo?')) return;
-    await deleteGastoFixo(id);
+    const gasto = (gastosFixos as GastoFixo[]).find(g => g.id === id);
+    const periodo = (gasto as any)?.periodo || selectedMonth;
+    await deleteGastoFixo(id, periodo);
   };
 
   const getStatusGasto = (gasto: GastoFixo) => {
