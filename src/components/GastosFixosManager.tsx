@@ -42,6 +42,7 @@ export default function GastosFixosManager() {
   const [isFracionado, setIsFracionado] = useState(false);
   const [dataPagamento, setDataPagamento] = useState('');
   const [horaPagamento, setHoraPagamento] = useState('');
+  const [descricaoPagamento, setDescricaoPagamento] = useState('');
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   const autoCleanRanRef = useRef(false);
   const [isDuplicarDialogOpen, setIsDuplicarDialogOpen] = useState(false);
@@ -501,6 +502,7 @@ export default function GastosFixosManager() {
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
     setDataPagamento(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
     setHoraPagamento(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }));
+    setDescricaoPagamento('');
     setIsValorPagoOpen(true);
   };
 
@@ -643,7 +645,7 @@ export default function GastosFixosManager() {
           valor: valorPago,
           data: dataPagamento,
           hora: horaPagamento,
-          descricao: 'Pagamento manual'
+          descricao: descricaoPagamento || 'Pagamento manual'
         };
         
         const pagamentosAtualizados = [...(gastoSelecionado.pagamentos || []), novoPagamento];
@@ -663,7 +665,7 @@ export default function GastosFixosManager() {
           valor: valorPago,
           data: dataPagamento,
           hora: horaPagamento,
-          descricao: 'Pagamento migrado'
+          descricao: descricaoPagamento || 'Pagamento migrado'
         };
         
         gastoAtualizado = {
@@ -713,6 +715,7 @@ export default function GastosFixosManager() {
     setValorPagoInput('');
     setDataPagamento('');
     setHoraPagamento('');
+    setDescricaoPagamento('');
   };
 
   const togglePago = async (id: string) => {
@@ -1088,8 +1091,22 @@ export default function GastosFixosManager() {
               />
               <p className="text-sm text-muted-foreground">
                 Valor total: R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-        </div>
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="descricaoPagamento">Descrição do pagamento (opcional)</Label>
+              <Input
+                id="descricaoPagamento"
+                type="text"
+                value={descricaoPagamento}
+                onChange={(e) => setDescricaoPagamento(e.target.value)}
+                placeholder="Ex: Pagamento parcial, Primeira parcela, etc."
+              />
+              <p className="text-sm text-muted-foreground">
+                Se deixar em branco, será exibido como "Pagamento manual"
+              </p>
+            </div>
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -1153,6 +1170,7 @@ export default function GastosFixosManager() {
               setIsValorPagoOpen(false);
               setDataPagamento('');
               setHoraPagamento('');
+              setDescricaoPagamento('');
             }}>Cancelar</Button>
             <Button onClick={confirmarValorPago}>Confirmar</Button>
           </DialogFooter>
