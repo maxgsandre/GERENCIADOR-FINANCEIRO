@@ -143,24 +143,94 @@ export const subscribeToTransacoes = (userId: string, callback: (transacoes: Tra
   });
 };
 
-// Funções para Gastos Fixos
-export const saveGastoFixo = async (userId: string, gastoFixo: GastoFixo) => {
-  await setDoc(doc(db, 'users', userId, 'gastosFixos', gastoFixo.id), gastoFixo);
+// =======================
+// Gastos Fixos - Nova estrutura por período
+// Estrutura: users/{userId}/gastosFixos/{periodo}/itens/{gastoId}
+// =======================
+
+// Migrar documento antigo (flat) para a nova estrutura por período
+const migrateGastoToSubcollection = async (userId: string, gasto: GastoFixo) => {
+  try {
+    let periodo = (gasto as any).periodo as string | undefined;
+    if (!periodo) {
+      const today = new Date();
+      periodo = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    }
+    const migrado: GastoFixo = { ...(gasto as any), periodo } as any;
+    await setDoc(doc(db, 'users', userId, 'gastosFixos', periodo, 'itens', migrado.id), migrado);
+    try { await deleteDoc(doc(db, 'users', userId, 'gastosFixos', (gasto as any).id)); } catch {}
+  } catch (e) {
+    console.error('Erro ao migrar gasto fixo:', (gasto as any)?.id, e);
+  }
 };
 
-export const deleteGastoFixo = async (userId: string, gastoFixoId: string) => {
-  await deleteDoc(doc(db, 'users', userId, 'gastosFixos', gastoFixoId));
+export const saveGastoFixo = async (userId: string, gastoFixo: GastoFixo) => {
+  const periodo = (gastoFixo as any).periodo as string | undefined;
+  if (!periodo) throw new Error('Gasto Fixo deve ter período definido');
+  const sanitizado: any = { ...gastoFixo };
+  Object.keys(sanitizado).forEach((k) => { if (sanitizado[k] === undefined) delete sanitizado[k]; });
+  await setDoc(doc(db, 'users', userId, 'gastosFixos', periodo, 'itens', gastoFixo.id), sanitizado);
+};
+
+export const deleteGastoFixo = async (userId: string, gastoFixoId: string, periodo?: string) => {
+  if (periodo) {
+    await deleteDoc(doc(db, 'users', userId, 'gastosFixos', periodo, 'itens', gastoFixoId));
+    return;
+  }
+  const now = new Date();
+  const tasks: Promise<void>[] = [];
+  for (let i = -12; i <= 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    tasks.push(deleteDoc(doc(db, 'users', userId, 'gastosFixos', ym, 'itens', gastoFixoId)).catch(() => {} as any) as any);
+  }
+  await Promise.all(tasks);
 };
 
 export const subscribeToGastosFixos = (userId: string, callback: (gastosFixos: GastoFixo[]) => void) => {
-  const q = query(collection(db, 'users', userId, 'gastosFixos'));
-  return onSnapshot(q, (snapshot) => {
-    const gastosFixos: GastoFixo[] = [];
-    snapshot.forEach((doc) => {
-      gastosFixos.push({ id: doc.id, ...doc.data() } as GastoFixo);
+  const unsubscribers: Array<() => void> = [];
+  const porPeriodo = new Map<string, GastoFixo[]>();
+
+  const emitir = () => {
+    const all: GastoFixo[] = [];
+    porPeriodo.forEach((arr) => all.push(...arr));
+    callback(all);
+  };
+
+  const now = new Date();
+  const periods: string[] = [];
+  for (let i = -12; i <= 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  periods.forEach((p) => {
+    const q = query(collection(db, 'users', userId, 'gastosFixos', p, 'itens'));
+    const unsub = onSnapshot(q, (snap) => {
+      const arr: GastoFixo[] = [];
+      snap.forEach((docSnap) => arr.push({ id: docSnap.id, ...docSnap.data() } as GastoFixo));
+      porPeriodo.set(p, arr);
+      emitir();
     });
-    callback(gastosFixos);
+    unsubscribers.push(unsub);
   });
+
+  // Listener para coleção antiga (flat) para migração automática
+  const oldQ = query(collection(db, 'users', userId, 'gastosFixos'));
+  const oldUnsub = onSnapshot(oldQ, async (snapshot) => {
+    const jobs: Promise<void>[] = [];
+    snapshot.forEach((d) => {
+      const data = d.data() as any;
+      if (data && data.descricao && data.valor != null) {
+        const gasto: GastoFixo = { id: d.id, ...data } as any;
+        jobs.push(migrateGastoToSubcollection(userId, gasto));
+      }
+    });
+    if (jobs.length) await Promise.all(jobs).catch(console.error);
+  });
+  unsubscribers.push(oldUnsub);
+
+  return () => unsubscribers.forEach((u) => u());
 };
 
 // Funções para Dívidas
@@ -442,6 +512,48 @@ export const replicateReceitasIfNeeded = async (userId: string, targetPeriod: st
     await Promise.all(jobs);
   }
   // Marcar como replicado (mesmo que não tenha criado nada, evita recriar após exclusões)
+  await setDoc(metaRef, { replicatedAt: Timestamp.fromDate(new Date()), from: prevPeriod });
+};
+
+// Replicação idempotente para Gastos Fixos: replica itens do mês anterior para o mês alvo
+export const replicateGastosIfNeeded = async (userId: string, targetPeriod: string) => {
+  // Meta: users/{uid}/gastosFixosMeta/{YYYY-MM}
+  const metaRef = doc(db, 'users', userId, 'gastosFixosMeta', targetPeriod);
+  const metaSnap = await getDoc(metaRef);
+  if (metaSnap.exists()) return; // já replicado
+
+  const [y, m] = targetPeriod.split('-').map(Number);
+  const prev = new Date(y, (m - 1) - 1, 1);
+  const prevPeriod = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+
+  const [currSnap, prevSnap] = await Promise.all([
+    getDocs(collection(db, 'users', userId, 'gastosFixos', targetPeriod, 'itens')),
+    getDocs(collection(db, 'users', userId, 'gastosFixos', prevPeriod, 'itens')),
+  ]);
+
+  // Evitar duplicação por descrição+categoria+diaVencimento (chave comum)
+  const chave = (g: any) => `${g.descricao}||${g.categoria}||${g.diaVencimento}`;
+  const existentes = new Set<string>();
+  currSnap.forEach((d) => existentes.add(chave(d.data())));
+
+  const jobs: Promise<void>[] = [];
+  prevSnap.forEach((d) => {
+    const g = d.data() as GastoFixo;
+    const k = chave(g);
+    if (!existentes.has(k)) {
+      const novo: GastoFixo = {
+        ...g,
+        id: g.id, // manter mesmo id base por item recorrente
+        pago: false,
+        valorPago: 0,
+        pagamentos: [],
+        periodo: targetPeriod,
+      } as any;
+      jobs.push(setDoc(doc(db, 'users', userId, 'gastosFixos', targetPeriod, 'itens', novo.id), novo));
+    }
+  });
+
+  if (jobs.length) await Promise.all(jobs);
   await setDoc(metaRef, { replicatedAt: Timestamp.fromDate(new Date()), from: prevPeriod });
 };
 
