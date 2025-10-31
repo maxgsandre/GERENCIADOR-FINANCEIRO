@@ -182,7 +182,9 @@ export const deleteGastoFixo = async (userId: string, gastoFixoId: string, perio
   for (let i = -12; i <= 12; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    tasks.push(deleteDoc(doc(db, 'users', userId, 'gastosFixos', ym, 'itens', gastoFixoId)).catch(() => {} as any) as any);
+    tasks.push(
+      deleteDoc(doc(db, 'users', userId, 'gastosFixos', ym, 'itens', gastoFixoId)).catch(() => undefined)
+    );
   }
   await Promise.all(tasks);
 };
@@ -231,6 +233,24 @@ export const subscribeToGastosFixos = (userId: string, callback: (gastosFixos: G
   unsubscribers.push(oldUnsub);
 
   return () => unsubscribers.forEach((u) => u());
+};
+
+// Migração manual: mover todos os documentos flat de gastosFixos para um período alvo
+export const migrateAllGastosFlatToPeriod = async (userId: string, targetPeriod: string) => {
+  const oldCol = collection(db, 'users', userId, 'gastosFixos');
+  const snap = await getDocs(oldCol);
+  const jobs: Promise<void>[] = [];
+  snap.forEach((d) => {
+    const data = d.data() as any;
+    // ignorar nós que já são meses (quando id parece YYYY-MM)
+    if (/^\d{4}-\d{2}$/.test(d.id)) return;
+    if (data && data.descricao && data.valor != null) {
+      const g: any = { id: d.id, ...data, periodo: targetPeriod };
+      jobs.push(setDoc(doc(db, 'users', userId, 'gastosFixos', targetPeriod, 'itens', g.id), g));
+      jobs.push(deleteDoc(doc(db, 'users', userId, 'gastosFixos', d.id)).catch(() => {} as any) as any);
+    }
+  });
+  if (jobs.length) await Promise.all(jobs);
 };
 
 // Funções para Dívidas
