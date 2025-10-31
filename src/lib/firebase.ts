@@ -31,7 +31,8 @@ try {
     connectFirestoreEmulator(db, 'localhost', 8080);
   }
 } catch (error) {
-  console.log('Firebase emulators connection skipped:', error);
+  // Silenciar detalhes para evitar exposição de dados sensíveis
+  console.log('Firebase emulators connection skipped');
 }
 
 export default app;

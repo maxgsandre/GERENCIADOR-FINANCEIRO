@@ -40,7 +40,7 @@ export default function Login({ onToggleMode }: LoginProps) {
       setLoading(true);
       await login(email, password);
     } catch (error: any) {
-      console.error('Erro no login:', error);
+      console.error('Erro no login');
       
       if (error.code) {
         // Erros do Firebase ou mock com códigos

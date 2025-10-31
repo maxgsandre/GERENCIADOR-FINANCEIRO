@@ -76,7 +76,7 @@ export default function FinalizePassword() {
       url.search = '';
       window.location.href = url.toString();
     } catch (e: any) {
-      console.error('Erro ao finalizar cadastro:', e);
+      console.error('Erro ao finalizar cadastro');
       if (e.code === 'auth/credential-already-in-use') {
         setError('Esta senha já está vinculada a outra conta.');
       } else if (e.code === 'auth/invalid-action-code') {

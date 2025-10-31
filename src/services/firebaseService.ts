@@ -159,8 +159,8 @@ const migrateGastoToSubcollection = async (userId: string, gasto: GastoFixo) => 
     const migrado: GastoFixo = { ...(gasto as any), periodo } as any;
     await setDoc(doc(db, 'users', userId, 'gastosFixos', periodo, 'itens', migrado.id), migrado);
     try { await deleteDoc(doc(db, 'users', userId, 'gastosFixos', (gasto as any).id)); } catch {}
-  } catch (e) {
-    console.error('Erro ao migrar gasto fixo:', (gasto as any)?.id, e);
+  } catch (_e) {
+    console.error('Erro ao migrar gasto fixo');
   }
 };
 
@@ -420,7 +420,7 @@ const migrateReceitaToSubcollection = async (userId: string, receita: ReceitaPre
     }
     
     if (!periodo) {
-      console.warn('Não foi possível determinar período para receita:', receita.id);
+      console.warn('Não foi possível determinar período para receita');
       return;
     }
     
@@ -452,13 +452,12 @@ const migrateReceitaToSubcollection = async (userId: string, receita: ReceitaPre
     for (const idParaDeletar of idsParaDeletar) {
       try {
         await deleteDoc(doc(db, 'users', userId, 'receitasPrevistas', idParaDeletar));
-        console.log('Receita migrada:', idParaDeletar, '->', periodo, '/receitas/', receitaIdLimpo);
       } catch (e) {
         // Ignorar erro se já não existir
       }
     }
   } catch (error) {
-    console.error('Erro ao migrar receita:', receita.id, error);
+    console.error('Erro ao migrar receita');
   }
 };
 
@@ -482,10 +481,9 @@ export const moveReceitasBetweenPeriods = async (
     });
     if (batchJobs.length > 0) {
       await Promise.all(batchJobs);
-      console.log(`Receitas movidas de ${fromPeriod} para ${toPeriod}:`, batchJobs.length / 2);
     }
   } catch (e) {
-    console.error('Erro ao mover receitas entre períodos:', fromPeriod, '->', toPeriod, e);
+    console.error('Erro ao mover receitas entre períodos');
     throw e;
   }
 };

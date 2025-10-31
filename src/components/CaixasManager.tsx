@@ -398,7 +398,7 @@ export default function CaixasManager() {
         try {
           // Validar se tem dataVencimento
           if (!receita.dataVencimento) {
-            console.warn('Receita sem dataVencimento:', receita.id);
+            console.warn('Receita sem dataVencimento');
             return;
           }
           
@@ -406,7 +406,7 @@ export default function CaixasManager() {
           
           // Validar se a data é válida
           if (isNaN(dataVenc.getTime())) {
-            console.warn('Receita com dataVencimento inválida:', receita.id, receita.dataVencimento);
+            console.warn('Receita com dataVencimento inválida');
             return;
           }
           
@@ -422,10 +422,9 @@ export default function CaixasManager() {
             };
             
             await saveReceitaPrevista(receitaMigrada);
-            console.log('Receita migrada:', receita.id, '-> periodo:', periodoCalculado);
           }
         } catch (error) {
-          console.error('Erro ao migrar receita:', receita.id, error);
+          console.error('Erro ao migrar receita');
         }
       });
       
@@ -635,19 +634,19 @@ export default function CaixasManager() {
     // Se não tem período, calcular a partir da dataVencimento
     if (!r.periodo) {
       if (!r.dataVencimento) {
-        console.warn('Receita sem periodo e sem dataVencimento:', r.id);
+        console.warn('Receita sem periodo e sem dataVencimento');
         return false;
       }
       try {
         const dataVenc = new Date(r.dataVencimento + 'T00:00:00');
         if (isNaN(dataVenc.getTime())) {
-          console.warn('Receita com dataVencimento inválida:', r.id, r.dataVencimento);
+          console.warn('Receita com dataVencimento inválida');
           return false;
         }
         const periodoReceita = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
         return periodoReceita === selectedMonth;
-      } catch (e) {
-        console.error('Erro ao processar receita:', r.id, e);
+      } catch (_e) {
+        console.error('Erro ao processar receita');
         return false;
       }
     }
@@ -686,17 +685,7 @@ export default function CaixasManager() {
     }
   }).filter((r): r is any => r !== null);
 
-  // Debug: Log todas as receitas para diagnóstico (DEPOIS de definir receitasComDataAjustada)
-  useEffect(() => {
-    console.log('=== DEBUG RECEITAS ===');
-    console.log('Mês selecionado:', selectedMonth);
-    console.log('Total de receitas no estado:', receitasPrevistas.length);
-    console.log('Receitas do mês filtradas:', receitasDoMes.length);
-    console.log('Receitas mapeadas para exibição:', receitasComDataAjustada.length);
-    receitasPrevistas.forEach(r => {
-      console.log(`- ID: ${r.id}, periodo: ${r.periodo || 'SEM PERIODO'}, dataVenc: ${r.dataVencimento}, desc: ${r.descricao}`);
-    });
-  }, [selectedMonth, receitasPrevistas, receitasDoMes, receitasComDataAjustada]);
+  // Logs de debug removidos
   
   const totalReceitasPrevistas = receitasDoMes.reduce((sum, receita) => sum + receita.valor, 0);
   const totalReceitasRecebidas = receitasComDataAjustada.filter((r: any) => r.recebidoNoMes).reduce((sum: number, receita: any) => sum + receita.valor, 0);
