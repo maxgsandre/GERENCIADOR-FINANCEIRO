@@ -528,7 +528,7 @@ export default function GastosFixosManager() {
         return;
       }
 
-      const gastoAtualizado = { ...gasto, valorPago: 0, pago: false };
+      const gastoAtualizado = { ...gasto, valorPago: 0, pago: false, periodo: (gasto as any)?.periodo || selectedMonth } as any;
       await saveGastoFixo(gastoAtualizado);
       setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? gastoAtualizado : g));
     } catch (error) {
@@ -550,7 +550,8 @@ export default function GastosFixosManager() {
       ...editingGasto,
       pagamentos: pagamentosAtualizados,
       valorPago: valorTotalPago,
-      pago: valorTotalPago >= editingGasto.valor
+      pago: valorTotalPago >= editingGasto.valor,
+      periodo: (editingGasto as any)?.periodo || selectedMonth
     };
     
     // Salvar no banco
@@ -619,7 +620,7 @@ export default function GastosFixosManager() {
         
         // Atualizar cada parcela individual
         for (const parcela of parcelasDoCartao) {
-          const parcelaAtualizada = { ...parcela, valorPago: parcela.valor, pago: true };
+          const parcelaAtualizada = { ...parcela, valorPago: parcela.valor, pago: true, periodo: (parcela as any)?.periodo || selectedMonth } as any;
           await saveGastoFixo(parcelaAtualizada);
         }
         
@@ -647,7 +648,8 @@ export default function GastosFixosManager() {
           ...gastoSelecionado,
           valorPago: valorTotalPago,
           pagamentos: pagamentosAtualizados,
-          pago: valorTotalPago >= gastoSelecionado.valor
+          pago: valorTotalPago >= gastoSelecionado.valor,
+          periodo: (gastoSelecionado as any)?.periodo || selectedMonth
         };
       } else {
         // Para gastos antigos (compatibilidade) - migrar para nova estrutura
@@ -664,7 +666,8 @@ export default function GastosFixosManager() {
           valorPago,
           pagamentos: [pagamentoExistente],
           fracionado: false,
-          pago: valorPago >= gastoSelecionado.valor
+          pago: valorPago >= gastoSelecionado.valor,
+          periodo: (gastoSelecionado as any)?.periodo || selectedMonth
         };
       }
       
@@ -781,7 +784,7 @@ export default function GastosFixosManager() {
       return;
     }
     
-    const atualizado = { ...gasto, pago: !gasto.pago };
+    const atualizado = { ...gasto, pago: !gasto.pago, periodo: (gasto as any)?.periodo || selectedMonth } as any;
     setGastosFixos(prev => prev.map(g => g.id === id ? atualizado : g));
     await saveGastoFixo(atualizado);
   };
@@ -805,7 +808,7 @@ export default function GastosFixosManager() {
       
       // Marcar todas as parcelas como pagas
       for (const parcela of parcelasDoCartao) {
-        const parcelaPaga = { ...parcela, pago: true, valorPago: valorPagamento };
+        const parcelaPaga = { ...parcela, pago: true, valorPago: valorPagamento, periodo: (parcela as any)?.periodo || selectedMonth } as any;
         await (saveGastoFixo && saveGastoFixo(parcelaPaga));
         setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaPaga : g));
       }
@@ -814,7 +817,7 @@ export default function GastosFixosManager() {
       await atualizarProgressoComprasCartao(cardId);
     } else {
       // Marcar gasto como pago (comportamento normal)
-      const gastoPago = { ...gasto, pago: true, valorPago: valorPagamento };
+      const gastoPago = { ...gasto, pago: true, valorPago: valorPagamento, periodo: (gasto as any)?.periodo || selectedMonth } as any;
       await (saveGastoFixo && saveGastoFixo(gastoPago));
       setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoPago : g));
     }
@@ -893,7 +896,7 @@ export default function GastosFixosManager() {
       
       // Desmarcar todas as parcelas e sincronizar com compras de cartão
       for (const parcela of parcelasDoCartao) {
-        const parcelaNaoPaga = { ...parcela, pago: false, valorPago: 0 };
+        const parcelaNaoPaga = { ...parcela, pago: false, valorPago: 0, periodo: (parcela as any)?.periodo || selectedMonth } as any;
         await (saveGastoFixo && saveGastoFixo(parcelaNaoPaga));
         setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaNaoPaga : g));
       }
@@ -902,7 +905,7 @@ export default function GastosFixosManager() {
       await atualizarProgressoComprasCartao(cardId);
     } else {
       // Marcar gasto como não pago (comportamento normal)
-      const gastoNaoPago = { ...gasto, pago: false };
+      const gastoNaoPago = { ...gasto, pago: false, periodo: (gasto as any)?.periodo || selectedMonth } as any;
       await (saveGastoFixo && saveGastoFixo(gastoNaoPago));
       setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoNaoPago : g));
     }
