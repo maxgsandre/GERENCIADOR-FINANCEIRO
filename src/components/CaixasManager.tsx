@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -65,6 +65,8 @@ export default function CaixasManager() {
   const [isSubmittingReceita, setIsSubmittingReceita] = useState(false);
   const [editingCaixa, setEditingCaixa] = useState<Caixa | null>(null);
   const [editingCofrinho, setEditingCofrinho] = useState<Cofrinho | null>(null);
+  const [cofrinhoMovimentos, setCofrinhoMovimentos] = useState<any[]>([]);
+  const unsubscribeCofrinhoMovRef = useRef<null | (() => void)>(null);
   const [editingReceita, setEditingReceita] = useState<ReceitaPrevista | null>(null);
   const [formData, setFormData] = useState({
     nome: '',
@@ -387,6 +389,23 @@ export default function CaixasManager() {
     });
     setIsCofrinhoDialogOpen(true);
   };
+
+  // Assinar movimentos do cofrinho para o mês selecionado quando o modal estiver aberto
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!isCofrinhoDialogOpen || !editingCofrinho) {
+          if (unsubscribeCofrinhoMovRef.current) { unsubscribeCofrinhoMovRef.current(); unsubscribeCofrinhoMovRef.current = null; }
+          setCofrinhoMovimentos([]);
+          return;
+        }
+        const svc = await import('../services/firebaseService');
+        if (unsubscribeCofrinhoMovRef.current) { unsubscribeCofrinhoMovRef.current(); }
+        unsubscribeCofrinhoMovRef.current = (svc as any).subscribeCofrinhoMovimentos?.((context as any).currentUser?.uid, editingCofrinho.id, selectedMonth, setCofrinhoMovimentos) || null;
+      } catch {}
+    })();
+    return () => { if (unsubscribeCofrinhoMovRef.current) { unsubscribeCofrinhoMovRef.current(); unsubscribeCofrinhoMovRef.current = null; } };
+  }, [isCofrinhoDialogOpen, editingCofrinho, selectedMonth]);
 
   const handleDeleteCofrinho = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este cofrinho?')) return;
@@ -1313,7 +1332,36 @@ export default function CaixasManager() {
                   </div>
                 </div>
 
-                {/* Histórico de Aportes */}
+                {/* Histórico de Movimentos do mês */}
+                {editingCofrinho && (
+                  <div className="space-y-3">
+                    <Separator />
+                    <div>
+                      <h4 className="font-medium mb-2">Movimentos de {selectedMonth}</h4>
+                      <div className="space-y-2 max-h-48 overflow-y-auto bg-gray-50 dark:bg-gray-800 rounded p-3">
+                        {cofrinhoMovimentos.length === 0 ? (
+                          <div className="text-xs text-muted-foreground">Nenhum movimento neste mês.</div>
+                        ) : cofrinhoMovimentos.map((m, index) => (
+                          <div key={`mov-${m.id || index}`} className="flex justify-between items-center text-sm">
+                            <div className="flex flex-col flex-1">
+                              <span className="font-medium">{m.tipo === 'retirada' ? 'Retirada' : 'Aporte'}</span>
+                              <span className="text-muted-foreground text-xs">
+                                {m.hora ? `${m.hora} em ${new Date(m.data + 'T00:00:00').toLocaleDateString('pt-BR')}` : new Date(m.data + 'T00:00:00').toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-medium ${m.tipo === 'retirada' ? 'text-red-600' : 'text-green-600'}`}>
+                                {m.tipo === 'retirada' ? '-' : '+'}R$ {Number(m.valor).toFixed(2).replace('.', ',')}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Histórico de Aportes (legado) */}
                 {editingCofrinho && editingCofrinho.aportes && editingCofrinho.aportes.length > 0 && (
                   <div className="space-y-3">
                     <Separator />
