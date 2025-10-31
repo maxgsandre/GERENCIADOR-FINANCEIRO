@@ -163,8 +163,19 @@ export default function Dashboard() {
     .filter(t => t.tipo === 'saida')
     .reduce((sum, t) => sum + t.valor, 0);
 
-  // Calcular total de receitas previstas
-  const totalReceitasPrevistas = receitasPrevistas.reduce((sum, receita) => sum + receita.valor, 0);
+  // Filtrar receitas apenas do mês selecionado
+  const receitasDoMes = receitasPrevistas.filter(r => {
+    if (!r.periodo) {
+      // Compatibilidade: receitas antigas sem período
+      const dataVenc = new Date(r.dataVencimento + 'T00:00:00');
+      const periodoReceita = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+      return periodoReceita === selectedMonth;
+    }
+    return r.periodo === selectedMonth;
+  });
+  
+  // Calcular total de receitas previstas do mês selecionado
+  const totalReceitasPrevistas = receitasDoMes.reduce((sum, receita) => sum + receita.valor, 0);
 
   // Calcular gastos fixos do mês selecionado
   const gastosFixosDoMes = gastosFixos.filter(gasto => {
