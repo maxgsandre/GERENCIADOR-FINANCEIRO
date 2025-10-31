@@ -308,24 +308,175 @@ export const migrateAllGastosFlatToPeriod = async (userId: string, targetPeriod:
   if (jobs.length) await Promise.all(jobs);
 };
 
-// Funções para Dívidas
-export const saveDivida = async (userId: string, divida: Divida) => {
-  await setDoc(doc(db, 'users', userId, 'dividas', divida.id), divida);
+// =======================
+// Dívidas - Estrutura por período
+// Estrutura: users/{userId}/dividas/{periodo}/itens/{dividaId} ou {dividaId}-{n} para parceladas
+// Cada parcela vai para o mês do seu vencimento
+// =======================
+
+// Migrar dívida antiga (flat) para subcoleção por período
+const migrateDividaToSubcollection = async (userId: string, divida: Divida) => {
+  try {
+    const dataVenc = new Date(divida.dataVencimento + 'T00:00:00');
+    if (isNaN(dataVenc.getTime())) return;
+    
+    // Para dívidas parceladas, cada parcela vai para o mês correspondente
+    if (divida.tipo === 'parcelada' && divida.parcelas > 1) {
+      const parcelas = divida.parcelas || 1;
+      const valorParcela = divida.valorParcela || (divida.valorTotal / parcelas);
+      const jobs: Promise<void>[] = [];
+      
+      for (let i = 0; i < parcelas; i++) {
+        const dataParcela = new Date(dataVenc.getFullYear(), dataVenc.getMonth() + i, dataVenc.getDate());
+        const periodo = `${dataParcela.getFullYear()}-${String(dataParcela.getMonth() + 1).padStart(2, '0')}`;
+        const parcelaId = `${divida.id}-${i + 1}`;
+        const parcelaPaga = i < (divida.parcelasPagas || 0);
+        
+        const item = {
+          ...divida,
+          id: parcelaId,
+          parcelaIndex: i + 1,
+          parcelaTotal: parcelas,
+          valorTotal: valorParcela, // valor desta parcela
+          valorPago: parcelaPaga ? valorParcela : 0,
+          parcelasPagas: parcelaPaga ? 1 : 0,
+          dataVencimento: dataParcela.toISOString().split('T')[0],
+          periodo,
+        } as any;
+        
+        Object.keys(item).forEach((k) => { if (item[k] === undefined) delete item[k]; });
+        jobs.push(setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', parcelaId), item));
+      }
+      
+      if (jobs.length) await Promise.all(jobs);
+    } else {
+      // Dívida à vista ou total
+      const periodo = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+      const migrado: any = { ...divida, periodo };
+      Object.keys(migrado).forEach((k) => { if (migrado[k] === undefined) delete migrado[k]; });
+      await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', migrado.id), migrado);
+    }
+    
+    // Apagar doc antigo
+    try { await deleteDoc(doc(db, 'users', userId, 'dividas', divida.id)); } catch {}
+  } catch {}
 };
 
-export const deleteDivida = async (userId: string, dividaId: string) => {
-  await deleteDoc(doc(db, 'users', userId, 'dividas', dividaId));
+export const saveDivida = async (userId: string, divida: Divida) => {
+  const dataVenc = new Date(divida.dataVencimento + 'T00:00:00');
+  if (isNaN(dataVenc.getTime())) throw new Error('Data de vencimento inválida');
+  
+  // Para dívidas parceladas, cada parcela vai para o mês correspondente
+  if (divida.tipo === 'parcelada' && divida.parcelas > 1) {
+    const parcelas = divida.parcelas || 1;
+    const valorParcela = divida.valorParcela || (divida.valorTotal / parcelas);
+    const jobs: Promise<void>[] = [];
+    
+    for (let i = 0; i < parcelas; i++) {
+      const dataParcela = new Date(dataVenc.getFullYear(), dataVenc.getMonth() + i, dataVenc.getDate());
+      const periodo = `${dataParcela.getFullYear()}-${String(dataParcela.getMonth() + 1).padStart(2, '0')}`;
+      const parcelaId = `${divida.id}-${i + 1}`;
+      const parcelaPaga = i < (divida.parcelasPagas || 0);
+      
+      const item: any = {
+        ...divida,
+        id: parcelaId,
+        parcelaIndex: i + 1,
+        parcelaTotal: parcelas,
+        valorTotal: valorParcela,
+        valorPago: parcelaPaga ? valorParcela : 0,
+        parcelasPagas: parcelaPaga ? 1 : 0,
+        dataVencimento: dataParcela.toISOString().split('T')[0],
+        periodo,
+      };
+      
+      Object.keys(item).forEach((k) => { if (item[k] === undefined) delete item[k]; });
+      jobs.push(setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', parcelaId), item));
+    }
+    
+    await Promise.all(jobs);
+  } else {
+    // Dívida à vista ou total
+    const periodo = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+    const payload: any = { ...divida, periodo };
+    Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+    await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', divida.id), payload);
+  }
+};
+
+export const deleteDivida = async (userId: string, dividaId: string, periodo?: string) => {
+  if (periodo) {
+    // Deletar parcela específica ou dívida à vista do período
+    await deleteDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', dividaId));
+    // Se for parcela, pode haver outras no mesmo período ou em outros; não apagar todas automaticamente
+    return;
+  }
+  
+  // Sem período: buscar e deletar em todos os meses possíveis (últimos 24 meses)
+  const now = new Date();
+  const tasks: Promise<void>[] = [];
+  for (let i = -12; i <= 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    // Deletar a dívida principal e todas as parcelas (prefixo dividaId-)
+    const q = query(collection(db, 'users', userId, 'dividas', ym, 'itens'));
+    getDocs(q).then((snap) => {
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        if (data.id === dividaId || data.id?.startsWith(`${dividaId}-`) || data.id === `${dividaId}-1`) {
+          tasks.push(deleteDoc(docSnap.ref).catch(() => undefined));
+        }
+      });
+    }).catch(() => {});
+  }
+  if (tasks.length) await Promise.all(tasks);
 };
 
 export const subscribeToDividas = (userId: string, callback: (dividas: Divida[]) => void) => {
-  const q = query(collection(db, 'users', userId, 'dividas'));
-  return onSnapshot(q, (snapshot) => {
-    const dividas: Divida[] = [];
-    snapshot.forEach((doc) => {
-      dividas.push({ id: doc.id, ...doc.data() } as Divida);
+  const unsubscribers: Array<() => void> = [];
+  const porPeriodo = new Map<string, Divida[]>();
+  
+  const emitir = () => {
+    const all: Divida[] = [];
+    porPeriodo.forEach((arr) => all.push(...arr));
+    callback(all);
+  };
+  
+  const now = new Date();
+  const periods: string[] = [];
+  for (let i = -12; i <= 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  
+  periods.forEach((p) => {
+    const q = query(collection(db, 'users', userId, 'dividas', p, 'itens'));
+    const unsub = onSnapshot(q, (snap) => {
+      const arr: Divida[] = [];
+      snap.forEach((docSnap) => arr.push({ id: docSnap.id, ...docSnap.data() } as Divida));
+      porPeriodo.set(p, arr);
+      emitir();
     });
-    callback(dividas);
+    unsubscribers.push(unsub);
   });
+  
+  // Listener para coleção antiga (flat) para migração automática
+  const oldQ = query(collection(db, 'users', userId, 'dividas'));
+  const oldUnsub = onSnapshot(oldQ, async (snapshot) => {
+    const jobs: Promise<void>[] = [];
+    snapshot.forEach((d) => {
+      const data = d.data() as any;
+      // Heurística: documentos antigos têm campos como descricao, valorTotal, parcelas
+      if (data && data.descricao && data.valorTotal != null && !data.periodo) {
+        const divida: Divida = { id: d.id, ...data } as any;
+        jobs.push(migrateDividaToSubcollection(userId, divida));
+      }
+    });
+    if (jobs.length) await Promise.all(jobs).catch(() => {});
+  });
+  unsubscribers.push(oldUnsub);
+  
+  return () => unsubscribers.forEach((u) => u());
 };
 
 // Funções para Cofrinhos
