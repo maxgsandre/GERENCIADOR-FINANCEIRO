@@ -694,12 +694,16 @@ export default function GastosFixosManager() {
         await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
         
         // Criar transação automaticamente para o pagamento
+        const descricaoTransacao = descricaoPagamento 
+          ? `Gasto Fixo: ${gastoSelecionado.descricao} - ${descricaoPagamento}`
+          : `Gasto Fixo: ${gastoSelecionado.descricao}`;
+        
         const novaTransacao: Transacao = {
           id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
           caixaId: caixaPagamento,
           tipo: 'saida',
           valor: valorPago,
-          descricao: `Gasto Fixo: ${gastoSelecionado.descricao}`,
+          descricao: descricaoTransacao,
           categoria: gastoSelecionado.categoria,
           data: dataPagamento,
           hora: horaPagamento,
