@@ -54,6 +54,9 @@ export default function CaixasManager() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   
+  // Estado para controlar último mês verificado para replicação
+  const [lastCheckedMonth, setLastCheckedMonth] = useState<string>(selectedMonth);
+  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmittingCaixa, setIsSubmittingCaixa] = useState(false);
   const [isCofrinhoDialogOpen, setIsCofrinhoDialogOpen] = useState(false);
@@ -379,6 +382,57 @@ export default function CaixasManager() {
       setCofrinhos(prev => prev.filter(c => c.id !== id));
   };
 
+  // Migração automática: adicionar periodo e diaVencimento a receitas antigas
+  useEffect(() => {
+    const receitasSemPeriodo = (receitasPrevistas as ReceitaPrevista[]).filter(r => {
+      // Verificar se falta periodo ou diaVencimento
+      if (!r.periodo || !r.diaVencimento) return true;
+      // Verificar se periodo está no formato correto (YYYY-MM)
+      if (!/^\d{4}-\d{2}$/.test(r.periodo)) return true;
+      return false;
+    });
+    
+    if (receitasSemPeriodo.length > 0) {
+      // Usar Promise.all para migrar todas de uma vez
+      const promessas = receitasSemPeriodo.map(async (receita) => {
+        try {
+          // Validar se tem dataVencimento
+          if (!receita.dataVencimento) {
+            console.warn('Receita sem dataVencimento:', receita.id);
+            return;
+          }
+          
+          const dataVenc = new Date(receita.dataVencimento + 'T00:00:00');
+          
+          // Validar se a data é válida
+          if (isNaN(dataVenc.getTime())) {
+            console.warn('Receita com dataVencimento inválida:', receita.id, receita.dataVencimento);
+            return;
+          }
+          
+          const periodoCalculado = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+          const diaVencimentoCalculado = dataVenc.getDate();
+          
+          // Só atualizar se realmente precisa (evitar loops)
+          if (receita.periodo !== periodoCalculado || receita.diaVencimento !== diaVencimentoCalculado) {
+            const receitaMigrada: ReceitaPrevista = {
+              ...receita,
+              periodo: periodoCalculado,
+              diaVencimento: diaVencimentoCalculado,
+            };
+            
+            await saveReceitaPrevista(receitaMigrada);
+            console.log('Receita migrada:', receita.id, '-> periodo:', periodoCalculado);
+          }
+        } catch (error) {
+          console.error('Erro ao migrar receita:', receita.id, error);
+        }
+      });
+      
+      Promise.all(promessas).catch(console.error);
+    }
+  }, [receitasPrevistas, saveReceitaPrevista]);
+
   // Funções para receitas previstas
   const handleReceitaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -386,12 +440,20 @@ export default function CaixasManager() {
     
     if (!receitaFormData.descricao || !receitaFormData.valor || !receitaFormData.dataVencimento) return;
 
+    // CORREÇÃO: Calcular período a partir da data de vencimento, não do mês selecionado
+    const dataVenc = new Date(receitaFormData.dataVencimento + 'T00:00:00');
+    const diaVencimento = dataVenc.getDate();
+    const periodoCalculado = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+    
     const novaReceita: ReceitaPrevista = {
-      id: editingReceita?.id || Date.now().toString(),
+      id: editingReceita?.id || `${periodoCalculado}-${receitaFormData.descricao}-${Date.now()}`,
       descricao: receitaFormData.descricao,
       valor: parseFloat(receitaFormData.valor),
       recebido: editingReceita?.recebido || false,
       dataVencimento: receitaFormData.dataVencimento,
+      periodo: periodoCalculado, // CORREÇÃO: Derivar do período da data de vencimento
+      diaVencimento: diaVencimento,
+      caixaId: editingReceita?.caixaId, // Preservar caixaId se existir
     };
 
     setIsSubmittingReceita(true);
@@ -401,13 +463,17 @@ export default function CaixasManager() {
   };
 
   const resetReceitaForm = () => {
-    setReceitaFormData({ descricao: '', valor: '', dataVencimento: '' });
+    // Quando criar nova receita, inicializar com dia 5 do mês selecionado
+    const [ano, mes] = selectedMonth.split('-').map(Number);
+    const dataPadrao = new Date(ano, mes - 1, 5).toISOString().split('T')[0];
+    setReceitaFormData({ descricao: '', valor: '', dataVencimento: dataPadrao });
     setEditingReceita(null);
     setIsReceitaDialogOpen(false);
   };
 
   const handleEditReceita = (receita: ReceitaPrevista) => {
     setEditingReceita(receita);
+    // Usar a data de vencimento da receita (já está no período correto)
     setReceitaFormData({
       descricao: receita.descricao,
       valor: receita.valor.toString(),
@@ -416,9 +482,9 @@ export default function CaixasManager() {
     setIsReceitaDialogOpen(true);
   };
 
-  const handleDeleteReceita = async (id: string) => {
+  const handleDeleteReceita = async (receita: ReceitaPrevista) => {
     if (confirm('Tem certeza que deseja excluir esta receita prevista?')) {
-      await deleteReceitaPrevista(id);
+      await deleteReceitaPrevista(receita.id, receita.periodo);
     }
   };
 
@@ -539,8 +605,59 @@ export default function CaixasManager() {
   }, 0);
   const totalGeral = totalCaixasMes + totalCofrinhos;
   
-  // Receitas previstas são recorrentes (como gastos fixos) - sempre mostram todas
-  // Mas as datas de vencimento são ajustadas para o mês selecionado
+  // Replicação idempotente de receitas ao mudar de mês (usa meta no Firestore)
+  useEffect(() => {
+    if (selectedMonth === lastCheckedMonth) return;
+    (async () => {
+      try {
+        const uid = (context as any)?.currentUser?.uid;
+        if (!uid) {
+          // Tentativa de obter uid via window (fallback)
+        }
+        // Chamar serviço para replicar somente se necessário
+        if ((window as any)?.firebaseService?.replicateReceitasIfNeeded) {
+          await (window as any).firebaseService.replicateReceitasIfNeeded(uid, selectedMonth);
+        } else if ((require as any)) {
+          // Import dinâmico para evitar circular
+          const svc = await import('../services/firebaseService');
+          (svc as any).replicateReceitasIfNeeded && await (svc as any).replicateReceitasIfNeeded(context.currentUser!.uid, selectedMonth);
+        }
+      } catch (e) {
+        // silencioso
+      } finally {
+        setLastCheckedMonth(selectedMonth);
+      }
+    })();
+  }, [selectedMonth, lastCheckedMonth]);
+  
+  // Filtrar receitas apenas do mês selecionado
+  const receitasDoMes = (receitasPrevistas as ReceitaPrevista[]).filter(r => {
+    // Se não tem período, calcular a partir da dataVencimento
+    if (!r.periodo) {
+      if (!r.dataVencimento) {
+        console.warn('Receita sem periodo e sem dataVencimento:', r.id);
+        return false;
+      }
+      try {
+        const dataVenc = new Date(r.dataVencimento + 'T00:00:00');
+        if (isNaN(dataVenc.getTime())) {
+          console.warn('Receita com dataVencimento inválida:', r.id, r.dataVencimento);
+          return false;
+        }
+        const periodoReceita = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+        return periodoReceita === selectedMonth;
+      } catch (e) {
+        console.error('Erro ao processar receita:', r.id, e);
+        return false;
+      }
+    }
+    
+    // Normalizar comparação de período (garantir formato YYYY-MM)
+    const periodoNormalizado = typeof r.periodo === 'string' ? r.periodo.trim() : String(r.periodo);
+    const selectedMonthNormalizado = selectedMonth.trim();
+    
+    return periodoNormalizado === selectedMonthNormalizado;
+  });
   
   // Mapear descrições de receitas já recebidas no mês selecionado (derivado das transações)
   const descricoesRecebidasNoMes = new Set(
@@ -553,49 +670,44 @@ export default function CaixasManager() {
       .filter((desc: string) => typeof desc === 'string' && desc.startsWith('Receita recebida: '))
       .map((desc: string) => desc.replace('Receita recebida: ', ''))
   );
-
-  const receitasComDataAjustada = receitasPrevistas.map(receita => {
-    // Validar se dataVencimento existe e é válida
-    if (!receita.dataVencimento) {
-      return {
-        ...receita,
-        dataVencimentoAjustada: receita.dataVencimento
-      };
-    }
-    
-    const dataOriginal = new Date(receita.dataVencimento);
-    const diaVencimento = dataOriginal.getDate();
-    
-    // Validar se a data é válida
-    if (isNaN(diaVencimento) || diaVencimento < 1 || diaVencimento > 31) {
-      return {
-        ...receita,
-        dataVencimentoAjustada: receita.dataVencimento
-      };
-    }
-    
-    // Criar nova data com o dia original mas mês/ano selecionado
-    const novaData = new Date(anoSelecionado, mesSelecionado - 1, diaVencimento);
-    
-    // Validar se a nova data é válida
-    if (isNaN(novaData.getTime())) {
-      return {
-        ...receita,
-        dataVencimentoAjustada: receita.dataVencimento
-      };
-    }
-    
-    return {
-      ...receita,
-      dataVencimentoAjustada: novaData.toISOString().split('T')[0],
-      // Recebido no mês é derivado das transações do mês
-      recebidoNoMes: descricoesRecebidasNoMes.has(receita.descricao)
-    } as any;
-  });
   
-  const totalReceitasPrevistas = receitasPrevistas.reduce((sum, receita) => sum + receita.valor, 0);
+  // Mapear receitas com data de vencimento (já está no período correto)
+  const receitasComDataAjustada = receitasDoMes.map(receita => {
+    try {
+      return {
+        ...receita,
+        dataVencimentoAjustada: receita.dataVencimento || '',
+        // Recebido no mês é derivado das transações do mês
+        recebidoNoMes: descricoesRecebidasNoMes.has(receita.descricao)
+      } as any;
+    } catch (e) {
+      console.error('Erro ao mapear receita:', receita.id, e);
+      return null;
+    }
+  }).filter((r): r is any => r !== null);
+
+  // Debug: Log todas as receitas para diagnóstico (DEPOIS de definir receitasComDataAjustada)
+  useEffect(() => {
+    console.log('=== DEBUG RECEITAS ===');
+    console.log('Mês selecionado:', selectedMonth);
+    console.log('Total de receitas no estado:', receitasPrevistas.length);
+    console.log('Receitas do mês filtradas:', receitasDoMes.length);
+    console.log('Receitas mapeadas para exibição:', receitasComDataAjustada.length);
+    receitasPrevistas.forEach(r => {
+      console.log(`- ID: ${r.id}, periodo: ${r.periodo || 'SEM PERIODO'}, dataVenc: ${r.dataVencimento}, desc: ${r.descricao}`);
+    });
+  }, [selectedMonth, receitasPrevistas, receitasDoMes, receitasComDataAjustada]);
+  
+  const totalReceitasPrevistas = receitasDoMes.reduce((sum, receita) => sum + receita.valor, 0);
   const totalReceitasRecebidas = receitasComDataAjustada.filter((r: any) => r.recebidoNoMes).reduce((sum: number, receita: any) => sum + receita.valor, 0);
   const totalReceitasAReceber = Math.max(0, totalReceitasPrevistas - totalReceitasRecebidas);
+
+  // Ordenar por data de vencimento (mais próxima primeiro)
+  const receitasOrdenadas = [...receitasComDataAjustada].sort((a: any, b: any) => {
+    const da = new Date((a.dataVencimentoAjustada || a.dataVencimento) + 'T00:00:00').getTime();
+    const db = new Date((b.dataVencimentoAjustada || b.dataVencimento) + 'T00:00:00').getTime();
+    return da - db;
+  });
 
   return (
     <div className="space-y-6">
@@ -928,7 +1040,7 @@ export default function CaixasManager() {
           </div>
 
           <div className="space-y-3">
-            {receitasComDataAjustada.map((receita) => (
+            {receitasOrdenadas.map((receita) => (
               <div key={receita.id} className="border rounded-lg p-3 bg-gray-50 dark:bg-gray-800">
                 {/* Linha 1: Status + Descrição + Valor */}
                 <div className="flex items-center justify-between gap-3 mb-2">
@@ -972,7 +1084,7 @@ export default function CaixasManager() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDeleteReceita(receita.id)}
+                      onClick={() => handleDeleteReceita(receita)}
                       className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -982,7 +1094,7 @@ export default function CaixasManager() {
               </div>
             ))}
             
-            {receitasComDataAjustada.length === 0 && (
+            {receitasOrdenadas.length === 0 && (
               <div className="text-center py-8">
                 <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-medium mb-2">Nenhuma receita cadastrada</h3>
