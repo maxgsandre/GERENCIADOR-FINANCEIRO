@@ -51,6 +51,8 @@ export interface GastoFixo {
   // Novos campos para gastos fracionados (opcionais para compatibilidade)
   pagamentos?: Pagamento[];
   fracionado?: boolean;
+  // Novo: período de competência (YYYY-MM)
+  periodo?: string;
 }
 
 export interface Pagamento {
@@ -157,7 +159,7 @@ export interface FinanceiroContextType {
   saveTransacao: (transacao: Transacao) => Promise<void>;
   deleteTransacao: (transacaoId: string) => Promise<void>;
   saveGastoFixo: (gastoFixo: GastoFixo) => Promise<void>;
-  deleteGastoFixo: (gastoFixoId: string) => Promise<void>;
+  deleteGastoFixo: (gastoFixoId: string, periodo?: string) => Promise<void>;
   saveDivida: (divida: Divida) => Promise<void>;
   deleteDivida: (dividaId: string) => Promise<void>;
   saveCofrinho: (cofrinho: Cofrinho) => Promise<void>;
@@ -294,9 +296,9 @@ function AppContent() {
     }
   };
 
-  const deleteGastoFixo = async (gastoFixoId: string) => {
+  const deleteGastoFixo = async (gastoFixoId: string, periodo?: string) => {
     if (currentUser) {
-      await firebaseService.deleteGastoFixo(currentUser.uid, gastoFixoId);
+      await firebaseService.deleteGastoFixo(currentUser.uid, gastoFixoId, periodo);
       // Atualizar estado local imediatamente para melhor UX
       setGastosFixos(prev => prev.filter(g => g.id !== gastoFixoId));
     }
