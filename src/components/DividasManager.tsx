@@ -1221,6 +1221,12 @@ export default function DividasManager() {
   const { y: selY, m: selM } = selectedYM;
 
   const dividasFiltradas = dividas.filter((d) => {
+    // Se tem período, usar ele diretamente (nova estrutura)
+    if (d.periodo) {
+      return d.periodo === selectedMonth;
+    }
+    
+    // Compatibilidade: lógica antiga para dívidas sem período
     const quitYM = getQuitYM(d);
     if (quitYM && ((quitYM.y < selY) || (quitYM.y === selY && quitYM.m < selM))) {
       return false;
