@@ -77,6 +77,9 @@ export interface Divida {
   categoria?: string;
   criadaViaTransacao?: boolean; // Flag para identificar dívidas criadas automaticamente via transação
   pago?: boolean; // Status de pagamento da dívida
+  periodo?: string; // YYYY-MM para armazenamento por mês
+  parcelaIndex?: number; // Para parceladas: índice da parcela (1, 2, 3...)
+  parcelaTotal?: number; // Para parceladas: total de parcelas
 }
 
 export interface Cofrinho {
@@ -162,7 +165,7 @@ export interface FinanceiroContextType {
   saveGastoFixo: (gastoFixo: GastoFixo) => Promise<void>;
   deleteGastoFixo: (gastoFixoId: string, periodo?: string) => Promise<void>;
   saveDivida: (divida: Divida) => Promise<void>;
-  deleteDivida: (dividaId: string) => Promise<void>;
+  deleteDivida: (dividaId: string, periodo?: string) => Promise<void>;
   saveCofrinho: (cofrinho: Cofrinho) => Promise<void>;
   deleteCofrinho: (cofrinhoId: string) => Promise<void>;
   saveCategoria: (categoria: Categoria) => Promise<void>;
@@ -334,11 +337,18 @@ function AppContent() {
     }
   };
 
-  const deleteDivida = async (dividaId: string) => {
+  const deleteDivida = async (dividaId: string, periodo?: string) => {
     if (currentUser) {
-      await firebaseService.deleteDivida(currentUser.uid, dividaId);
-      // Atualizar estado local imediatamente
-      setDividas(prev => prev.filter(d => d.id !== dividaId));
+      await firebaseService.deleteDivida(currentUser.uid, dividaId, periodo);
+      // Atualizar estado local imediatamente (remover dívida principal e todas as parcelas)
+      setDividas(prev => prev.filter(d => {
+        // Se passar periodo, remove apenas daquele período, senão remove todas as parcelas
+        if (periodo) {
+          return d.id !== dividaId || d.periodo !== periodo;
+        }
+        // Remover dívida principal e todas as parcelas (prefixo dividaId-)
+        return d.id !== dividaId && !d.id?.startsWith(`${dividaId}-`);
+      }));
     }
   };
 
