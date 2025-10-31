@@ -1351,7 +1351,18 @@ export default function GastosFixosManager() {
                   <div>
                     <h4 className="font-medium mb-2">Histórico de Pagamentos</h4>
                     <div className="space-y-2 max-h-32 overflow-y-auto bg-gray-50 dark:bg-gray-800 rounded p-3">
-                      {editingGasto.pagamentos.map((pagamento, index) => (
+                      {[...editingGasto.pagamentos].sort((a, b) => {
+                        // Ordenar por data (mais antigo primeiro), depois por hora se disponível
+                        const dataA = new Date(a.data + 'T00:00:00');
+                        const dataB = new Date(b.data + 'T00:00:00');
+                        const diffData = dataA.getTime() - dataB.getTime();
+                        if (diffData !== 0) return diffData;
+                        // Se a data for a mesma, ordenar por hora
+                        if (a.hora && b.hora) {
+                          return a.hora.localeCompare(b.hora);
+                        }
+                        return 0;
+                      }).map((pagamento, index) => (
                         <div key={`pagamento-${pagamento.id}-${index}`} className="flex justify-between items-center text-sm">
                           <div className="flex flex-col flex-1">
                             <span className="font-medium">{pagamento.descricao || `Pagamento ${index + 1}`}</span>
