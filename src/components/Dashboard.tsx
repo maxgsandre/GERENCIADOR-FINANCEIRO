@@ -179,8 +179,20 @@ export default function Dashboard() {
 
   // Calcular gastos fixos do mês selecionado
   const gastosFixosDoMes = gastosFixos.filter(gasto => {
-    // Todos os gastos fixos são manuais agora, sempre incluídos
-    return true;
+    if (gasto.periodo) {
+      return gasto.periodo === selectedMonth;
+    }
+    // Compatibilidade: gastos antigos sem período - usar dataVencimento
+    if (gasto.dataVencimento) {
+      try {
+        const dataVenc = new Date(gasto.dataVencimento + 'T00:00:00');
+        if (!isNaN(dataVenc.getTime())) {
+          const periodoGasto = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+          return periodoGasto === selectedMonth;
+        }
+      } catch {}
+    }
+    return false;
   });
 
   // Incluir compras de cartão como dívidas (usando mesma lógica do DividasManager)
