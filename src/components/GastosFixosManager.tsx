@@ -452,8 +452,11 @@ export default function GastosFixosManager() {
       
       if (valorTotalPago >= valorTotal) {
         const excedente = valorTotalPago - valorTotal;
+        // Considerar excedente apenas se for maior que 0.01 (para evitar problemas de ponto flutuante)
+        const excedenteFormatado = excedente.toFixed(2);
+        const excedenteNumero = parseFloat(excedenteFormatado);
         return { 
-          status: excedente > 0 ? `Pago (+R$ ${excedente.toFixed(2)})` : 'Pago',
+          status: excedenteNumero > 0.01 ? `Pago (+R$ ${excedenteFormatado})` : 'Pago',
           cor: 'text-green-600'
         };
       }
