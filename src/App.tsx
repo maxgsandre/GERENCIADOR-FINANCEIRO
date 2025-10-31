@@ -255,6 +255,21 @@ function AppContent() {
     })();
   }, [currentUser]);
 
+  // Migração única: mover gastosFixos flat para o mês atual
+  useEffect(() => {
+    if (!currentUser) return;
+    const flag = 'migrated-gastos-flat-to-period';
+    if (localStorage.getItem(flag)) return;
+    (async () => {
+      try {
+        const today = new Date();
+        const ym = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+        await (firebaseService as any).migrateAllGastosFlatToPeriod?.(currentUser.uid, ym);
+        localStorage.setItem(flag, '1');
+      } catch {}
+    })();
+  }, [currentUser]);
+
   // Funções para integração com Firebase ou localStorage
   const saveCaixa = async (caixa: Caixa) => {
     if (currentUser) {
