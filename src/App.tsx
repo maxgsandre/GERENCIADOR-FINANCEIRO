@@ -38,6 +38,7 @@ export interface Transacao {
   categoria: string;
   data: string;
   hora: string;
+  periodo?: string; // YYYY-MM para armazenamento por mês
 }
 
 export interface GastoFixo {

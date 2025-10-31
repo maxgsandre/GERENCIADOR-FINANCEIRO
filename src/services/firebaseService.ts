@@ -111,36 +111,89 @@ export const subscribeToCaixas = (userId: string, callback: (caixas: Caixa[]) =>
   });
 };
 
-// Funções para Transações
-export const saveTransacao = async (userId: string, transacao: Transacao) => {
-  await setDoc(doc(db, 'users', userId, 'transacoes', transacao.id), {
-    ...transacao,
-    createdAt: Timestamp.fromDate(new Date())
-  });
+// =======================
+// Transações - Nova estrutura por período
+// Estrutura: users/{userId}/transacoes/{periodo}/itens/{transacaoId}
+// =======================
+
+// Migrar transação antiga (flat) para a subcoleção do período
+const migrateTransacaoToSubcollection = async (userId: string, t: Transacao) => {
+  try {
+    const data = t.data || '';
+    const d = new Date(data + 'T00:00:00');
+    const periodo = isNaN(d.getTime())
+      ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const migrada: any = { ...t, periodo };
+    await setDoc(doc(db, 'users', userId, 'transacoes', periodo, 'itens', t.id), migrada);
+    try { await deleteDoc(doc(db, 'users', userId, 'transacoes', (t as any).id)); } catch {}
+  } catch {}
 };
 
-export const deleteTransacao = async (userId: string, transacaoId: string) => {
-  await deleteDoc(doc(db, 'users', userId, 'transacoes', transacaoId));
+export const saveTransacao = async (userId: string, transacao: Transacao) => {
+  const d = new Date(transacao.data + 'T00:00:00');
+  const periodo = isNaN(d.getTime())
+    ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const payload: any = { ...transacao, periodo };
+  Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+  await setDoc(doc(db, 'users', userId, 'transacoes', periodo, 'itens', transacao.id), payload);
+};
+
+export const deleteTransacao = async (userId: string, transacaoId: string, periodo?: string) => {
+  if (periodo) {
+    await deleteDoc(doc(db, 'users', userId, 'transacoes', periodo, 'itens', transacaoId));
+    return;
+  }
+  const now = new Date();
+  const tasks: Promise<void>[] = [];
+  for (let i = -12; i <= 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    tasks.push(deleteDoc(doc(db, 'users', userId, 'transacoes', ym, 'itens', transacaoId)).catch(() => undefined));
+  }
+  await Promise.all(tasks);
 };
 
 export const subscribeToTransacoes = (userId: string, callback: (transacoes: Transacao[]) => void) => {
-  const q = query(
-    collection(db, 'users', userId, 'transacoes'),
-    orderBy('createdAt', 'desc')
-  );
-  return onSnapshot(q, (snapshot) => {
-    const transacoes: Transacao[] = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      transacoes.push({ 
-        id: doc.id, 
-        ...data,
-        // Remover createdAt do objeto final
-        createdAt: undefined
-      } as Transacao);
+  const unsubscribers: Array<() => void> = [];
+  const porPeriodo = new Map<string, Transacao[]>();
+  const emitir = () => {
+    const all: Transacao[] = [];
+    porPeriodo.forEach((arr) => all.push(...arr));
+    callback(all);
+  };
+  const now = new Date();
+  const periods: string[] = [];
+  for (let i = -12; i <= 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  periods.forEach((p) => {
+    const q = query(collection(db, 'users', userId, 'transacoes', p, 'itens'));
+    const unsub = onSnapshot(q, (snap) => {
+      const arr: Transacao[] = [];
+      snap.forEach((docSnap) => arr.push({ id: docSnap.id, ...docSnap.data() } as Transacao));
+      porPeriodo.set(p, arr);
+      emitir();
     });
-    callback(transacoes);
+    unsubscribers.push(unsub);
   });
+  // migrar coleção antiga flat
+  const oldQ = query(collection(db, 'users', userId, 'transacoes'));
+  const oldUnsub = onSnapshot(oldQ, async (snapshot) => {
+    const jobs: Promise<void>[] = [];
+    snapshot.forEach((d) => {
+      const data = d.data() as any;
+      if (data && data.data && data.tipo && data.valor != null) {
+        const t: Transacao = { id: d.id, ...data } as any;
+        jobs.push(migrateTransacaoToSubcollection(userId, t));
+      }
+    });
+    if (jobs.length) await Promise.all(jobs).catch(() => {});
+  });
+  unsubscribers.push(oldUnsub);
+  return () => unsubscribers.forEach((u) => u());
 };
 
 // =======================
