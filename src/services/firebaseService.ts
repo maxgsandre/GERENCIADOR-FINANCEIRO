@@ -288,6 +288,74 @@ export const subscribeToGastosFixos = (userId: string, callback: (gastosFixos: G
   return () => unsubscribers.forEach((u) => u());
 };
 
+// Duplicar gastos fixos de um período para outro (sem pagamentos)
+export const duplicateGastosFromPeriod = async (userId: string, fromPeriod: string, toPeriod: string) => {
+  try {
+    const fromCol = collection(db, 'users', userId, 'gastosFixos', fromPeriod, 'itens');
+    const fromSnap = await getDocs(fromCol);
+    
+    if (fromSnap.empty) {
+      throw new Error(`Nenhum gasto fixo encontrado no período ${fromPeriod}`);
+    }
+    
+    const jobs: Promise<void>[] = [];
+    
+    fromSnap.forEach((d) => {
+      const data = d.data() as any;
+      if (data && data.descricao && data.valor != null) {
+        // Calcular nova data de vencimento para o mês destino
+        const [toYear, toMonth] = toPeriod.split('-').map(Number);
+        
+        let newDataVencimento = data.dataVencimento;
+        if (data.dataVencimento) {
+          try {
+            const dataVenc = new Date(data.dataVencimento + 'T00:00:00');
+            if (!isNaN(dataVenc.getTime())) {
+              const diaVenc = dataVenc.getDate();
+              const newDate = new Date(toYear, toMonth - 1, Math.min(diaVenc, new Date(toYear, toMonth, 0).getDate()));
+              newDataVencimento = newDate.toISOString().split('T')[0];
+            }
+          } catch {}
+        }
+        
+        // Gerar novo ID único para o gasto duplicado
+        const novoId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
+          ? (crypto as any).randomUUID() 
+          : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Criar novo gasto com todos os dados originais, exceto id, periodo, pago e valorPago
+        const novoGasto: any = {
+          ...data,
+          id: novoId, // NOVO ID
+          periodo: toPeriod, // NOVO PERÍODO
+          dataVencimento: newDataVencimento || data.dataVencimento, // Data atualizada
+          valorPago: 0, // Sem pagamentos
+          pago: false, // Sempre false
+        };
+        
+        // Limpar pagamentos se existirem
+        if (novoGasto.pagamentos) {
+          delete novoGasto.pagamentos;
+        }
+        
+        // Limpar campos undefined
+        Object.keys(novoGasto).forEach((k) => { if (novoGasto[k] === undefined) delete novoGasto[k]; });
+        
+        // Salvar com o novo ID no período destino
+        jobs.push(setDoc(doc(db, 'users', userId, 'gastosFixos', toPeriod, 'itens', novoId), novoGasto));
+      }
+    });
+    
+    if (jobs.length === 0) {
+      throw new Error('Nenhum gasto fixo válido encontrado para duplicar');
+    }
+    
+    await Promise.all(jobs);
+  } catch (error: any) {
+    throw new Error(`Erro ao duplicar gastos: ${error?.message || 'Erro desconhecido'}`);
+  }
+};
+
 // Migração manual: mover todos os documentos flat de gastosFixos para um período alvo
 export const migrateAllGastosFlatToPeriod = async (userId: string, targetPeriod: string) => {
   const oldCol = collection(db, 'users', userId, 'gastosFixos');
