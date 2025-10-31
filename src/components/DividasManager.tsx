@@ -1986,11 +1986,15 @@ export default function DividasManager() {
               const statusCartao = getStatusCartao(c.id);
               return (
                 <div key={c.id} className="border rounded p-3">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> <span className="font-medium">{c.nome}</span></div>
-                    <div className="flex items-center gap-2 flex-wrap md:justify-end">
-                      <div className="text-sm whitespace-nowrap">Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                      <div className="text-sm whitespace-nowrap">
+                  <div className="flex flex-col gap-2 md:gap-1">
+                    {/* Linha principal: Nome + Fatura + Status */}
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-4 w-4" />
+                        <span className="font-medium">{c.nome}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm whitespace-nowrap">
+                        <span>Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></span>
                         <span className={`${statusCartao.cor} font-medium`}>{statusCartao.status}</span>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
@@ -2008,6 +2012,19 @@ export default function DividasManager() {
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
+                    </div>
+                    {/* Linha secundária: informações de vencimento e limite */}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                      <span>Dia Vencimento: <span className="text-foreground font-medium">{c.diaVencimento || '-'}</span></span>
+                      {typeof c.limite === 'number' && (() => {
+                        const disp = Math.max(0, Number(c.limite) - totalMes);
+                        return (
+                          <>
+                            <span>Limite total: <span className="text-foreground font-medium">R$ {Number(c.limite).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></span>
+                            <span>Disponível <span className={`${disp > 0 ? 'text-green-600' : 'text-destructive'} font-medium`}>R$ {disp.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></span>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                   <button className="text-xs text-muted-foreground mt-2 underline" onClick={() => setExpandedCardId(expandedCardId === c.id ? null : c.id)}>
