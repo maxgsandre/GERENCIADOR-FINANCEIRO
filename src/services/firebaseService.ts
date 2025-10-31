@@ -654,6 +654,10 @@ export const subscribeToCreditCards = (userId: string, callback: (cards: CartaoC
 // Compras de Cartão (flat por usuário; relaciona por cardId)
 export const saveCreditCardPurchase = async (userId: string, purchase: CompraCartao) => {
   await setDoc(doc(db, 'users', userId, 'creditCardPurchases', purchase.id), purchase);
+  // Materializar parcelas por competência em faturas mensais do cartão
+  try {
+    await mirrorPurchaseToInvoices(userId, purchase);
+  } catch {}
 };
 
 export const deleteCreditCardPurchase = async (userId: string, purchaseId: string) => {
@@ -667,6 +671,50 @@ export const subscribeToCreditCardPurchases = (userId: string, callback: (purcha
     snapshot.forEach((doc) => purchases.push({ id: doc.id, ...doc.data() } as CompraCartao));
     callback(purchases);
   });
+};
+
+// =======================
+// Cartões - Faturas por mês a partir das compras parceladas
+// Estrutura: users/{uid}/creditCards/{cardId}/faturas/{YYYY-MM}/itens/{purchaseId}-{n}
+// =======================
+const mirrorPurchaseToInvoices = async (userId: string, purchase: CompraCartao) => {
+  try {
+    const first = purchase.startMonth || (purchase.dataCompra ? `${new Date(purchase.dataCompra).getFullYear()}-${String(new Date(purchase.dataCompra).getMonth() + 1).padStart(2, '0')}` : undefined);
+    if (!first) return;
+    const parcelas = Math.max(1, purchase.parcelas || 1);
+    const valorParcela = purchase.valorParcela || (purchase.valorTotal / parcelas);
+    const [y0, m0] = first.split('-').map(Number);
+    let y = y0, m = m0;
+    for (let n = 1; n <= parcelas; n++) {
+      const ym = `${y}-${String(m).padStart(2, '0')}`;
+      const id = `${purchase.id}-${n}`;
+      const item = {
+        id,
+        purchaseId: purchase.id,
+        descricao: purchase.descricao,
+        valor: valorParcela,
+        parcela: n,
+        parcelasTotais: parcelas,
+        startMonth: first,
+      } as any;
+      await setDoc(doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', id), item);
+      // avançar mês
+      m += 1; if (m > 12) { m = 1; y += 1; }
+    }
+  } catch {}
+};
+
+export const rebuildInvoicesForCard = async (userId: string, cardId: string) => {
+  try {
+    const qPurch = query(collection(db, 'users', userId, 'creditCardPurchases'));
+    const snap = await getDocs(qPurch);
+    const tasks: Promise<void>[] = [];
+    snap.forEach((d) => {
+      const p = d.data() as CompraCartao;
+      if (p.cardId === cardId) tasks.push(mirrorPurchaseToInvoices(userId, p));
+    });
+    if (tasks.length) await Promise.all(tasks);
+  } catch {}
 };
 
 // =======================
