@@ -102,6 +102,8 @@ export interface ReceitaPrevista {
   recebido: boolean;
   dataVencimento: string;
   caixaId?: string; // ID do caixa onde foi recebida
+  periodo: string; // YYYY-MM - mês/ano ao qual esta receita pertence
+  diaVencimento: number; // Dia do mês (1-31) para facilitar replicação
 }
 
 // Cartão de crédito
@@ -163,7 +165,7 @@ export interface FinanceiroContextType {
   saveCategoria: (categoria: Categoria) => Promise<void>;
   deleteCategoria: (categoriaId: string) => Promise<void>;
   saveReceitaPrevista: (receita: ReceitaPrevista) => Promise<void>;
-  deleteReceitaPrevista: (receitaId: string) => Promise<void>;
+  deleteReceitaPrevista: (receitaId: string, periodo?: string) => Promise<void>;
   saveCartao: (card: CartaoCredito) => Promise<void>;
   deleteCartao: (cardId: string) => Promise<void>;
   saveCompraCartao: (purchase: CompraCartao) => Promise<void>;
@@ -234,6 +236,21 @@ function AppContent() {
       unsubscribeCards();
       unsubscribePurchases();
     };
+  }, [currentUser]);
+
+  // Migração pontual: mover receitas de 2025-09 para 2025-10 (executa uma vez por navegador)
+  useEffect(() => {
+    const flag = 'migrated-2025-09-to-2025-10';
+    if (!currentUser) return;
+    if (localStorage.getItem(flag)) return;
+    (async () => {
+      try {
+        await (firebaseService as any).moveReceitasBetweenPeriods?.(currentUser.uid, '2025-09', '2025-10');
+        localStorage.setItem(flag, '1');
+      } catch (e) {
+        // silencioso
+      }
+    })();
   }, [currentUser]);
 
   // Funções para integração com Firebase ou localStorage
@@ -337,9 +354,23 @@ function AppContent() {
     }
   };
 
-  const deleteReceitaPrevista = async (receitaId: string) => {
+  const deleteReceitaPrevista = async (receitaId: string, periodo?: string) => {
     if (currentUser) {
-      await firebaseService.deleteReceitaPrevista(currentUser.uid, receitaId);
+      // Buscar período da receita se não foi fornecido
+      if (!periodo) {
+        const receita = receitasPrevistas.find(r => r.id === receitaId);
+        periodo = receita?.periodo;
+        if (!periodo && receita?.dataVencimento) {
+          const dataVenc = new Date(receita.dataVencimento + 'T00:00:00');
+          periodo = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+        }
+      }
+      
+      if (!periodo) {
+        throw new Error('Período não encontrado para deletar receita');
+      }
+      
+      await firebaseService.deleteReceitaPrevista(currentUser.uid, receitaId, periodo);
     }
   };
 
