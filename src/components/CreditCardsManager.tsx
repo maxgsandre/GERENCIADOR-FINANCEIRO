@@ -33,6 +33,8 @@ export default function CreditCardsManager() {
   }, []);
 
   const [cardName, setCardName] = useState('');
+  const [cardLimit, setCardLimit] = useState('');
+  const [cardDueDay, setCardDueDay] = useState('');
   const [isSubmittingCard, setIsSubmittingCard] = useState(false);
 
   const [desc, setDesc] = useState('');
@@ -74,10 +76,14 @@ export default function CreditCardsManager() {
     if (isSubmittingCard) return;
     if (!cardName.trim()) return;
     setIsSubmittingCard(true);
-    const card: CartaoCredito = { id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(), nome: cardName.trim() } as any;
+    const limiteNum = cardLimit ? parseFloat(cardLimit) : undefined;
+    const dueDayNum = cardDueDay ? parseInt(cardDueDay) : undefined;
+    const card: CartaoCredito = { id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(), nome: cardName.trim(), limite: isFinite(limiteNum as any) ? limiteNum : undefined, diaVencimento: isFinite(dueDayNum as any) ? dueDayNum : undefined } as any;
     await saveCartao(card);
     setCartoes((prev: CartaoCredito[]) => [...prev, card]);
     setCardName('');
+    setCardLimit('');
+    setCardDueDay('');
     setIsCardDialogOpen(false);
     setIsSubmittingCard(false);
   };
@@ -123,6 +129,11 @@ export default function CreditCardsManager() {
         return sum + getInstallmentValue(c.valorTotal, c.valorParcela, c.parcelas, idx);
       }, 0);
   };
+  const limiteDisponivel = (card: CartaoCredito) => {
+    const limite = card.limite || 0;
+    const fatura = faturaDoMes(card.id);
+    return Math.max(0, limite - fatura);
+  };
 
   return (
     <div className="space-y-6">
@@ -144,12 +155,22 @@ export default function CreditCardsManager() {
             >
               <DialogHeader>
                 <DialogTitle>Novo Cartão</DialogTitle>
-                <DialogDescription>Informe o nome do cartão</DialogDescription>
+                <DialogDescription>Informe os dados do cartão</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleCreateCard} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="card-name">Nome</Label>
                   <Input id="card-name" value={cardName} onChange={(e) => setCardName(e.target.value)} placeholder="Ex: Nubank" required />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="card-limit">Limite (R$)</Label>
+                    <Input id="card-limit" type="number" step="0.01" value={cardLimit} onChange={(e) => setCardLimit(e.target.value)} placeholder="0,00" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="card-due">Dia de Vencimento</Label>
+                    <Input id="card-due" type="number" min="1" max="31" value={cardDueDay} onChange={(e) => setCardDueDay(e.target.value)} placeholder="Ex: 10" />
+                  </div>
                 </div>
                   <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setIsCardDialogOpen(false)}>Cancelar</Button>
@@ -251,13 +272,20 @@ export default function CreditCardsManager() {
               <TableRow>
                 <TableHead>Cartão</TableHead>
                 <TableHead className="text-right">Fatura do mês</TableHead>
+                <TableHead className="text-right">Limite</TableHead>
+                <TableHead className="text-right">Disponível</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {cartoes.map((c: CartaoCredito) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium flex items-center gap-2"><CreditCard className="h-4 w-4" /> {c.nome}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> {c.nome}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{c.diaVencimento ? `Vence dia ${c.diaVencimento}` : 'Vencimento não informado'}</div>
+                  </TableCell>
                   <TableCell className="text-right font-medium">R$ {faturaDoMes(c.id).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
+                  <TableCell className="text-right">{c.limite != null ? `R$ ${Number(c.limite).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-'}</TableCell>
+                  <TableCell className="text-right">{c.limite != null ? `R$ ${limiteDisponivel(c).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
