@@ -890,8 +890,8 @@ export default function DividasManager() {
               );
             }
           }
-        } catch (error) {
-          console.error('Erro ao processar pagamento do cartão:', error);
+        } catch (_error) {
+          console.error('Erro ao processar pagamento do cartão');
           alert('Erro ao processar pagamento: ' + (error as any).message);
           return;
         }

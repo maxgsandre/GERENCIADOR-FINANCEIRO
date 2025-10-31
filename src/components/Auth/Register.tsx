@@ -46,7 +46,7 @@ export default function Register({ onToggleMode }: RegisterProps) {
       localStorage.setItem('signup_email', normalizedEmail);
       await sendSignUpLink(normalizedEmail);
     } catch (error: any) {
-      console.error('Erro no registro:', error);
+      console.error('Erro no registro');
       
       if (error.code) {
         // Erros do Firebase

@@ -34,8 +34,8 @@ export default function UserMenu() {
   const handleLogout = async () => {
     try {
       await logout();
-    } catch (error) {
-      console.error('Erro ao fazer logout:', error);
+    } catch (_error) {
+      console.error('Erro ao fazer logout');
     }
   };
 

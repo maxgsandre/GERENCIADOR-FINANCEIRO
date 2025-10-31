@@ -58,7 +58,7 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('Falha ao enviar verificação de email:', e);
       }
     } catch (error: any) {
-      console.error('Erro no registro Firebase:', error);
+      console.error('Erro no registro Firebase');
       throw error;
     }
   };
@@ -67,7 +67,7 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (error: any) {
-      console.error('Erro no login Firebase:', error);
+      console.error('Erro no login Firebase');
       throw error;
     }
   };
@@ -128,7 +128,7 @@ function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
       setCurrentUser(user);
       setLoading(false);
     }, (error) => {
-      console.error('Erro na autenticação Firebase:', error);
+      console.error('Erro na autenticação Firebase');
       setLoading(false);
     });
 

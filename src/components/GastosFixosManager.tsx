@@ -515,8 +515,8 @@ export default function GastosFixosManager() {
         const compraAtualizada = { ...compra, parcelasPagas };
         await (saveCompraCartao && (saveCompraCartao as any)(compraAtualizada));
       }
-    } catch (error) {
-      console.error('Erro ao atualizar progresso:', error);
+    } catch (_error) {
+      console.error('Erro ao atualizar progresso');
     }
   };
 
@@ -531,8 +531,8 @@ export default function GastosFixosManager() {
       const gastoAtualizado = { ...gasto, valorPago: 0, pago: false, periodo: (gasto as any)?.periodo || selectedMonth } as any;
       await saveGastoFixo(gastoAtualizado);
       setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? gastoAtualizado : g));
-    } catch (error) {
-      console.error('Erro ao reverter pagamento:', error);
+    } catch (_error) {
+      console.error('Erro ao reverter pagamento');
     }
   };
 

@@ -292,8 +292,8 @@ export default function TransacoesManager() {
           await deleteDivida(dividaVinculada.id);
         }
       }
-    } catch (error) {
-      console.error('Erro ao excluir transação:', error);
+    } catch (_error) {
+      console.error('Erro ao excluir transação');
     }
   };
 
