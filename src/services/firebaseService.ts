@@ -3,6 +3,7 @@ import {
   doc, 
   setDoc, 
   getDoc, 
+  getDocs,
   onSnapshot, 
   updateDoc,
   deleteDoc,
@@ -60,7 +61,15 @@ const initializeUserData = async (userId: string) => {
       { id: '14', nome: 'Financeiro' },
     ],
     receitasPrevistas: [
-      { id: '1', descricao: 'Salário Principal', valor: 0, recebido: false, dataVencimento: new Date().toISOString().split('T')[0] },
+      { 
+        id: '1', 
+        descricao: 'Salário Principal', 
+        valor: 0, 
+        recebido: false, 
+        dataVencimento: new Date().toISOString().split('T')[0],
+        periodo: new Date().toISOString().slice(0, 7), // YYYY-MM
+        diaVencimento: 5
+      },
     ]
   };
 
@@ -74,9 +83,11 @@ const initializeUserData = async (userId: string) => {
     await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
   }
 
-  // Salvar receitas previstas iniciais
+  // Salvar receitas previstas iniciais na nova estrutura (subcoleção por período)
   for (const receita of initialData.receitasPrevistas) {
-    await setDoc(doc(db, 'users', userId, 'receitasPrevistas', receita.id), receita);
+    if (receita.periodo) {
+      await setDoc(doc(db, 'users', userId, 'receitasPrevistas', receita.periodo, 'receitas', receita.id), receita);
+    }
   }
 };
 
@@ -212,24 +223,226 @@ export const subscribeToCategorias = (userId: string, callback: (categorias: Cat
   });
 };
 
-// Funções para Receitas Previstas
+// Funções para Receitas Previstas - Nova estrutura por período
+// Estrutura: users/{userId}/receitasPrevistas/{periodo}/receitas/{receitaId}
 export const saveReceitaPrevista = async (userId: string, receita: ReceitaPrevista) => {
-  await setDoc(doc(db, 'users', userId, 'receitasPrevistas', receita.id), receita);
+  // Validar que tem período
+  if (!receita.periodo) {
+    throw new Error('Receita deve ter período definido');
+  }
+  // Remover campos undefined (Firestore não aceita undefined)
+  const receitaSanitizada: any = { ...receita };
+  Object.keys(receitaSanitizada).forEach((key) => {
+    if (receitaSanitizada[key] === undefined) {
+      delete receitaSanitizada[key];
+    }
+  });
+  await setDoc(doc(db, 'users', userId, 'receitasPrevistas', receita.periodo, 'receitas', receita.id), receitaSanitizada);
 };
 
-export const deleteReceitaPrevista = async (userId: string, receitaId: string) => {
-  await deleteDoc(doc(db, 'users', userId, 'receitasPrevistas', receitaId));
+export const deleteReceitaPrevista = async (userId: string, receitaId: string, periodo?: string) => {
+  if (!periodo) throw new Error('Período é obrigatório para deletar receita');
+  await deleteDoc(doc(db, 'users', userId, 'receitasPrevistas', periodo, 'receitas', receitaId));
 };
 
 export const subscribeToReceitasPrevistas = (userId: string, callback: (receitas: ReceitaPrevista[]) => void) => {
-  const q = query(collection(db, 'users', userId, 'receitasPrevistas'));
-  return onSnapshot(q, (snapshot) => {
-    const receitas: ReceitaPrevista[] = [];
-    snapshot.forEach((doc) => {
-      receitas.push({ id: doc.id, ...doc.data() } as ReceitaPrevista);
+  // Escutar múltiplos períodos (últimos 12 e próximos 12 meses) nas subcoleções "receitas"
+  const unsubscribers: Array<() => void> = [];
+  const receitasPorPeriodo = new Map<string, ReceitaPrevista[]>();
+
+  const emitir = () => {
+    const todas: ReceitaPrevista[] = [];
+    receitasPorPeriodo.forEach(rs => todas.push(...rs));
+    callback(todas);
+  };
+
+  const now = new Date();
+  const periodsToCheck: string[] = [];
+  for (let i = -12; i <= 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    periodsToCheck.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  periodsToCheck.forEach(periodo => {
+    const q = query(collection(db, 'users', userId, 'receitasPrevistas', periodo, 'receitas'));
+    const unsub = onSnapshot(q, (snap) => {
+      const arr: ReceitaPrevista[] = [];
+      snap.forEach(docSnap => arr.push({ id: docSnap.id, ...docSnap.data() } as ReceitaPrevista));
+      receitasPorPeriodo.set(periodo, arr);
+      emitir();
     });
-    callback(receitas);
+    unsubscribers.push(unsub);
   });
+
+  // Também migrar documentos soltos (estrutura antiga)
+  // Isso inclui documentos com formato antigo (ID direto) e formato intermediário (periodo-id)
+  const oldQ = query(collection(db, 'users', userId, 'receitasPrevistas'));
+  const oldUnsub = onSnapshot(oldQ, async (snapshot) => {
+    const jobs: Promise<void>[] = [];
+    snapshot.forEach((d) => {
+      const data = d.data() as any;
+      const docId = d.id;
+      
+      // Verificar se é um documento de receita (tem descricao) e não é uma subcoleção de período
+      // Subcoleções de período são documentos que têm apenas formato YYYY-MM (sem descricao)
+      if (data && data.descricao) {
+        // Extrair ID real da receita se o docId inclui período (formato antigo intermediário)
+        let receitaId = docId;
+        let periodoDoId = null;
+        
+        // Se o ID começa com período (YYYY-MM-...), extrair
+        if (/^\d{4}-\d{2}-/.test(docId)) {
+          const partes = docId.split('-');
+          periodoDoId = `${partes[0]}-${partes[1]}`;
+          receitaId = partes.slice(2).join('-') || docId; // ID real da receita
+        }
+        
+        // Usar período do campo data.periodo, ou período extraído do ID, ou calcular de dataVencimento
+        const periodo = data.periodo || periodoDoId;
+        const receita: ReceitaPrevista = {
+          id: receitaId, // ID limpo sem período
+          ...data,
+          periodo: periodo, // Garantir que tem período
+        };
+        
+        jobs.push(migrateReceitaToSubcollection(userId, receita));
+      }
+    });
+    if (jobs.length) {
+      await Promise.all(jobs).catch(console.error);
+    }
+  });
+  unsubscribers.push(oldUnsub);
+
+  return () => unsubscribers.forEach(u => u());
+};
+
+// Função de migração: mover receita da coleção antiga para subcoleção por período
+const migrateReceitaToSubcollection = async (userId: string, receita: ReceitaPrevista) => {
+  try {
+    // Determinar período da receita
+    let periodo = receita.periodo;
+    if (!periodo && receita.dataVencimento) {
+      const dataVenc = new Date(receita.dataVencimento + 'T00:00:00');
+      periodo = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+    }
+    
+    if (!periodo) {
+      console.warn('Não foi possível determinar período para receita:', receita.id);
+      return;
+    }
+    
+    // Garantir que tem diaVencimento
+    if (!receita.diaVencimento && receita.dataVencimento) {
+      const dataVenc = new Date(receita.dataVencimento + 'T00:00:00');
+      receita.diaVencimento = dataVenc.getDate();
+    }
+    
+    // Garantir que o ID da receita não inclui período (limpar se necessário)
+    const receitaIdLimpo = receita.id.replace(/^\d{4}-\d{2}-/, '') || receita.id;
+    
+    // Criar receita atualizada com período e salvar na subcoleção do mês
+    const receitaMigrada: ReceitaPrevista = { 
+      ...receita, 
+      id: receitaIdLimpo, // ID limpo sem período
+      periodo 
+    };
+    
+    await setDoc(doc(db, 'users', userId, 'receitasPrevistas', periodo, 'receitas', receitaIdLimpo), receitaMigrada);
+
+    // Deletar da estrutura antiga - tentar tanto com ID original quanto com ID+período
+    const idsParaDeletar = [
+      receita.id, // ID original (pode incluir período ou não)
+      receitaIdLimpo, // ID limpo
+      `${periodo}-${receitaIdLimpo}`, // Formato periodo-id (caso tenha sido salvo assim antes)
+    ];
+    
+    for (const idParaDeletar of idsParaDeletar) {
+      try {
+        await deleteDoc(doc(db, 'users', userId, 'receitasPrevistas', idParaDeletar));
+        console.log('Receita migrada:', idParaDeletar, '->', periodo, '/receitas/', receitaIdLimpo);
+      } catch (e) {
+        // Ignorar erro se já não existir
+      }
+    }
+  } catch (error) {
+    console.error('Erro ao migrar receita:', receita.id, error);
+  }
+};
+
+// Migração pontual: mover todas receitas de um período para outro
+export const moveReceitasBetweenPeriods = async (
+  userId: string,
+  fromPeriod: string,
+  toPeriod: string
+) => {
+  try {
+    const fromCol = collection(db, 'users', userId, 'receitasPrevistas', fromPeriod, 'receitas');
+    const fromSnap = await (await import('firebase/firestore')).getDocs(fromCol as any);
+    const batchJobs: Promise<void>[] = [];
+    fromSnap.forEach((docSnap: any) => {
+      const data = docSnap.data() as ReceitaPrevista;
+      const id = docSnap.id;
+      const receitaAtualizada: ReceitaPrevista = { ...data, periodo: toPeriod };
+      // escrever no destino e apagar origem
+      batchJobs.push(setDoc(doc(db, 'users', userId, 'receitasPrevistas', toPeriod, 'receitas', id), receitaAtualizada));
+      batchJobs.push(deleteDoc(doc(db, 'users', userId, 'receitasPrevistas', fromPeriod, 'receitas', id)));
+    });
+    if (batchJobs.length > 0) {
+      await Promise.all(batchJobs);
+      console.log(`Receitas movidas de ${fromPeriod} para ${toPeriod}:`, batchJobs.length / 2);
+    }
+  } catch (e) {
+    console.error('Erro ao mover receitas entre períodos:', fromPeriod, '->', toPeriod, e);
+    throw e;
+  }
+};
+
+// Replicação idempotente: cria receitas de (mês anterior) em (targetPeriod) apenas 1x
+export const replicateReceitasIfNeeded = async (userId: string, targetPeriod: string) => {
+  // Doc meta para marcar que já replicou uma vez
+  const metaRef = doc(db, 'users', userId, 'receitasPrevistasMeta', targetPeriod);
+  const metaSnap = await getDoc(metaRef);
+  if (metaSnap.exists()) {
+    return; // já replicado para este mês
+  }
+  // Determinar mês anterior
+  const [y, m] = targetPeriod.split('-').map(Number);
+  const prev = new Date(y, (m - 1) - 1, 1);
+  const prevPeriod = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+
+  // Ler receitas atuais e do mês anterior
+  const [currSnap, prevSnap] = await Promise.all([
+    getDocs(collection(db, 'users', userId, 'receitasPrevistas', targetPeriod, 'receitas')),
+    getDocs(collection(db, 'users', userId, 'receitasPrevistas', prevPeriod, 'receitas')),
+  ]);
+
+  // Mapas por descrição para evitar duplicar
+  const existentes = new Set<string>();
+  currSnap.forEach(d => existentes.add((d.data() as any).descricao));
+
+  const jobs: Promise<void>[] = [];
+  prevSnap.forEach(d => {
+    const r = d.data() as ReceitaPrevista;
+    if (!existentes.has(r.descricao)) {
+      const dia = r.diaVencimento || (r.dataVencimento ? new Date(r.dataVencimento + 'T00:00:00').getDate() : 1);
+      const dt = new Date(y, (m - 1), dia);
+      const nova: ReceitaPrevista = {
+        ...r,
+        id: r.id, // mantém o mesmo id base
+        periodo: targetPeriod,
+        recebido: false,
+        dataVencimento: dt.toISOString().split('T')[0],
+      };
+      jobs.push(setDoc(doc(db, 'users', userId, 'receitasPrevistas', targetPeriod, 'receitas', nova.id), nova));
+    }
+  });
+
+  if (jobs.length > 0) {
+    await Promise.all(jobs);
+  }
+  // Marcar como replicado (mesmo que não tenha criado nada, evita recriar após exclusões)
+  await setDoc(metaRef, { replicatedAt: Timestamp.fromDate(new Date()), from: prevPeriod });
 };
 
 // =======================
