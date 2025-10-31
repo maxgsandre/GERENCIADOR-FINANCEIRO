@@ -9,12 +9,14 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign, Lock, Receipt } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign, Lock, Receipt, Copy } from 'lucide-react';
 import { FinanceiroContext, GastoFixo, Divida, Pagamento, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function GastosFixosManager() {
   const context = useContext(FinanceiroContext);
+  const { currentUser } = useAuth();
   if (!context) return null;
 
   const { gastosFixos, setGastosFixos, categorias, setCategorias, saveGastoFixo, deleteGastoFixo, saveCategoria, caixas, setCaixas, saveCaixa, dividas, setDividas, saveDivida, saveTransacao, deleteTransacao, transacoes, cartoes, comprasCartao, saveCompraCartao } = context as any;
@@ -42,6 +44,9 @@ export default function GastosFixosManager() {
   const [horaPagamento, setHoraPagamento] = useState('');
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
   const autoCleanRanRef = useRef(false);
+  const [isDuplicarDialogOpen, setIsDuplicarDialogOpen] = useState(false);
+  const [mesOrigem, setMesOrigem] = useState('');
+  const [isDuplicando, setIsDuplicando] = useState(false);
   // Detectar mobile para aplicar scroll nos modais
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -197,10 +202,10 @@ export default function GastosFixosManager() {
     (async () => {
       try {
         const svc = await import('../services/firebaseService');
-        (svc as any).replicateGastosIfNeeded && (context as any)?.currentUser?.uid && await (svc as any).replicateGastosIfNeeded((context as any).currentUser.uid, selectedMonth);
+        (svc as any).replicateGastosIfNeeded && currentUser?.uid && await (svc as any).replicateGastosIfNeeded(currentUser.uid, selectedMonth);
       } catch {}
     })();
-  }, [selectedMonth]);
+  }, [selectedMonth, currentUser]);
 
   // Filtrar gastos fixos pelo mês selecionado
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
@@ -789,6 +794,35 @@ export default function GastosFixosManager() {
     await saveGastoFixo(atualizado);
   };
 
+  const handleDuplicarGastos = async () => {
+    if (!mesOrigem || mesOrigem === selectedMonth) {
+      alert('Selecione um mês de origem diferente do mês atual');
+      return;
+    }
+    
+    if (!confirm(`Deseja duplicar todos os gastos fixos de ${mesOrigem} para ${selectedMonth}? Os gastos originais serão mantidos intactos e os novos virão sem pagamentos.`)) {
+      return;
+    }
+    
+    setIsDuplicando(true);
+      try {
+        if (!currentUser?.uid) throw new Error('Usuário não autenticado');
+        
+        const svc = await import('../services/firebaseService');
+        await (svc as any).duplicateGastosFromPeriod(currentUser.uid, mesOrigem, selectedMonth);
+      
+      // Atualizar lista local (o subscribe vai atualizar automaticamente, mas força refresh)
+      alert(`Gastos fixos duplicados com sucesso de ${mesOrigem} para ${selectedMonth}!`);
+      setIsDuplicarDialogOpen(false);
+      setMesOrigem('');
+    } catch (error: any) {
+      console.error('Erro ao duplicar gastos:', error);
+      alert(`Erro ao duplicar gastos fixos: ${error?.message || 'Erro desconhecido'}`);
+    } finally {
+      setIsDuplicando(false);
+    }
+  };
+
   const ymToIndex = (year: number, month1to12: number) => year * 12 + (month1to12 - 1);
 
   const confirmarPagamentoVinculado = async () => {
@@ -1371,6 +1405,13 @@ export default function GastosFixosManager() {
               onChange={(e) => setSelectedMonth(e.target.value)} 
               className="w-[180px]" 
             />
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDuplicarDialogOpen(true)}
+              title="Duplicar gastos de outro mês"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
           </div>
         </div>
         
@@ -1386,6 +1427,14 @@ export default function GastosFixosManager() {
             onChange={(e) => setSelectedMonth(e.target.value)} 
             className="w-[160px]" 
           />
+          <Button 
+            variant="outline" 
+            onClick={() => setIsDuplicarDialogOpen(true)}
+            title="Duplicar gastos de outro mês"
+            size="sm"
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -1665,6 +1714,54 @@ export default function GastosFixosManager() {
           </CardContent>
         </Card>
       )}
+
+      {/* Modal de Duplicar Gastos */}
+      <Dialog open={isDuplicarDialogOpen} onOpenChange={setIsDuplicarDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Duplicar Gastos Fixos</DialogTitle>
+            <DialogDescription>
+              Selecione o mês de origem para duplicar os gastos fixos para {selectedMonth}. Os gastos originais serão mantidos intactos. Os novos gastos virão sem pagamentos e com datas atualizadas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="mes-origem">Mês de origem</Label>
+              <Input
+                id="mes-origem"
+                type="month"
+                value={mesOrigem}
+                onChange={(e) => setMesOrigem(e.target.value)}
+                min="2020-01"
+                max="2100-12"
+              />
+              {mesOrigem && (
+                <p className="text-sm text-muted-foreground">
+                  Gastos de <strong>{mesOrigem}</strong> serão duplicados para <strong>{selectedMonth}</strong>
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsDuplicarDialogOpen(false);
+                setMesOrigem('');
+              }}
+              disabled={isDuplicando}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleDuplicarGastos} 
+              disabled={!mesOrigem || mesOrigem === selectedMonth || isDuplicando}
+            >
+              {isDuplicando ? 'Duplicando...' : 'Duplicar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
