@@ -247,7 +247,9 @@ export const migrateAllGastosFlatToPeriod = async (userId: string, targetPeriod:
     if (data && data.descricao && data.valor != null) {
       const g: any = { id: d.id, ...data, periodo: targetPeriod };
       jobs.push(setDoc(doc(db, 'users', userId, 'gastosFixos', targetPeriod, 'itens', g.id), g));
-      jobs.push(deleteDoc(doc(db, 'users', userId, 'gastosFixos', d.id)).catch(() => {} as any) as any);
+      jobs.push(
+        deleteDoc(doc(db, 'users', userId, 'gastosFixos', d.id)).catch(() => undefined)
+      );
     }
   });
   if (jobs.length) await Promise.all(jobs);
