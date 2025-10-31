@@ -743,3 +743,17 @@ export const saveCofrinhoMovimento = async (
   Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
   await setDoc(doc(db, 'users', userId, 'cofrinhos', cofrinhoId, 'movimentos', periodo, 'itens', movimento.id), payload);
 };
+
+export const subscribeCofrinhoMovimentos = (
+  userId: string,
+  cofrinhoId: string,
+  periodo: string,
+  callback: (movs: CofrinhoMovimento[]) => void
+) => {
+  const q = query(collection(db, 'users', userId, 'cofrinhos', cofrinhoId, 'movimentos', periodo, 'itens'));
+  return onSnapshot(q, (snap) => {
+    const arr: CofrinhoMovimento[] = [];
+    snap.forEach((d) => arr.push({ id: d.id, ...(d.data() as any) } as CofrinhoMovimento));
+    callback(arr);
+  });
+};
