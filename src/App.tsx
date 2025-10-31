@@ -430,6 +430,16 @@ function AppContent() {
     return <LoadingSpinner message="Carregando aplicação..." />;
   }
 
+  // Verificar se está vindo de um link de finalização de cadastro
+  const urlParams = new URLSearchParams(window.location.search);
+  const mode = urlParams.get('mode');
+  const hasFirebaseLinkParams = urlParams.has('oobCode') || urlParams.has('apiKey') || urlParams.has('continueUrl');
+  
+  // Se está vindo de um link de finalização (mesmo que já esteja autenticado), mostrar tela de finalização
+  if (mode === 'finalizeSignUp' || (hasFirebaseLinkParams && mode === 'finalizeSignUp')) {
+    return <AuthWrapper />;
+  }
+
   // Se não estiver logado, mostrar tela de autenticação
   if (!currentUser) {
     return <AuthWrapper />;
