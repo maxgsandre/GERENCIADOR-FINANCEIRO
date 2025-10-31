@@ -802,26 +802,137 @@ export const subscribeToCreditCards = (userId: string, callback: (cards: CartaoC
   });
 };
 
-// Compras de Cartão (flat por usuário; relaciona por cardId)
+// =======================
+// Compras de Cartão - Estrutura hierárquica
+// Estrutura: users/{uid}/creditCards/{cardId}/compras/{purchaseId}
+// =======================
+
+// Migrar compra antiga (flat) para dentro do cartão
+const migratePurchaseToCard = async (userId: string, purchase: CompraCartao) => {
+  try {
+    if (!purchase.cardId) return;
+    const payload: any = { ...purchase };
+    Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+    await setDoc(doc(db, 'users', userId, 'creditCards', purchase.cardId, 'compras', purchase.id), payload);
+    // Apagar doc antigo
+    try { await deleteDoc(doc(db, 'users', userId, 'creditCardPurchases', purchase.id)); } catch {}
+  } catch {}
+};
+
 export const saveCreditCardPurchase = async (userId: string, purchase: CompraCartao) => {
-  await setDoc(doc(db, 'users', userId, 'creditCardPurchases', purchase.id), purchase);
+  if (!purchase.cardId) throw new Error('Compra deve estar vinculada a um cartão');
+  
+  const payload: any = { ...purchase };
+  Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+  await setDoc(doc(db, 'users', userId, 'creditCards', purchase.cardId, 'compras', purchase.id), payload);
+  
   // Materializar parcelas por competência em faturas mensais do cartão
   try {
     await mirrorPurchaseToInvoices(userId, purchase);
   } catch {}
 };
 
-export const deleteCreditCardPurchase = async (userId: string, purchaseId: string) => {
-  await deleteDoc(doc(db, 'users', userId, 'creditCardPurchases', purchaseId));
+export const deleteCreditCardPurchase = async (userId: string, purchaseId: string, cardId?: string) => {
+  if (cardId) {
+    // Deletar direto se souber o cardId
+    await deleteDoc(doc(db, 'users', userId, 'creditCards', cardId, 'compras', purchaseId));
+    // Limpar itens de fatura relacionados
+    const now = new Date();
+    const tasks: Promise<void>[] = [];
+    for (let i = -12; i <= 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const q = query(collection(db, 'users', userId, 'creditCards', cardId, 'faturas', ym, 'itens'));
+      getDocs(q).then((snap) => {
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (data.purchaseId === purchaseId || docSnap.id.startsWith(`${purchaseId}-`)) {
+            tasks.push(deleteDoc(docSnap.ref).catch(() => undefined));
+          }
+        });
+      }).catch(() => {});
+    }
+    if (tasks.length) await Promise.all(tasks);
+    return;
+  }
+  
+  // Sem cardId: buscar em todos os cartões
+  const cardsCol = collection(db, 'users', userId, 'creditCards');
+  const cardsSnap = await getDocs(cardsCol);
+  const tasks: Promise<void>[] = [];
+  cardsSnap.forEach((cardDoc) => {
+    tasks.push(deleteDoc(doc(db, 'users', userId, 'creditCards', cardDoc.id, 'compras', purchaseId)).catch(() => undefined));
+  });
+  await Promise.all(tasks);
 };
 
 export const subscribeToCreditCardPurchases = (userId: string, callback: (purchases: CompraCartao[]) => void) => {
-  const q = query(collection(db, 'users', userId, 'creditCardPurchases'));
-  return onSnapshot(q, (snapshot) => {
-    const purchases: CompraCartao[] = [];
-    snapshot.forEach((doc) => purchases.push({ id: doc.id, ...doc.data() } as CompraCartao));
-    callback(purchases);
+  const unsubscribers: Array<() => void> = [];
+  const purchasesByCard = new Map<string, CompraCartao[]>();
+  const cardListeners = new Map<string, () => void>();
+  
+  const emitir = () => {
+    const all: CompraCartao[] = [];
+    purchasesByCard.forEach((arr) => all.push(...arr));
+    callback(all);
+  };
+  
+  // Ouvir compras de todos os cartões
+  const cardsCol = collection(db, 'users', userId, 'creditCards');
+  const cardsUnsub = onSnapshot(cardsCol, (cardsSnap) => {
+    const cardIds = new Set<string>();
+    
+    // Para cada cartão, assinar suas compras
+    cardsSnap.forEach((cardDoc) => {
+      const cardId = cardDoc.id;
+      cardIds.add(cardId);
+      
+      // Só criar listener se não existir
+      if (!cardListeners.has(cardId)) {
+        const comprasCol = collection(db, 'users', userId, 'creditCards', cardId, 'compras');
+        const comprasUnsub = onSnapshot(comprasCol, (comprasSnap) => {
+          const compras: CompraCartao[] = [];
+          comprasSnap.forEach((doc) => compras.push({ id: doc.id, ...doc.data() } as CompraCartao));
+          purchasesByCard.set(cardId, compras);
+          emitir();
+        });
+        cardListeners.set(cardId, comprasUnsub);
+        unsubscribers.push(comprasUnsub);
+      }
+    });
+    
+    // Remover listeners de cartões que não existem mais
+    cardListeners.forEach((unsub, cardId) => {
+      if (!cardIds.has(cardId)) {
+        unsub();
+        cardListeners.delete(cardId);
+        purchasesByCard.delete(cardId);
+      }
+    });
+    
+    emitir();
   });
+  unsubscribers.push(cardsUnsub);
+  
+  // Listener para coleção antiga (flat) para migração automática
+  const oldQ = query(collection(db, 'users', userId, 'creditCardPurchases'));
+  const oldUnsub = onSnapshot(oldQ, async (snapshot) => {
+    const jobs: Promise<void>[] = [];
+    snapshot.forEach((d) => {
+      const data = d.data() as any;
+      if (data && data.cardId && data.descricao) {
+        const purchase: CompraCartao = { id: d.id, ...data } as any;
+        jobs.push(migratePurchaseToCard(userId, purchase));
+      }
+    });
+    if (jobs.length) await Promise.all(jobs).catch(() => {});
+  });
+  unsubscribers.push(oldUnsub);
+  
+  return () => {
+    cardListeners.forEach((unsub) => unsub());
+    unsubscribers.forEach((u) => u());
+  };
 };
 
 // =======================
