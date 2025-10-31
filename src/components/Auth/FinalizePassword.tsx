@@ -6,9 +6,10 @@ import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Eye, EyeOff, Lock, Mail, User } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { auth } from '../../lib/firebase';
 
 export default function FinalizePassword() {
-  const { finalizeSignUp } = useAuth();
+  const { finalizeSignUp, currentUser } = useAuth();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const [email, setEmail] = useState<string>(() => localStorage.getItem('signup_email') || '');
   const [name, setName] = useState<string>(() => localStorage.getItem('signup_name') || '');
@@ -20,9 +21,20 @@ export default function FinalizePassword() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Garante que estamos vindo de um link
-    if (params.get('mode') !== 'finalizeSignUp') return;
-  }, [params]);
+    // Se já estiver autenticado, pega o email do usuário autenticado
+    if (currentUser?.email) {
+      setEmail(currentUser.email);
+    }
+    
+    // Verifica se é um link válido do Firebase (mesmo sem o mode na URL)
+    const hasFirebaseLink = params.has('oobCode') || params.has('apiKey') || window.location.href.includes('mode=finalizeSignUp');
+    const mode = params.get('mode');
+    
+    // Se não tiver o email e não for um link válido, pode ser um erro
+    if (!email && !hasFirebaseLink && mode !== 'finalizeSignUp' && !currentUser) {
+      setError('Link inválido. Por favor, solicite um novo link de cadastro.');
+    }
+  }, [params, email, currentUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,16 +53,37 @@ export default function FinalizePassword() {
     try {
       setError('');
       setLoading(true);
-      await finalizeSignUp(email, password, name || undefined);
+      
+      // Se já estiver autenticado (Firebase processou o link), tenta vincular senha diretamente
+      if (currentUser && currentUser.email === email) {
+        const { EmailAuthProvider, linkWithCredential, updateProfile } = await import('firebase/auth');
+        const credential = EmailAuthProvider.credential(email, password);
+        await linkWithCredential(currentUser, credential);
+        if (name) {
+          await updateProfile(currentUser, { displayName: name });
+        }
+      } else {
+        // Caso contrário, usa o método padrão
+        await finalizeSignUp(email, password, name || undefined);
+      }
+      
       // Limpa dados temporários
       localStorage.removeItem('signup_email');
       localStorage.removeItem('signup_name');
+      
       // Redireciona para app (remove query)
       const url = new URL(window.location.href);
       url.search = '';
       window.location.href = url.toString();
     } catch (e: any) {
-      setError('Não foi possível finalizar o cadastro. O link pode ter expirado.');
+      console.error('Erro ao finalizar cadastro:', e);
+      if (e.code === 'auth/credential-already-in-use') {
+        setError('Esta senha já está vinculada a outra conta.');
+      } else if (e.code === 'auth/invalid-action-code') {
+        setError('Link inválido ou expirado. Solicite um novo link de cadastro.');
+      } else {
+        setError(e.message || 'Não foi possível finalizar o cadastro. O link pode ter expirado.');
+      }
     } finally {
       setLoading(false);
     }
@@ -83,8 +116,9 @@ export default function FinalizePassword() {
                   placeholder="seu@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
-                  required
+                  className="pl-10 bg-muted/50"
+                  readOnly
+                  disabled
                 />
               </div>
             </div>
