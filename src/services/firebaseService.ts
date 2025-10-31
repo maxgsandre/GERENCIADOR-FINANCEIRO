@@ -668,3 +668,30 @@ export const subscribeToCreditCardPurchases = (userId: string, callback: (purcha
     callback(purchases);
   });
 };
+
+// =======================
+// Cofrinhos - Movimentos por mês (aportes/retiradas)
+// Estrutura: users/{uid}/cofrinhos/{cofrinhoId}/movimentos/{YYYY-MM}/itens/{movId}
+// =======================
+export type CofrinhoMovimento = {
+  id: string;
+  tipo: 'aporte' | 'retirada';
+  valor: number;
+  data: string; // YYYY-MM-DD
+  hora?: string; // HH:mm
+  periodo?: string; // YYYY-MM
+};
+
+export const saveCofrinhoMovimento = async (
+  userId: string,
+  cofrinhoId: string,
+  movimento: CofrinhoMovimento
+) => {
+  const d = new Date(movimento.data + 'T00:00:00');
+  const periodo = isNaN(d.getTime())
+    ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const payload: any = { ...movimento, periodo };
+  Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+  await setDoc(doc(db, 'users', userId, 'cofrinhos', cofrinhoId, 'movimentos', periodo, 'itens', movimento.id), payload);
+};

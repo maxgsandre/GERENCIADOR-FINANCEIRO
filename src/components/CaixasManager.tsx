@@ -244,6 +244,18 @@ export default function CaixasManager() {
       aportes: [...(cofrinhoAporte.aportes || []), { data: aporteData, hora: aporteHora, valor }],
     };
     await saveCofrinho(atualizado);
+    // Registrar movimento mensal do cofrinho (aporte/retirada)
+    try {
+      const svc = await import('../services/firebaseService');
+      const movId = ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `${Date.now()}`);
+      await (svc as any).saveCofrinhoMovimento?.((context as any).currentUser?.uid, atualizado.id, {
+        id: movId,
+        tipo: valor >= 0 ? 'aporte' : 'retirada',
+        valor,
+        data: aporteData,
+        hora: aporteHora,
+      } as any);
+    } catch {}
     setCofrinhos(prev => prev.map(c => c.id === atualizado.id ? atualizado : c));
     setIsAporteOpen(false);
     setCofrinhoAporte(null);
