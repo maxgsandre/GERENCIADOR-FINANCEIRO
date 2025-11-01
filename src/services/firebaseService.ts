@@ -398,7 +398,10 @@ const migrateDividaToSubcollection = async (userId: string, divida: Divida) => {
       const totalParcelasPagas = divida.parcelasPagas || 0;
       
       for (let i = 0; i < parcelas; i++) {
-        const dataParcela = new Date(dataVenc.getFullYear(), dataVenc.getMonth() + i, dataVenc.getDate());
+        // Criar data da parcela adicionando i meses
+        const dataParcela = new Date(dataVenc);
+        dataParcela.setMonth(dataParcela.getMonth() + i);
+        // getMonth() retorna 0-11, então adicionamos 1 para obter 1-12
         const periodo = `${dataParcela.getFullYear()}-${String(dataParcela.getMonth() + 1).padStart(2, '0')}`;
         const parcelaId = `${divida.id}-${i + 1}`;
         const parcelaPaga = i < totalParcelasPagas;
@@ -447,7 +450,10 @@ export const saveDivida = async (userId: string, divida: Divida) => {
     const totalParcelasPagas = divida.parcelasPagas || 0;
     
     for (let i = 0; i < parcelas; i++) {
-      const dataParcela = new Date(dataVenc.getFullYear(), dataVenc.getMonth() + i, dataVenc.getDate());
+      // Criar data da parcela adicionando i meses
+      const dataParcela = new Date(dataVenc);
+      dataParcela.setMonth(dataParcela.getMonth() + i);
+      // getMonth() retorna 0-11, então adicionamos 1 para obter 1-12
       const periodo = `${dataParcela.getFullYear()}-${String(dataParcela.getMonth() + 1).padStart(2, '0')}`;
       const parcelaId = `${divida.id}-${i + 1}`;
       const parcelaPaga = i < totalParcelasPagas;

@@ -180,15 +180,8 @@ export default function DividasManager() {
         } as any;
 
         await saveDivida(novaDivida);
-        setDividas(prev => {
-          const index = prev.findIndex(d => d.id === novaDivida.id);
-          if (index >= 0) {
-            const clone = [...prev];
-            clone[index] = novaDivida;
-            return clone;
-          }
-          return [...prev, novaDivida];
-        });
+        // Não precisa atualizar manualmente o estado - o subscribeToDividas já faz isso automaticamente
+        // Isso evita duplicatas quando salva dívidas parceladas (que criam múltiplas parcelas)
 
     }
 
@@ -1266,7 +1259,14 @@ export default function DividasManager() {
     return y0 === selY && m0 === selM;
   });
 
-  const allDividasForView: DividaView[] = dividasFiltradas.map((d) => {
+  // Remover duplicatas: manter apenas a última ocorrência de cada ID
+  const dividasUnicas = new Map<string, Divida>();
+  dividasFiltradas.forEach((d) => {
+    dividasUnicas.set(d.id, d);
+  });
+  const dividasFiltradasUnicas = Array.from(dividasUnicas.values());
+
+  const allDividasForView: DividaView[] = dividasFiltradasUnicas.map((d) => {
     const original = new Date(d.dataVencimento + 'T00:00:00');
     const dia = original.getDate();
     const nova = new Date(anoSelecionado, mesSelecionado - 1, dia);
@@ -2433,7 +2433,7 @@ export default function DividasManager() {
         <CardHeader>
           <CardTitle>Lista de Dívidas</CardTitle>
           <CardDescription>
-            {dividas.length} dívida(s) registrada(s)
+            {listDividasForMonth.length} dívida(s) com vencimento em {selectedMonth.split('-').reverse().join('/')}
           </CardDescription>
         </CardHeader>
         <CardContent>
