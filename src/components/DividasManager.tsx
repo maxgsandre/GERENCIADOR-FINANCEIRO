@@ -1080,6 +1080,31 @@ export default function DividasManager() {
     return { status: '⏳ Pendente', cor: 'text-red-600' };
   };
 
+  // Função para calcular percentual de progresso baseado em PARCELAS (não em valor)
+  const getPercentualProgresso = (divida: Divida): number => {
+    // Se é dívida distribuída por mês (tem parcelaIndex e parcelaTotal)
+    if (divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+      // Progresso desta parcela individual: 0% ou 100% baseado se está paga
+      const valorPagoParcela = divida.valorPago || 0;
+      const valorParcela = divida.valorParcela || divida.valorTotal;
+      const parcelaPaga = valorPagoParcela >= valorParcela;
+      return parcelaPaga ? 100 : 0;
+    }
+    
+    // Se é dívida parcelada (não distribuída)
+    if (divida.tipo === 'parcelada' && divida.parcelas > 1) {
+      const parcelasPagas = divida.parcelasPagas || 0;
+      const totalParcelas = divida.parcelas || 1;
+      return totalParcelas > 0 ? (parcelasPagas / totalParcelas) * 100 : 0;
+    }
+    
+    // Se é dívida à vista (tipo 'total')
+    // Para dívidas à vista, continua usando valor (já que não tem parcelas)
+    const valorPago = divida.valorPago || 0;
+    const valorTotal = divida.valorTotal || 0;
+    return valorTotal > 0 ? (valorPago / valorTotal) * 100 : 0;
+  };
+
   const getStatusParcela = (divida: Divida) => {
     const valorPago = divida.valorPago || 0;
     const valorTotal = divida.valorTotal;
@@ -1279,28 +1304,59 @@ export default function DividasManager() {
 
 
   // Calcular totais das dívidas
-  const totalDividasNormais = dividas.reduce((sum, d) => sum + d.valorTotal, 0);
-  const totalPagoNormais = dividas.reduce((sum, d) => sum + d.valorPago, 0);
+  // Para dívidas distribuídas por mês (com parcelaIndex), cada parcela tem valorTotal = valorParcela
+  // Precisamos agrupar por dívida base e calcular o valorTotal completo
+  const dividasAgrupadas = new Map<string, Divida[]>();
   
-  // Calcular totais das faturas dos cartões
-  const totalFaturasCartao = (cartoes || []).reduce((sum, cartao) => {
-    return sum + cardInvoiceTotalForSelectedMonth(cartao.id);
+  dividas.forEach((d) => {
+    // Se tem parcelaIndex, usar um ID base sem os índices
+    if (d.parcelaIndex !== undefined && d.parcelaTotal !== undefined) {
+      // Extrair ID base (remover -{parcelaIndex}-{parcelaTotal} do final)
+      const partes = d.id.split('-');
+      const baseId = partes.slice(0, -2).join('-');
+      if (!dividasAgrupadas.has(baseId)) {
+        dividasAgrupadas.set(baseId, []);
+      }
+      dividasAgrupadas.get(baseId)!.push(d);
+    } else {
+      // Dívida não distribuída
+      dividasAgrupadas.set(d.id, [d]);
+    }
+  });
+  
+  const totalDividasNormais = Array.from(dividasAgrupadas.values()).reduce((sum, grupo) => {
+    const primeiraDivida = grupo[0];
+    // Se é dívida distribuída, calcular valorTotal completo: parcelaTotal * valorParcela
+    if (primeiraDivida.parcelaIndex !== undefined && primeiraDivida.parcelaTotal !== undefined) {
+      const valorParcela = primeiraDivida.valorParcela || primeiraDivida.valorTotal;
+      const parcelaTotal = primeiraDivida.parcelaTotal;
+      return sum + (valorParcela * parcelaTotal);
+    }
+    // Se não é distribuída, usar valorTotal diretamente
+    return sum + (primeiraDivida.valorTotal || 0);
   }, 0);
   
-  // Calcular total pago das faturas de cartão baseado no status "pago"
-  const totalPagoCartao = (cartoes || []).reduce((sum, cartao) => {
-    const statusCartao = getStatusCartao(cartao.id);
-    // Se o cartão está marcado como "pago", incluir o valor da fatura no total pago
-    if (statusCartao.status === '✓ Pago') {
-      return sum + cardInvoiceTotalForSelectedMonth(cartao.id);
-    }
-    return sum;
+  const totalPagoNormais = Array.from(dividasAgrupadas.values()).reduce((sum, grupo) => {
+    // Somar valorPago de todas as parcelas do grupo
+    return sum + grupo.reduce((s, d) => s + (d.valorPago || 0), 0);
+  }, 0);
+  
+  // Calcular totais das faturas dos cartões (somar TODAS as parcelas de TODAS as compras)
+  const totalFaturasCartao = (comprasCartao || []).reduce((sum, compra) => {
+    return sum + (compra.valorTotal || 0);
+  }, 0);
+  
+  // Calcular total pago das compras de cartão baseado em parcelas pagas
+  const totalPagoCartao = (comprasCartao || []).reduce((sum, compra) => {
+    const parcelasPagas = compra.parcelasPagas || 0;
+    const valorPago = parcelasPagas * (compra.valorParcela || 0);
+    return sum + valorPago;
   }, 0);
   
   // Totais combinados
   const totalDividas = totalDividasNormais + totalFaturasCartao;
   const totalPago = totalPagoNormais + totalPagoCartao;
-  const totalRestante = totalDividas - totalPago;
+  const totalRestante = Math.max(0, totalDividas - totalPago);
 
   // Dívidas próximas do vencimento (próximos 30 dias)
   const hoje = new Date();
@@ -2354,11 +2410,20 @@ export default function DividasManager() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            <Progress value={totalDividas > 0 ? (totalPago / totalDividas) * 100 : 0} />
-            <div className="flex justify-between text-sm text-muted-foreground">
-              <span>R$ {totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} pago</span>
-              <span>{totalDividas > 0 ? ((totalPago / totalDividas) * 100).toFixed(1) : 0}%</span>
-            </div>
+            {(() => {
+              const percentualGeral = totalDividas > 0 && isFinite(totalDividas) && isFinite(totalPago) 
+                ? (totalPago / totalDividas) * 100 
+                : 0;
+              return (
+                <>
+                  <Progress value={Math.max(0, Math.min(100, percentualGeral))} />
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>R$ {isFinite(totalPago) ? totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'} pago</span>
+                    <span>{isFinite(percentualGeral) ? percentualGeral.toFixed(1) : '0,0'}%</span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </CardContent>
       </Card>
@@ -2375,7 +2440,7 @@ export default function DividasManager() {
           {/* Versão mobile - Lista de cards */}
           <div className="md:hidden space-y-3">
             {listDividasForMonth.map((divida) => {
-              const percentualPago = (divida.valorPago / divida.valorTotal) * 100;
+              const percentualPago = getPercentualProgresso(divida);
               const restante = divida.valorTotal - divida.valorPago;
               const isQuitada = divida.valorPago >= divida.valorTotal;
               const parcelaMes = getMonthlyDue(divida);
@@ -2482,7 +2547,7 @@ export default function DividasManager() {
               </TableHeader>
               <TableBody>
                 {listDividasForMonth.map((divida) => {
-                  const percentualPago = (divida.valorPago / divida.valorTotal) * 100;
+                  const percentualPago = getPercentualProgresso(divida);
                   const restante = divida.valorTotal - divida.valorPago;
                   const isQuitada = divida.valorPago >= divida.valorTotal;
                   const parcelaMes = getMonthlyDue(divida);
