@@ -394,11 +394,14 @@ const migrateDividaToSubcollection = async (userId: string, divida: Divida) => {
       const valorParcela = divida.valorParcela || (divida.valorTotal / parcelas);
       const jobs: Promise<void>[] = [];
       
+      // Para dívidas distribuídas, manter parcelasPagas com o TOTAL de parcelas pagas (não apenas 1 ou 0)
+      const totalParcelasPagas = divida.parcelasPagas || 0;
+      
       for (let i = 0; i < parcelas; i++) {
         const dataParcela = new Date(dataVenc.getFullYear(), dataVenc.getMonth() + i, dataVenc.getDate());
         const periodo = `${dataParcela.getFullYear()}-${String(dataParcela.getMonth() + 1).padStart(2, '0')}`;
         const parcelaId = `${divida.id}-${i + 1}`;
-        const parcelaPaga = i < (divida.parcelasPagas || 0);
+        const parcelaPaga = i < totalParcelasPagas;
         
         const item = {
           ...divida,
@@ -407,7 +410,7 @@ const migrateDividaToSubcollection = async (userId: string, divida: Divida) => {
           parcelaTotal: parcelas,
           valorTotal: valorParcela, // valor desta parcela
           valorPago: parcelaPaga ? valorParcela : 0,
-          parcelasPagas: parcelaPaga ? 1 : 0,
+          parcelasPagas: totalParcelasPagas, // Manter o TOTAL de parcelas pagas em todas as parcelas
           dataVencimento: dataParcela.toISOString().split('T')[0],
           periodo,
         } as any;
@@ -440,11 +443,14 @@ export const saveDivida = async (userId: string, divida: Divida) => {
     const valorParcela = divida.valorParcela || (divida.valorTotal / parcelas);
     const jobs: Promise<void>[] = [];
     
+    // Para dívidas distribuídas, manter parcelasPagas com o TOTAL de parcelas pagas (não apenas 1 ou 0)
+    const totalParcelasPagas = divida.parcelasPagas || 0;
+    
     for (let i = 0; i < parcelas; i++) {
       const dataParcela = new Date(dataVenc.getFullYear(), dataVenc.getMonth() + i, dataVenc.getDate());
       const periodo = `${dataParcela.getFullYear()}-${String(dataParcela.getMonth() + 1).padStart(2, '0')}`;
       const parcelaId = `${divida.id}-${i + 1}`;
-      const parcelaPaga = i < (divida.parcelasPagas || 0);
+      const parcelaPaga = i < totalParcelasPagas;
       
       const item: any = {
         ...divida,
@@ -453,7 +459,7 @@ export const saveDivida = async (userId: string, divida: Divida) => {
         parcelaTotal: parcelas,
         valorTotal: valorParcela,
         valorPago: parcelaPaga ? valorParcela : 0,
-        parcelasPagas: parcelaPaga ? 1 : 0,
+        parcelasPagas: totalParcelasPagas, // Manter o TOTAL de parcelas pagas em todas as parcelas
         dataVencimento: dataParcela.toISOString().split('T')[0],
         periodo,
       };
