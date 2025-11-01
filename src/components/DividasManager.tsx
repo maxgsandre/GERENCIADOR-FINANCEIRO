@@ -1082,19 +1082,18 @@ export default function DividasManager() {
 
   // Função para calcular percentual de progresso baseado em PARCELAS (não em valor)
   const getPercentualProgresso = (divida: Divida): number => {
-    // Se é dívida distribuída por mês (tem parcelaIndex e parcelaTotal)
-    if (divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
-      // Progresso desta parcela individual: 0% ou 100% baseado se está paga
-      const valorPagoParcela = divida.valorPago || 0;
-      const valorParcela = divida.valorParcela || divida.valorTotal;
-      const parcelaPaga = valorPagoParcela >= valorParcela;
-      return parcelaPaga ? 100 : 0;
-    }
-    
-    // Se é dívida parcelada (não distribuída)
+    // Se é dívida parcelada (tipo 'parcelada'), calcular: (parcelasPagas / parcelas) * 100
     if (divida.tipo === 'parcelada' && divida.parcelas > 1) {
       const parcelasPagas = divida.parcelasPagas || 0;
       const totalParcelas = divida.parcelas || 1;
+      return totalParcelas > 0 ? (parcelasPagas / totalParcelas) * 100 : 0;
+    }
+    
+    // Se é dívida distribuída por mês (tem parcelaIndex e parcelaTotal)
+    // Mesma lógica: (parcelasPagas / parcelaTotal) * 100
+    if (divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+      const parcelasPagas = divida.parcelasPagas || 0;
+      const totalParcelas = divida.parcelaTotal || 1;
       return totalParcelas > 0 ? (parcelasPagas / totalParcelas) * 100 : 0;
     }
     
@@ -1309,11 +1308,12 @@ export default function DividasManager() {
   const dividasAgrupadas = new Map<string, Divida[]>();
   
   dividas.forEach((d) => {
-    // Se tem parcelaIndex, usar um ID base sem os índices
+    // Se tem parcelaIndex, usar um ID base sem o índice da parcela
     if (d.parcelaIndex !== undefined && d.parcelaTotal !== undefined) {
-      // Extrair ID base (remover -{parcelaIndex}-{parcelaTotal} do final)
+      // Extrair ID base (remover apenas o último segmento que é o índice da parcela)
+      // O ID tem formato: {divida-id}-{parcelaIndex}
       const partes = d.id.split('-');
-      const baseId = partes.slice(0, -2).join('-');
+      const baseId = partes.slice(0, -1).join('-'); // Remove apenas o último segmento
       if (!dividasAgrupadas.has(baseId)) {
         dividasAgrupadas.set(baseId, []);
       }
@@ -2442,7 +2442,11 @@ export default function DividasManager() {
             {listDividasForMonth.map((divida) => {
               const percentualPago = getPercentualProgresso(divida);
               const restante = divida.valorTotal - divida.valorPago;
-              const isQuitada = divida.valorPago >= divida.valorTotal;
+              // Para dívidas distribuídas, só considerar quitada se TODAS as parcelas estão pagas (progresso = 100%)
+              // Para outras dívidas, usar lógica normal
+              const isQuitada = divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined
+                ? percentualPago >= 100
+                : divida.valorPago >= divida.valorTotal;
               const parcelaMes = getMonthlyDue(divida);
               const { status, cor, bg } = getStatusParcela(divida);
               
@@ -2549,7 +2553,11 @@ export default function DividasManager() {
                 {listDividasForMonth.map((divida) => {
                   const percentualPago = getPercentualProgresso(divida);
                   const restante = divida.valorTotal - divida.valorPago;
-                  const isQuitada = divida.valorPago >= divida.valorTotal;
+                  // Para dívidas distribuídas, só considerar quitada se TODAS as parcelas estão pagas (progresso = 100%)
+                  // Para outras dívidas, usar lógica normal
+                  const isQuitada = divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined
+                    ? percentualPago >= 100
+                    : divida.valorPago >= divida.valorTotal;
                   const parcelaMes = getMonthlyDue(divida);
                   
                   return (
