@@ -509,9 +509,7 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       const dataParcela = new Date(anoParcela, mesParcela - 1, Math.min(diaVenc, new Date(anoParcela, mesParcela, 0).getDate()));
       
       const parcelaId = `${idBase}-${parcelaIndex}`;
-      // Determinar se esta parcela específica foi paga
-      // Se parcelasPagas = 6, significa que parcelas 1-6 foram pagas, então parcela 7+ não foi paga
-      const parcelaPaga = parcelaIndex <= totalParcelasPagas && totalParcelasPagas > 0;
+      const parcelaPaga = parcelaIndex <= totalParcelasPagas;
       
       const item: any = {
         ...divida,
@@ -520,17 +518,12 @@ export const saveDivida = async (userId: string, divida: Divida) => {
         parcelaTotal: parcelas,
         valorTotal: divida.valorTotal,  // Valor total da dívida inteira (ex: 12 parcelas * R$ 50 = R$ 600)
         valorParcela: valorParcela,  // Valor desta parcela específica (ex: R$ 50)
-        // valorPago só deve ser preenchido se esta parcela específica já foi paga
-        // IMPORTANTE: definir valorPago DEPOIS do spread para não herdar valor incorreto
         valorPago: parcelaPaga ? valorParcela : 0,
         // NÃO incluir parcelasPagas aqui - cada parcela mostra sua posição (parcelaIndex/parcelaTotal)
         // parcelasPagas só é usado para calcular se esta parcela específica foi paga
         dataVencimento: dataParcela.toISOString().split('T')[0],
         periodo,
       };
-      
-      // Garantir que valorPago está correto (sobrescrever qualquer valor herdado)
-      item.valorPago = parcelaPaga ? valorParcela : 0;
       
       // Remover campos temporários
       delete item.competenciaInicial;
