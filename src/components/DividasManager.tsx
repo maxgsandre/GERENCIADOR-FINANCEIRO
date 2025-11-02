@@ -1105,28 +1105,50 @@ export default function DividasManager() {
     return { status: '⏳ Pendente', cor: 'text-red-600' };
   };
 
-  // Função para calcular percentual de progresso baseado em PARCELAS (não em valor)
+  // Função para calcular percentual de progresso baseado em PARCELAS (parcelaIndex)
   const getPercentualProgresso = (divida: Divida): number => {
-    // Se é dívida parcelada (tipo 'parcelada'), calcular: (parcelasPagas / parcelas) * 100
+    // Para dívidas parceladas com parcelaIndex, usar parcelaIndex como base
+    if (divida.tipo === 'parcelada' && divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+      // Se está na parcela 8 de 12, significa que 7 parcelas já passaram (1-7)
+      const parcelasJaPassaram = divida.parcelaIndex - 1;
+      const totalParcelas = divida.parcelaTotal;
+      return totalParcelas > 0 ? (parcelasJaPassaram / totalParcelas) * 100 : 0;
+    }
+    
+    // Fallback: usar parcelasPagas se não tiver parcelaIndex
     if (divida.tipo === 'parcelada' && divida.parcelas > 1) {
       const parcelasPagas = divida.parcelasPagas || 0;
       const totalParcelas = divida.parcelas || 1;
       return totalParcelas > 0 ? (parcelasPagas / totalParcelas) * 100 : 0;
     }
     
-    // Se é dívida distribuída por mês (tem parcelaIndex e parcelaTotal)
-    // Mesma lógica: (parcelasPagas / parcelaTotal) * 100
-    if (divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
-      const parcelasPagas = divida.parcelasPagas || 0;
-      const totalParcelas = divida.parcelaTotal || 1;
-      return totalParcelas > 0 ? (parcelasPagas / totalParcelas) * 100 : 0;
-    }
-    
-    // Se é dívida à vista (tipo 'total')
-    // Para dívidas à vista, continua usando valor (já que não tem parcelas)
+    // Para dívidas à vista (tipo 'total'), usar valor
     const valorPago = divida.valorPago || 0;
     const valorTotal = divida.valorTotal || 0;
     return valorTotal > 0 ? (valorPago / valorTotal) * 100 : 0;
+  };
+
+  // Função para calcular valor restante baseado em parcelaIndex
+  const getValorRestante = (divida: Divida): number => {
+    // Para dívidas parceladas com parcelaIndex, calcular baseado nas parcelas restantes
+    if (divida.tipo === 'parcelada' && divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+      const parcelaIndex = divida.parcelaIndex;
+      const parcelaTotal = divida.parcelaTotal;
+      const parcelasJaPassaram = parcelaIndex - 1; // Parcelas que já passaram (1 a parcelaIndex-1)
+      const valorParcela = divida.valorParcela || (divida.valorTotal / parcelaTotal);
+      
+      // Calcular valor já "consumido" pelas parcelas que passaram
+      const valorJaPassou = valorParcela * parcelasJaPassaram;
+      
+      // Valor restante = valor total - valor já passou
+      const restante = divida.valorTotal - valorJaPassou;
+      
+      // Garantir que não seja negativo e considerar ajustes de centavos
+      return Math.max(0, Math.round(restante * 100) / 100);
+    }
+    
+    // Fallback: usar valor total - valor pago
+    return Math.max(0, divida.valorTotal - (divida.valorPago || 0));
   };
 
   const getStatusParcela = (divida: Divida) => {
@@ -2545,7 +2567,7 @@ export default function DividasManager() {
           <div className="md:hidden space-y-3">
             {listDividasForMonth.map((divida) => {
               const percentualPago = getPercentualProgresso(divida);
-              const restante = divida.valorTotal - divida.valorPago;
+              const restante = getValorRestante(divida);
               // Para dívidas distribuídas, só considerar quitada se TODAS as parcelas estão pagas (progresso = 100%)
               // Para outras dívidas, usar lógica normal
               const isQuitada = divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined
@@ -2656,7 +2678,7 @@ export default function DividasManager() {
               <TableBody>
                 {listDividasForMonth.map((divida) => {
                   const percentualPago = getPercentualProgresso(divida);
-                  const restante = divida.valorTotal - divida.valorPago;
+                  const restante = getValorRestante(divida);
                   // Para dívidas distribuídas, só considerar quitada se TODAS as parcelas estão pagas (progresso = 100%)
                   // Para outras dívidas, usar lógica normal
                   const isQuitada = divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined
