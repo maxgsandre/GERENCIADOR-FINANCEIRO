@@ -468,7 +468,8 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       }
     }
     
-    // Para dívidas distribuídas, manter parcelasPagas com o TOTAL de parcelas pagas (não apenas 1 ou 0)
+    // Para dívidas parceladas, cada parcela mostra sua posição baseada no mês (não no pagamento)
+    // Parcela 1 sempre no mês inicial, parcela 2 no mês seguinte, etc.
     const totalParcelasPagas = divida.parcelasPagas || 0;
     
     for (let i = 0; i < parcelas; i++) {
@@ -492,11 +493,13 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       const item: any = {
         ...divida,
         id: parcelaId,
-        parcelaIndex: i + 1,  // IMPORTANTE: sequência correta (1, 2, 3...)
+        parcelaIndex: i + 1,  // Posição da parcela baseada no mês: 1, 2, 3...
         parcelaTotal: parcelas,
-        valorTotal: valorParcela,  // Valor desta parcela específica
+        valorTotal: divida.valorTotal,  // Valor total da dívida inteira (ex: 10 parcelas * R$ 100 = R$ 1000)
+        valorParcela: valorParcela,  // Valor desta parcela específica (ex: R$ 100)
         valorPago: parcelaPaga ? valorParcela : 0,
-        parcelasPagas: totalParcelasPagas, // Manter o TOTAL de parcelas pagas em todas as parcelas
+        // NÃO incluir parcelasPagas aqui - cada parcela mostra sua posição (parcelaIndex/parcelaTotal)
+        // parcelasPagas só é usado para calcular se esta parcela específica foi paga
         dataVencimento: dataParcela.toISOString().split('T')[0],
         periodo,
       };
