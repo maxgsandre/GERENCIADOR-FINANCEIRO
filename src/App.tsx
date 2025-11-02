@@ -327,14 +327,19 @@ function AppContent() {
   const saveDivida = async (divida: Divida) => {
     if (currentUser) {
       await firebaseService.saveDivida(currentUser.uid, divida);
-      // Atualizar estado local imediatamente
-      setDividas(prev => {
-        const exists = prev.some(d => d.id === divida.id);
-        if (exists) {
-          return prev.map(d => d.id === divida.id ? divida : d);
-        }
-        return [...prev, divida];
-      });
+      // Para dívidas parceladas, não atualizar estado local - o listener subscribeToDividas já faz isso
+      // com as parcelas corretas (cada uma com seu próprio ID). Atualizar manualmente causaria duplicação.
+      if (divida.tipo !== 'parcelada' || divida.parcelas === 1) {
+        // Apenas para dívidas não parceladas ou parceladas com 1 parcela
+        setDividas(prev => {
+          const exists = prev.some(d => d.id === divida.id);
+          if (exists) {
+            return prev.map(d => d.id === divida.id ? divida : d);
+          }
+          return [...prev, divida];
+        });
+      }
+      // Para dívidas parceladas com múltiplas parcelas, deixar o listener atualizar
     }
   };
 

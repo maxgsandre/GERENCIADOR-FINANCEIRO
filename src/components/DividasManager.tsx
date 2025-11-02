@@ -657,7 +657,10 @@ export default function DividasManager() {
         };
 
         await saveDivida(atualizada);
-        setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
+        // Para dívidas parceladas, deixar o listener atualizar para evitar duplicação
+        if (atualizada.tipo !== 'parcelada' || atualizada.parcelas === 1) {
+          setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
+        }
 
         await (saveTransacao && saveTransacao({
           id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
@@ -778,7 +781,10 @@ export default function DividasManager() {
         };
 
         await saveDivida(atualizada);
-        setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
+        // Para dívidas parceladas, deixar o listener atualizar para evitar duplicação
+        if (atualizada.tipo !== 'parcelada' || atualizada.parcelas === 1) {
+          setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
+        }
 
         // Criar transação de estorno
         await (saveTransacao && saveTransacao({
