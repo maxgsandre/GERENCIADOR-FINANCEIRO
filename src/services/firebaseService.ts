@@ -446,6 +446,20 @@ export const saveDivida = async (userId: string, divida: Divida) => {
     const valorParcela = divida.valorParcela || (divida.valorTotal / parcelas);
     const jobs: Promise<void>[] = [];
     
+    // IMPORTANTE: Extrair ID base correto
+    // Se o ID já contém sufixo numérico (ex: "divida-id-23"), extrair apenas a parte base
+    let idBase = divida.id;
+    if (divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+      // Se já tem parcelaIndex, o ID provavelmente já está no formato "base-index"
+      // Tentar extrair o ID base removendo o último segmento numérico
+      const partes = divida.id.split('-');
+      const ultimo = partes[partes.length - 1];
+      if (/^\d+$/.test(ultimo)) {
+        // Se o último segmento é numérico, remover para obter o ID base
+        idBase = partes.slice(0, -1).join('-');
+      }
+    }
+    
     // Para dívidas distribuídas, manter parcelasPagas com o TOTAL de parcelas pagas (não apenas 1 ou 0)
     const totalParcelasPagas = divida.parcelasPagas || 0;
     
@@ -455,7 +469,7 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       dataParcela.setMonth(dataParcela.getMonth() + i);
       // getMonth() retorna 0-11, então adicionamos 1 para obter 1-12
       const periodo = `${dataParcela.getFullYear()}-${String(dataParcela.getMonth() + 1).padStart(2, '0')}`;
-      const parcelaId = `${divida.id}-${i + 1}`;
+      const parcelaId = `${idBase}-${i + 1}`;
       const parcelaPaga = i < totalParcelasPagas;
       
       const item: any = {
