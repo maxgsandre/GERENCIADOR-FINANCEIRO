@@ -42,8 +42,10 @@ export const getMonthlyDue = (d: Divida | CompraCartao, selectedMonth: string): 
 
 // Função para calcular valor pago no mês (considera pagamentos via transações)
 export const getMonthlyPaid = (d: Divida | CompraCartao, transacoes: any[], selectedMonth: string, cartoes?: any[]): number => {
-  // NOTA: Dívidas NÃO têm campo 'pago', apenas 'valorPago'. Esta verificação foi removida.
-  // Para dívidas, o cálculo é baseado apenas em transações de pagamento.
+  // Se é uma dívida marcada como paga diretamente, retorna o valor devido no mês
+  if ('pago' in d && d.pago) {
+    return getMonthlyDue(d, selectedMonth);
+  }
   
   // Para compras de cartão mapeadas como dívidas, usar lógica de fatura
   if (d.id && d.id.includes('purchase:')) {
@@ -72,24 +74,13 @@ export const getMonthlyPaid = (d: Divida | CompraCartao, transacoes: any[], sele
     return 0;
   }
   
-  // Para dívidas normais, verificar valorPago do documento primeiro
-  // Se o documento tem valorPago >= parcelaMes, retornar o valor devido
-  const parcelaMes = getMonthlyDue(d, selectedMonth);
-  if (parcelaMes > 0 && 'valorPago' in d && (d.valorPago || 0) >= parcelaMes) {
-    return parcelaMes;
-  }
-  
-  // Se não, buscar transações de pagamento
+  // Para dívidas normais, buscar transações de pagamento
   const descricaoBusca = `Pagamento dívida: ${d.descricao}`;
   const transacoesPagamento = transacoes.filter(t => 
     t.descricao === descricaoBusca
   );
   
-  const totalTransacoes = transacoesPagamento.reduce((sum, t) => sum + t.valor, 0);
-  
-  // Retornar o menor entre: total de transações ou parcelaMes
-  // Isso evita que transações de outras parcelas sejam contadas incorretamente
-  return Math.min(totalTransacoes, parcelaMes > 0 ? parcelaMes : totalTransacoes);
+  return transacoesPagamento.reduce((sum, t) => sum + t.valor, 0);
 };
 
 // Função para mapear compras de cartão como dívidas
