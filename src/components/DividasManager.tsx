@@ -1180,8 +1180,10 @@ export default function DividasManager() {
   };
 
   const getMonthlyPaid = (d: Divida): number => {
-    // NOTA: Dívidas NÃO têm campo 'pago', apenas 'valorPago'. Esta verificação foi removida.
-    // Para dívidas, o cálculo é baseado apenas em transações de pagamento ou valorPago da parcela.
+    if (d.pago) {
+      const parcelaMes = getMonthlyDue(d);
+      return parcelaMes;
+    }
     
     const transacoesDivida = (transacoes as any[]).filter(t => 
       t.descricao === `Pagamento dívida: ${d.descricao}`
