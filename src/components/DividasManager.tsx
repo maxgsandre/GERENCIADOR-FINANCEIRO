@@ -2528,7 +2528,21 @@ export default function DividasManager() {
                     
                     <div className="text-right space-y-1">
                       <p className="text-sm font-medium">
-                        R$ {divida.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        {(() => {
+                          // Para dívidas parceladas distribuídas, calcular o valor total (soma de todas as parcelas)
+                          let valorTotalExibir = divida.valorTotal || 0;
+                          if (divida.tipo === 'parcelada' && divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+                            // Se for parcela distribuída, calcular: totalParcelas × valorParcela
+                            const totalParcelas = divida.parcelaTotal || divida.parcelas || 1;
+                            const valorParcela = divida.valorParcela || 0;
+                            // Se valorTotal ainda está com valor da parcela (dívida antiga), recalcular
+                            // Senão usar o valorTotal que já está correto
+                            if (valorTotalExibir <= valorParcela || (valorTotalExibir === valorParcela && totalParcelas > 1)) {
+                              valorTotalExibir = totalParcelas * valorParcela;
+                            }
+                          }
+                          return `R$ ${valorTotalExibir.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                        })()}
                       </p>
                       {parcelaMes > 0 && (
                         <div className={`text-xs ${bg} ${cor} px-2 py-1 rounded`}>
@@ -2672,7 +2686,21 @@ export default function DividasManager() {
                         R$ {parcelaMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        R$ {divida.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        {(() => {
+                          // Para dívidas parceladas distribuídas, calcular o valor total (soma de todas as parcelas)
+                          let valorTotalExibir = divida.valorTotal || 0;
+                          if (divida.tipo === 'parcelada' && divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+                            // Se for parcela distribuída, calcular: totalParcelas × valorParcela
+                            const totalParcelas = divida.parcelaTotal || divida.parcelas || 1;
+                            const valorParcela = divida.valorParcela || 0;
+                            // Se valorTotal ainda está com valor da parcela (dívida antiga), recalcular
+                            // Senão usar o valorTotal que já está correto
+                            if (valorTotalExibir <= valorParcela || (valorTotalExibir === valorParcela && totalParcelas > 1)) {
+                              valorTotalExibir = totalParcelas * valorParcela;
+                            }
+                          }
+                          return `R$ ${valorTotalExibir.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                        })()}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         <span className={restante > 0 ? 'text-red-600' : 'text-green-600'}>
