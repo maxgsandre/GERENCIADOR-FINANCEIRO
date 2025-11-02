@@ -48,6 +48,8 @@ export default function DividasManager() {
   const [isSaving, setIsSaving] = useState(false);
   const [valorPagamentoInput, setValorPagamentoInput] = useState('');
   const [modoPagamento, setModoPagamento] = useState<'pay' | 'refund'>('pay');
+  const [dataPagamento, setDataPagamento] = useState('');
+  const [horaPagamento, setHoraPagamento] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -520,6 +522,9 @@ export default function DividasManager() {
     setDividaSelecionada(null);
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
     setModoPagamento('pay');
+    // Inicializar data e hora do pagamento
+    setDataPagamento(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
+    setHoraPagamento(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }));
     
     // Preencher automaticamente com o valor da parcela do mês
     setTimeout(() => {
@@ -594,6 +599,9 @@ export default function DividasManager() {
     setCompraSelecionada(null);
     setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
     setModoPagamento('refund');
+    // Inicializar data e hora do pagamento
+    setDataPagamento(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
+    setHoraPagamento(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }));
     // Sugerir valor do último pagamento
     setValorPagamentoInput(String((divida.valorPago || 0).toFixed(2)).replace('.', ','));
     setIsPagamentoOpen(true);
@@ -731,6 +739,8 @@ export default function DividasManager() {
     setDividaSelecionada(null);
       setCompraSelecionada(null);
       setValorPagamentoInput('');
+      setDataPagamento('');
+      setHoraPagamento('');
     } catch (error: any) {
       alert('Erro ao processar pagamento: ' + (error.message || error));
     } finally {
@@ -827,6 +837,8 @@ export default function DividasManager() {
       setIsPagamentoOpen(false);
       setDividaSelecionada(null);
       setCompraSelecionada(null);
+      setDataPagamento('');
+      setHoraPagamento('');
       setValorPagamentoInput('');
     } catch (error: any) {
       alert('Erro ao processar estorno: ' + (error.message || error));
@@ -859,8 +871,8 @@ export default function DividasManager() {
             valor: valorPagamento,
             descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
             categoria: 'Cartão de Crédito',
-            data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-            hora: new Date().toTimeString().slice(0,5)
+            data: dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+            hora: horaPagamento || new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
           }));
 
           // Debitar o caixa
@@ -891,7 +903,7 @@ export default function DividasManager() {
           }
         } catch (_error) {
           console.error('Erro ao processar pagamento do cartão');
-          alert('Erro ao processar pagamento: ' + (error as any).message);
+          alert('Erro ao processar pagamento: ' + (_error as any).message);
           return;
         }
       } else {
@@ -922,8 +934,8 @@ export default function DividasManager() {
           valor: valorPagamento,
           descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
           categoria: 'Dívidas',
-          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-          hora: new Date().toTimeString().slice(0,5)
+          data: dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+          hora: horaPagamento || new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
         }));
 
         // Debitar o caixa
@@ -955,8 +967,8 @@ export default function DividasManager() {
           valor: valorPagamento,
           descricao: `Pagamento cartão: ${compra.descricao}`,
           categoria: 'Dívidas',
-          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-          hora: new Date().toTimeString().slice(0,5)
+          data: dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
+          hora: horaPagamento || new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
         }));
 
         // Debitar o caixa
@@ -971,6 +983,8 @@ export default function DividasManager() {
     setIsPagamentoOpen(false);
     setDividaSelecionada(null);
     setCompraSelecionada(null);
+    setDataPagamento('');
+    setHoraPagamento('');
   };
 
   // Helpers de competência mensal
@@ -1701,7 +1715,22 @@ export default function DividasManager() {
               <div className="text-sm mb-1">Caixa selecionado</div>
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">{(caixas.find((c: any) => c.id === caixaPagamento)?.nome) || '—'}</span>
-                <span className="text-muted-foreground">Saldo: R$ {(caixas.find((c: any) => c.id === caixaPagamento)?.saldo || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                <span className="text-muted-foreground">Saldo: R$ {(() => {
+                  const caixa = caixas.find((c: any) => c.id === caixaPagamento);
+                  if (!caixa) return '0,00';
+                  // Exibir o saldo final do mês selecionado, não o saldo persistido
+                  const [yy, mm] = selectedMonth.split('-').map(Number);
+                  const valorInicial = (caixa.initialByMonth && caixa.initialByMonth[selectedMonth]) ?? 0;
+                  const totalMes = (transacoes || [])
+                    .filter((t: any) => t.caixaId === caixa.id)
+                    .filter((t: any) => {
+                      const d = new Date(t.data + 'T00:00:00');
+                      return d.getFullYear() === yy && d.getMonth() === (mm - 1);
+                    })
+                    .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+                  const saldoFinalMes = valorInicial + totalMes;
+                  return saldoFinalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                })()}</span>
               </div>
             </div>
             <div className="space-y-2">
@@ -1716,6 +1745,26 @@ export default function DividasManager() {
                 required
               />
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="dataPagamento">Data do pagamento</Label>
+                <Input
+                  id="dataPagamento"
+                  type="date"
+                  value={dataPagamento}
+                  onChange={(e) => setDataPagamento(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="horaPagamento">Hora do pagamento</Label>
+                <Input
+                  id="horaPagamento"
+                  type="time"
+                  value={horaPagamento}
+                  onChange={(e) => setHoraPagamento(e.target.value)}
+                />
+              </div>
+            </div>
             {caixas && caixas.length > 0 && (
               <div className="space-y-2">
                 <Label>Selecionar Caixa</Label>
@@ -1728,7 +1777,7 @@ export default function DividasManager() {
             )}
             
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsPagamentoOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => { setIsPagamentoOpen(false); setDataPagamento(''); setHoraPagamento(''); }}>
                 Cancelar
               </Button>
               <Button type="submit">
