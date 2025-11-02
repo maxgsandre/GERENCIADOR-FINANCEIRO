@@ -179,6 +179,12 @@ export default function DividasManager() {
           categoria: formData.categoria,
         } as any;
 
+        // Usar o mês selecionado no filtro como competência inicial para novas dívidas
+        // Se for edição, manter comportamento atual (sem competenciaInicial)
+        if (!editingDivida) {
+          (novaDivida as any).competenciaInicial = selectedMonth;
+        }
+
         await saveDivida(novaDivida);
         // Não precisa atualizar manualmente o estado - o subscribeToDividas já faz isso automaticamente
         // Isso evita duplicatas quando salva dívidas parceladas (que criam múltiplas parcelas)
