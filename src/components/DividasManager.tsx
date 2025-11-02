@@ -1053,6 +1053,14 @@ export default function DividasManager() {
 
   const getParcelaDoMes = (divida: Divida) => {
     if (divida.tipo !== 'parcelada') return null;
+    
+    // Se é uma parcela distribuída (tem parcelaIndex), usar o parcelaIndex baseado no mês
+    // Isso garante que cada parcela mostra sua posição correta (1/10, 2/10, 3/10...) independente de pagamento
+    if (divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+      return divida.parcelaIndex;
+    }
+    
+    // Para dívidas parceladas não distribuídas (antigas), usar lógica de parcelasPagas
     const parcelaAtual = (divida.parcelasPagas || 0) + 1;
     if (parcelaAtual < 1 || parcelaAtual > divida.parcelas) return null;
     return parcelaAtual;
@@ -1118,27 +1126,18 @@ export default function DividasManager() {
   };
 
   const getStatusParcela = (divida: Divida) => {
+    // Status baseado em valorPago vs valorParcela (não valorTotal), independente de transações
     const valorPago = divida.valorPago || 0;
-    const valorTotal = divida.valorTotal;
-    const parcelasPagas = divida.parcelasPagas || 0;
-    const totalParcelas = divida.parcelas || 1;
+    // Para parcelas distribuídas, usar valorParcela; para dívidas totais, usar valorTotal
+    const valorParaComparar = divida.valorParcela || divida.valorTotal || 0;
     
-    if (divida.tipo === 'total') {
-      if (valorPago === 0) return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
-      if (valorPago >= valorTotal) return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
-      return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
-    }
-    
-    const parcelaMes = getMonthlyDue(divida, selectedMonth);
-    const parcelaMesPaga = getMonthlyPaid(divida, transacoes, selectedMonth);
-    
-    if (parcelaMesPaga >= parcelaMes && parcelaMes > 0) {
-      return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
-    } else if (parcelaMesPaga > 0 && parcelaMesPaga < parcelaMes) {
-      return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
-    } else {
+    if (valorPago === 0) {
       return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
     }
+    if (valorPago >= valorParaComparar) {
+      return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
+    }
+    return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
   };
 
   const getStatusCompra = (compra: CompraCartao) => {
@@ -2514,7 +2513,9 @@ export default function DividasManager() {
                         {divida.tipo === 'parcelada' 
                           ? (() => {
                               const parcelaDoMes = getParcelaDoMes(divida);
-                              return parcelaDoMes ? `${parcelaDoMes}/${divida.parcelas} parcelas` : `Sem parcela este mês`;
+                              // Usar parcelaTotal se disponível (para parcelas distribuídas), senão usar parcelas
+                              const totalParcelas = (divida as any).parcelaTotal || divida.parcelas;
+                              return parcelaDoMes ? `${parcelaDoMes}/${totalParcelas} parcelas` : `Sem parcela este mês`;
                             })()
                           : 'Valor total'
                         }
@@ -2619,19 +2620,22 @@ export default function DividasManager() {
                     <TableRow key={divida.id} className={isQuitada ? 'opacity-60' : ''}>
                       <TableCell>
                         <div className="flex items-center justify-center">
-                          {parcelaMes > 0 && (
-                            <div className={`${
-                              getMonthlyPaid(divida, transacoes, selectedMonth) >= parcelaMes 
-                                ? 'text-green-600' 
-                                : 'text-red-600'
-                            }`}>
-                              {getMonthlyPaid(divida, transacoes, selectedMonth) >= parcelaMes ? (
-                                <CheckCircle className="h-5 w-5" />
-                              ) : (
-                                <Circle className="h-5 w-5" />
-                              )}
-                            </div>
-                          )}
+                          {parcelaMes > 0 && (() => {
+                            // Status baseado em valorPago vs valorParcela (não valorTotal), independente de transações
+                            const valorPago = divida.valorPago || 0;
+                            const valorParcela = divida.valorParcela || divida.valorTotal || 0;
+                            const isPaga = valorPago > 0 && valorPago >= valorParcela;
+                            
+                            return (
+                              <div className={isPaga ? 'text-green-600' : 'text-red-600'}>
+                                {isPaga ? (
+                                  <CheckCircle className="h-5 w-5" />
+                                ) : (
+                                  <Circle className="h-5 w-5" />
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">
@@ -2642,7 +2646,9 @@ export default function DividasManager() {
                           {divida.tipo === 'parcelada' 
                             ? (() => {
                                 const parcelaDoMes = getParcelaDoMes(divida);
-                                return parcelaDoMes ? `${parcelaDoMes}/${divida.parcelas} parcelas` : `Sem parcela este mês`;
+                                // Usar parcelaTotal se disponível (para parcelas distribuídas), senão usar parcelas
+                                const totalParcelas = (divida as any).parcelaTotal || divida.parcelas;
+                                return parcelaDoMes ? `${parcelaDoMes}/${totalParcelas} parcelas` : `Sem parcela este mês`;
                               })()
                             : 'Valor total'
                           }
