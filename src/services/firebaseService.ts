@@ -440,47 +440,80 @@ export const saveDivida = async (userId: string, divida: Divida) => {
   const dataVenc = new Date(divida.dataVencimento + 'T00:00:00');
   if (isNaN(dataVenc.getTime())) throw new Error('Data de vencimento inválida');
   
+  // Determinar competência inicial: usar a escolhida pelo usuário ou calcular pela data de vencimento
+  let competenciaInicial = (divida as any).competenciaInicial;
+  if (!competenciaInicial) {
+    // Se não foi especificada, usar a data de vencimento
+    competenciaInicial = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const [anoCompetencia, mesCompetencia] = competenciaInicial.split('-').map(Number);
+  
   // Para dívidas parceladas, cada parcela vai para o mês correspondente
   if (divida.tipo === 'parcelada' && divida.parcelas > 1) {
     const parcelas = divida.parcelas || 1;
     const valorParcela = divida.valorParcela || (divida.valorTotal / parcelas);
     const jobs: Promise<void>[] = [];
     
+    // IMPORTANTE: Extrair ID base correto (do commit que funcionava)
+    // Se o ID já contém sufixo numérico (ex: "divida-id-23"), extrair apenas a parte base
+    let idBase = divida.id;
+    if (divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
+      // Se já tem parcelaIndex, o ID provavelmente já está no formato "base-index"
+      // Tentar extrair o ID base removendo o último segmento numérico
+      const partes = divida.id.split('-');
+      const ultimo = partes[partes.length - 1];
+      if (/^\d+$/.test(ultimo)) {
+        // Se o último segmento é numérico, remover para obter o ID base
+        idBase = partes.slice(0, -1).join('-');
+      }
+    }
+    
     // Para dívidas distribuídas, manter parcelasPagas com o TOTAL de parcelas pagas (não apenas 1 ou 0)
     const totalParcelasPagas = divida.parcelasPagas || 0;
     
     for (let i = 0; i < parcelas; i++) {
-      // Criar data da parcela adicionando i meses
-      const dataParcela = new Date(dataVenc);
-      dataParcela.setMonth(dataParcela.getMonth() + i);
-      // getMonth() retorna 0-11, então adicionamos 1 para obter 1-12
-      const periodo = `${dataParcela.getFullYear()}-${String(dataParcela.getMonth() + 1).padStart(2, '0')}`;
-      const parcelaId = `${divida.id}-${i + 1}`;
+      // Calcular período da parcela baseado na competência inicial (não na data de vencimento)
+      let anoParcela = anoCompetencia;
+      let mesParcela = mesCompetencia + i;
+      // Ajustar se passar de dezembro
+      while (mesParcela > 12) {
+        mesParcela -= 12;
+        anoParcela++;
+      }
+      const periodo = `${anoParcela}-${String(mesParcela).padStart(2, '0')}`;
+      
+      // Criar data da parcela para vencimento (usar o dia da data de vencimento original)
+      const diaVenc = dataVenc.getDate();
+      const dataParcela = new Date(anoParcela, mesParcela - 1, Math.min(diaVenc, new Date(anoParcela, mesParcela, 0).getDate()));
+      
+      const parcelaId = `${idBase}-${i + 1}`;
       const parcelaPaga = i < totalParcelasPagas;
       
       const item: any = {
         ...divida,
         id: parcelaId,
-        parcelaIndex: i + 1,
+        parcelaIndex: i + 1,  // IMPORTANTE: sequência correta (1, 2, 3...)
         parcelaTotal: parcelas,
-        valorTotal: valorParcela,
+        valorTotal: valorParcela,  // Valor desta parcela específica
         valorPago: parcelaPaga ? valorParcela : 0,
         parcelasPagas: totalParcelasPagas, // Manter o TOTAL de parcelas pagas em todas as parcelas
         dataVencimento: dataParcela.toISOString().split('T')[0],
         periodo,
       };
       
+      // Remover campos temporários
+      delete item.competenciaInicial;
       Object.keys(item).forEach((k) => { if (item[k] === undefined) delete item[k]; });
       jobs.push(setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', parcelaId), item));
     }
     
     await Promise.all(jobs);
   } else {
-    // Dívida à vista ou total
-    const periodo = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
-    const payload: any = { ...divida, periodo };
+    // Dívida à vista ou total - usar a competência escolhida
+    const payload: any = { ...divida, periodo: competenciaInicial };
+    delete payload.competenciaInicial;
     Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
-    await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', divida.id), payload);
+    await setDoc(doc(db, 'users', userId, 'dividas', competenciaInicial, 'itens', divida.id), payload);
   }
 };
 
