@@ -80,6 +80,7 @@ export interface Divida {
   periodo?: string; // YYYY-MM para armazenamento por mês
   parcelaIndex?: number; // Para parceladas: índice da parcela (1, 2, 3...)
   parcelaTotal?: number; // Para parceladas: total de parcelas
+  debtId?: string; // Chave de agrupamento para identificar todas as parcelas da mesma dívida (NOVO)
 }
 
 export interface Cofrinho {

@@ -1053,6 +1053,18 @@ export default function DividasManager() {
 
   const getParcelaDoMes = (divida: Divida) => {
     if (divida.tipo !== 'parcelada') return null;
+    
+    // PRIORIDADE 1: Usar parcelaIndex diretamente do documento (mais confiável)
+    if (divida.parcelaIndex !== undefined && divida.parcelaIndex >= 1) {
+      return divida.parcelaIndex;
+    }
+    
+    // PRIORIDADE 2: Se tem parcelaTotal, usar parcelaIndex se existir
+    if (divida.parcelaTotal !== undefined && divida.parcelaIndex !== undefined) {
+      return divida.parcelaIndex;
+    }
+    
+    // FALLBACK: Calcular baseado em parcelasPagas (compatibilidade com dados antigos)
     const parcelaAtual = (divida.parcelasPagas || 0) + 1;
     if (parcelaAtual < 1 || parcelaAtual > divida.parcelas) return null;
     return parcelaAtual;
@@ -1279,11 +1291,48 @@ export default function DividasManager() {
     return y0 === selY && m0 === selM;
   });
 
-  // Remover duplicatas: manter apenas a última ocorrência de cada ID
-  const dividasUnicas = new Map<string, Divida>();
+  // Deduplicação: agrupa por debtId ou características semânticas, mantém maior parcelaIndex
+  const getGroupKey = (d: Divida): string => {
+    if (d.debtId) {
+      return `debtId:${d.debtId}-${d.periodo || 'sem-periodo'}`;
+    }
+    
+    const descNormalizada = d.descricao.trim().toLowerCase();
+    const valorTotalNormalizado = Math.round(d.valorTotal * 100);
+    const parcelas = d.parcelas || 1;
+    if (d.tipo === 'parcelada' && d.parcelaIndex !== undefined) {
+      return `sem:${descNormalizada}-${valorTotalNormalizado}-${parcelas}-${d.periodo || 'sem-periodo'}`;
+    }
+    return `sem:${descNormalizada}-${valorTotalNormalizado}-${d.periodo || 'sem-periodo'}`;
+  };
+  
+  const dividasPorGrupo = new Map<string, Divida[]>();
   dividasFiltradas.forEach((d) => {
-    dividasUnicas.set(d.id, d);
+    const chave = getGroupKey(d);
+    if (!dividasPorGrupo.has(chave)) {
+      dividasPorGrupo.set(chave, []);
+    }
+    dividasPorGrupo.get(chave)!.push(d);
   });
+  
+  const dividasUnicas = new Map<string, Divida>();
+  dividasPorGrupo.forEach((grupo, chaveGrupo) => {
+    if (grupo.length === 1) {
+      dividasUnicas.set(chaveGrupo, grupo[0]);
+      return;
+    }
+    grupo.sort((a, b) => {
+      if (a.parcelaIndex !== undefined && b.parcelaIndex !== undefined) {
+        const diff = b.parcelaIndex - a.parcelaIndex;
+        if (diff !== 0) return diff;
+      }
+      const dataA = new Date(a.dataVencimento + 'T00:00:00').getTime();
+      const dataB = new Date(b.dataVencimento + 'T00:00:00').getTime();
+      return dataB - dataA;
+    });
+    dividasUnicas.set(chaveGrupo, grupo[0]);
+  });
+  
   const dividasFiltradasUnicas = Array.from(dividasUnicas.values());
 
   const allDividasForView: DividaView[] = dividasFiltradasUnicas.map((d) => {

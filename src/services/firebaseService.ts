@@ -446,6 +446,7 @@ export const saveDivida = async (userId: string, divida: Divida) => {
     // Se não foi especificada, usar a data de vencimento
     competenciaInicial = `${dataVenc.getFullYear()}-${String(dataVenc.getMonth() + 1).padStart(2, '0')}`;
   }
+  
   const [anoCompetencia, mesCompetencia] = competenciaInicial.split('-').map(Number);
   
   // Para dívidas parceladas, cada parcela vai para o mês correspondente
@@ -454,27 +455,122 @@ export const saveDivida = async (userId: string, divida: Divida) => {
     const valorParcela = divida.valorParcela || (divida.valorTotal / parcelas);
     const jobs: Promise<void>[] = [];
     
-    // IMPORTANTE: Extrair ID base correto (do commit que funcionava)
-    // Se o ID já contém sufixo numérico (ex: "divida-id-23"), extrair apenas a parte base
-    let idBase = divida.id;
-    if (divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
-      // Se já tem parcelaIndex, o ID provavelmente já está no formato "base-index"
-      // Tentar extrair o ID base removendo o último segmento numérico
+    // Determinar debtId (chave de agrupamento) para identificar parcelas relacionadas
+    let debtId: string;
+    if ((divida as any).debtId) {
+      debtId = (divida as any).debtId;
+    } else {
+      // Tentar extrair ID base removendo sufixo numérico de parcelaIndex
       const partes = divida.id.split('-');
       const ultimo = partes[partes.length - 1];
-      if (/^\d+$/.test(ultimo)) {
-        // Se o último segmento é numérico, remover para obter o ID base
-        idBase = partes.slice(0, -1).join('-');
+      if (/^\d+$/.test(ultimo) && partes.length > 1) {
+        const possivelParcelaIndex = parseInt(ultimo);
+        if (possivelParcelaIndex >= 1 && possivelParcelaIndex <= parcelas) {
+          debtId = partes.slice(0, -1).join('-');
+        } else {
+          debtId = divida.id;
+        }
+      } else {
+        debtId = divida.id;
       }
     }
+    const idBase = debtId;
     
     // Para dívidas distribuídas, manter parcelasPagas com o TOTAL de parcelas pagas (não apenas 1 ou 0)
     const totalParcelasPagas = divida.parcelasPagas || 0;
     
-    for (let i = 0; i < parcelas; i++) {
-      // Calcular período da parcela baseado na competência inicial (não na data de vencimento)
+    // Determinar a parcela inicial:
+    // - Se está editando uma parcela existente (parcelaIndex definido), começar dali
+    // - Se é dívida nova em andamento (parcelasPagas > 0), começar da parcela atual (parcelasPagas + 1)
+    // - Caso contrário, começar da parcela 1
+    let parcelaInicial = 1;
+    if (divida.parcelaIndex !== undefined) {
+      // Editando parcela existente: criar/atualizar a partir desta
+      parcelaInicial = divida.parcelaIndex;
+    } else if (totalParcelasPagas > 0) {
+      // Dívida nova em andamento: começar da parcela atual (parcelasPagas + 1)
+      // Se parcelasPagas = 2, significa que parcelas 1-2 foram pagas, então começar da parcela 3
+      parcelaInicial = totalParcelasPagas + 1;
+    }
+    
+    // Busca e limpeza: encontrar parcelas relacionadas antes de criar novas
+    const now = new Date();
+    const parcelasParaDeletar = new Map<string, { periodo: string; docId: string }>();
+    const periodosParaVerificar: string[] = [];
+    for (let offset = -12; offset <= 12; offset++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      periodosParaVerificar.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    
+    // Características semânticas para busca de fallback
+    const descNormalizada = divida.descricao.trim().toLowerCase();
+    const valorTotalNormalizado = Math.round(divida.valorTotal * 100);
+    
+    // Buscar todas as parcelas relacionadas
+    const buscaJobs = periodosParaVerificar.map(async (periodo) => {
+      try {
+        const colRef = collection(db, 'users', userId, 'dividas', periodo, 'itens');
+        const snap = await getDocs(colRef);
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          const docId = docSnap.id;
+          let deveDeletar = false;
+          
+          // Método 1: Por debtId (mais confiável)
+          if (data.debtId === debtId) {
+            deveDeletar = true;
+          }
+          // Método 2: Por ID base (compatibilidade)
+          else if (docId === idBase || docId.startsWith(`${idBase}-`)) {
+            deveDeletar = true;
+          }
+          // Método 3: Por campo id interno
+          else if (data.id === idBase || (data.id && data.id.startsWith(`${idBase}-`))) {
+            deveDeletar = true;
+          }
+          // Método 4: Busca semântica (fallback para dados antigos)
+          else if (
+            data.tipo === 'parcelada' &&
+            data.parcelas === parcelas &&
+            data.descricao &&
+            data.descricao.trim().toLowerCase() === descNormalizada &&
+            Math.round(data.valorTotal * 100) === valorTotalNormalizado &&
+            (data.parcelaIndex === undefined || data.parcelaIndex <= parcelas)
+          ) {
+            // É uma parcela da mesma dívida por características semânticas
+            deveDeletar = true;
+          }
+          
+          if (deveDeletar) {
+            parcelasParaDeletar.set(`${periodo}/${docId}`, { periodo, docId });
+          }
+        });
+      } catch (err) {
+        // Ignorar erros (período pode não existir)
+      }
+    });
+    
+    await Promise.all(buscaJobs);
+    
+    // Deletar todas as parcelas encontradas
+    const deleteJobs: Promise<void>[] = [];
+    parcelasParaDeletar.forEach((info) => {
+      const ref = doc(db, 'users', userId, 'dividas', info.periodo, 'itens', info.docId);
+      deleteJobs.push(deleteDoc(ref).catch(() => {}));
+    });
+    
+    // Aguardar TODAS as deleções completarem antes de criar novas parcelas
+    await Promise.all(deleteJobs);
+    for (let i = parcelaInicial - 1; i < parcelas; i++) {
+      const parcelaIndex = i + 1; // Número real da parcela (3, 4, 5... se começando em 3)
+      
+      // Calcular período da parcela baseado na competência inicial
+      // Parcela inicial sempre no mês da competência inicial (mesesAposInicial = 0)
+      // Parcela seguinte = mesesAposInicial = 1, etc.
+      const mesesAposInicial = parcelaIndex - parcelaInicial;
+      
       let anoParcela = anoCompetencia;
-      let mesParcela = mesCompetencia + i;
+      let mesParcela = mesCompetencia + mesesAposInicial;
       // Ajustar se passar de dezembro
       while (mesParcela > 12) {
         mesParcela -= 12;
@@ -486,17 +582,21 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       const diaVenc = dataVenc.getDate();
       const dataParcela = new Date(anoParcela, mesParcela - 1, Math.min(diaVenc, new Date(anoParcela, mesParcela, 0).getDate()));
       
-      const parcelaId = `${idBase}-${i + 1}`;
-      const parcelaPaga = i < totalParcelasPagas;
+      const parcelaId = `${idBase}-${parcelaIndex}`;
       
+      // Criar item com debtId para agrupamento e ID determinístico
       const item: any = {
-        ...divida,
         id: parcelaId,
-        parcelaIndex: i + 1,  // IMPORTANTE: sequência correta (1, 2, 3...)
+        debtId: debtId,  // NOVO: Chave de agrupamento
+        descricao: divida.descricao,
+        valorTotal: divida.valorTotal,  // Valor total da dívida inteira
+        valorParcela: valorParcela,  // Valor desta parcela específica
+        valorPago: 0,  // SEMPRE iniciar com 0 para novas dívidas parceladas
+        parcelas: parcelas,
+        parcelaIndex: parcelaIndex,  // Parcela real: 3, 4, 5... (se começando em 3)
         parcelaTotal: parcelas,
-        valorTotal: valorParcela,  // Valor desta parcela específica
-        valorPago: parcelaPaga ? valorParcela : 0,
-        parcelasPagas: totalParcelasPagas, // Manter o TOTAL de parcelas pagas em todas as parcelas
+        tipo: divida.tipo,
+        categoria: divida.categoria || 'Esporádicos',
         dataVencimento: dataParcela.toISOString().split('T')[0],
         periodo,
       };
@@ -566,21 +666,57 @@ export const subscribeToDividas = (userId: string, callback: (dividas: Divida[])
     const q = query(collection(db, 'users', userId, 'dividas', p, 'itens'));
     const unsub = onSnapshot(q, (snap) => {
       const arr: Divida[] = [];
-      snap.forEach((docSnap) => arr.push({ id: docSnap.id, ...docSnap.data() } as Divida));
+      snap.forEach((docSnap) => {
+        const data = docSnap.data();
+        arr.push({ id: docSnap.id, ...data } as Divida);
+      });
+      // Log apenas se houver mudanças significativas ou duplicatas suspeitas
+      if (arr.length > 0) {
+        const parceladas = arr.filter(d => d.parcelaIndex !== undefined && d.parcelaTotal !== undefined);
+        if (parceladas.length > 0) {
+          // Verificar se há múltiplas parcelas da mesma dívida no mesmo período (possível duplicata)
+          const porIdBase = new Map<string, number>();
+          parceladas.forEach(d => {
+            const partes = d.id.split('-');
+            const ultimo = partes[partes.length - 1];
+            if (/^\d+$/.test(ultimo) && partes.length > 1) {
+              const idBase = partes.slice(0, -1).join('-');
+              porIdBase.set(idBase, (porIdBase.get(idBase) || 0) + 1);
+            }
+          });
+          // Verificação silenciosa - duplicatas serão tratadas na deduplicação do cliente
+        }
+      }
       porPeriodo.set(p, arr);
       emitir();
+    }, (error) => {
+      // Erro silencioso - período pode não existir ainda
     });
     unsubscribers.push(unsub);
   });
   
   // Listener para coleção antiga (flat) para migração automática
+  // IMPORTANTE: Só migrar documentos que realmente estão na estrutura antiga
+  // Ignorar documentos que são pastas de período (formato YYYY-MM)
+  // DESABILITADO TEMPORARIAMENTE para evitar conflitos com saveDivida
+  // A migração deve ser manual ou controlada de outra forma
+  /*
   const oldQ = query(collection(db, 'users', userId, 'dividas'));
   const oldUnsub = onSnapshot(oldQ, async (snapshot) => {
     const jobs: Promise<void>[] = [];
     snapshot.forEach((d) => {
       const data = d.data() as any;
-      // Heurística: documentos antigos têm campos como descricao, valorTotal, parcelas
-      if (data && data.descricao && data.valorTotal != null && !data.periodo) {
+      const docId = d.id;
+      
+      // Ignorar documentos que são pastas de período (formato YYYY-MM)
+      if (/^\d{4}-\d{2}$/.test(docId)) {
+        return; // É uma pasta de período, não uma dívida
+      }
+      
+      // Heurística mais rigorosa: documentos antigos têm campos como descricao, valorTotal, parcelas
+      // E NÃO têm período E NÃO têm parcelaIndex (indicando estrutura realmente antiga)
+      // Se tiver parcelaIndex, já foi migrado ou está na estrutura nova
+      if (data && data.descricao && data.valorTotal != null && !data.periodo && !data.parcelaIndex) {
         const divida: Divida = { id: d.id, ...data } as any;
         jobs.push(migrateDividaToSubcollection(userId, divida));
       }
@@ -588,6 +724,7 @@ export const subscribeToDividas = (userId: string, callback: (dividas: Divida[])
     if (jobs.length) await Promise.all(jobs).catch(() => {});
   });
   unsubscribers.push(oldUnsub);
+  */
   
   return () => unsubscribers.forEach((u) => u());
 };
