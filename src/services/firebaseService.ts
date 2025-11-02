@@ -472,31 +472,10 @@ export const saveDivida = async (userId: string, divida: Divida) => {
     // Parcela 1 sempre no mês inicial, parcela 2 no mês seguinte, etc.
     const totalParcelasPagas = divida.parcelasPagas || 0;
     
-    // Determinar a parcela inicial:
-    // - Se está editando uma parcela existente (parcelaIndex definido), começar dali
-    // - Se é dívida nova em andamento (parcelasPagas > 0), começar da próxima parcela não paga
-    // - Caso contrário, começar da parcela 1
-    let parcelaInicial = 1;
-    if (divida.parcelaIndex !== undefined) {
-      // Editando parcela existente: criar/atualizar a partir desta
-      parcelaInicial = divida.parcelaIndex;
-    } else if (totalParcelasPagas > 0) {
-      // Dívida nova em andamento: começar da próxima parcela não paga
-      parcelaInicial = totalParcelasPagas + 1;
-    }
-    
-    // Criar apenas as parcelas a partir da parcela inicial
-    for (let i = parcelaInicial - 1; i < parcelas; i++) {
-      const parcelaIndex = i + 1; // Número da parcela (1, 2, 3... ou 7, 8, 9...)
-      
-      // Calcular período da parcela baseado na competência inicial
-      // Parcela 1 = mês 0 (mês inicial)
-      // Parcela 2 = mês 1 (1 mês depois)
-      // Parcela 7 = mês 6 (6 meses depois do inicial)
-      const mesesAposInicial = i; // meses após a competência inicial
-      
+    for (let i = 0; i < parcelas; i++) {
+      // Calcular período da parcela baseado na competência inicial (não na data de vencimento)
       let anoParcela = anoCompetencia;
-      let mesParcela = mesCompetencia + mesesAposInicial;
+      let mesParcela = mesCompetencia + i;
       // Ajustar se passar de dezembro
       while (mesParcela > 12) {
         mesParcela -= 12;
@@ -508,16 +487,16 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       const diaVenc = dataVenc.getDate();
       const dataParcela = new Date(anoParcela, mesParcela - 1, Math.min(diaVenc, new Date(anoParcela, mesParcela, 0).getDate()));
       
-      const parcelaId = `${idBase}-${parcelaIndex}`;
-      const parcelaPaga = parcelaIndex <= totalParcelasPagas;
+      const parcelaId = `${idBase}-${i + 1}`;
+      const parcelaPaga = i < totalParcelasPagas;
       
       const item: any = {
         ...divida,
         id: parcelaId,
-        parcelaIndex: parcelaIndex,  // Posição da parcela baseada no mês: 7, 8, 9... (se começando em 7)
+        parcelaIndex: i + 1,  // Posição da parcela baseada no mês: 1, 2, 3...
         parcelaTotal: parcelas,
-        valorTotal: divida.valorTotal,  // Valor total da dívida inteira (ex: 12 parcelas * R$ 50 = R$ 600)
-        valorParcela: valorParcela,  // Valor desta parcela específica (ex: R$ 50)
+        valorTotal: divida.valorTotal,  // Valor total da dívida inteira (ex: 10 parcelas * R$ 100 = R$ 1000)
+        valorParcela: valorParcela,  // Valor desta parcela específica (ex: R$ 100)
         valorPago: parcelaPaga ? valorParcela : 0,
         // NÃO incluir parcelasPagas aqui - cada parcela mostra sua posição (parcelaIndex/parcelaTotal)
         // parcelasPagas só é usado para calcular se esta parcela específica foi paga
