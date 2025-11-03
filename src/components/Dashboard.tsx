@@ -4,7 +4,10 @@ import { Input } from './ui/input';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, LabelList } from 'recharts';
 import { FinanceiroContext } from '../App';
 import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, DollarSign, ArrowUpCircle, ArrowDownCircle, Target, LayoutDashboard } from 'lucide-react';
-import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
+import { calculateMonthlyTotals, parseYYYYMMDDtoYM, parseYYYYMM } from '../utils/monthlyCalculations';
+
+// Função auxiliar para calcular índice de mês
+const ymToIndex = (year: number, month1to12: number) => year * 12 + (month1to12 - 1);
 
 export default function Dashboard() {
   const context = useContext(FinanceiroContext);
@@ -223,9 +226,29 @@ export default function Dashboard() {
   // Calcular total de gastos fixos do mês selecionado
   const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
 
+  // Filtrar dívidas do mês selecionado (mesma lógica do DividasManager)
+  const { y: selY, m: selM } = parseYYYYMM(selectedMonth);
+  const dividasFiltradas = dividas.filter((d) => {
+    // Se tem período, usar ele diretamente (nova estrutura)
+    if (d.periodo) {
+      return d.periodo === selectedMonth;
+    }
+    
+    // Compatibilidade: lógica antiga para dívidas sem período
+    if (d.tipo === 'parcelada') {
+      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+      const idx = ymToIndex(selY, selM) - ymToIndex(startYM.y, startYM.m);
+      return idx >= 0 && idx < d.parcelas;
+    }
+
+    const { y: y0, m: m0 } = parseYYYYMMDDtoYM(d.dataVencimento);
+    return y0 === selY && m0 === selM;
+  });
+
   // Calcular totais mensais usando utilitário compartilhado
+  // Usar apenas as dívidas filtradas do mês selecionado
   const { monthlyTotal, monthlyPaid, monthlyRemaining, monthlyCount } = calculateMonthlyTotals(
-    dividas,
+    dividasFiltradas,
     comprasCartao,
     cartoes,
     selectedMonth,
