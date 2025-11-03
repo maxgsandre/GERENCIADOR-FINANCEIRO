@@ -584,6 +584,20 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       
       const parcelaId = `${idBase}-${parcelaIndex}`;
       
+      // Verificar se já existe uma parcela com este ID para preservar valorPago
+      let valorPagoParcela = 0;
+      try {
+        const parcelaExistente = await getDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', parcelaId));
+        if (parcelaExistente.exists()) {
+          const dataExistente = parcelaExistente.data();
+          // Preservar valorPago da parcela existente se estiver sendo atualizada
+          valorPagoParcela = (dataExistente as any).valorPago || 0;
+        } else if (divida.valorPago && divida.parcelaIndex === parcelaIndex) {
+          // Se a divida passada tem valorPago e é esta parcela, usar o valor
+          valorPagoParcela = divida.valorPago;
+        }
+      } catch {}
+      
       // Criar item com debtId para agrupamento e ID determinístico
       const item: any = {
         id: parcelaId,
@@ -591,10 +605,11 @@ export const saveDivida = async (userId: string, divida: Divida) => {
         descricao: divida.descricao,
         valorTotal: divida.valorTotal,  // Valor total da dívida inteira
         valorParcela: valorParcela,  // Valor desta parcela específica
-        valorPago: 0,  // SEMPRE iniciar com 0 para novas dívidas parceladas
+        valorPago: valorPagoParcela,  // Preservar valorPago se existir, senão 0
         parcelas: parcelas,
         parcelaIndex: parcelaIndex,  // Parcela real: 3, 4, 5... (se começando em 3)
         parcelaTotal: parcelas,
+        parcelasPagas: divida.parcelasPagas || 0,  // Manter total de parcelas pagas
         tipo: divida.tipo,
         categoria: divida.categoria || 'Esporádicos',
         dataVencimento: dataParcela.toISOString().split('T')[0],
