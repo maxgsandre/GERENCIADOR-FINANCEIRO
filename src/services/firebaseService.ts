@@ -1269,3 +1269,362 @@ export const subscribeCofrinhoMovimentos = (
     callback(arr);
   });
 };
+
+// =======================
+// Backup e Restauração de Dados
+// =======================
+
+export interface BackupData {
+  version: string;
+  exportDate: string;
+  periodoInicio?: string;
+  periodoFim?: string;
+  userId?: string; // ID do usuário que exportou (opcional)
+  caixas: Caixa[];
+  transacoes: Transacao[];
+  gastosFixos: GastoFixo[];
+  dividas: Divida[];
+  cofrinhos: Cofrinho[];
+  categorias: Categoria[];
+  receitasPrevistas: ReceitaPrevista[];
+  cartoes: CartaoCredito[];
+  comprasCartao: CompraCartao[];
+}
+
+// Exportar todos os dados do usuário
+export const exportUserData = async (
+  userId: string,
+  options?: { periodoInicio?: string; periodoFim?: string; incluirTodos?: boolean }
+): Promise<BackupData> => {
+  const incluirTodos = options?.incluirTodos ?? false;
+  const periodoInicio = options?.periodoInicio;
+  const periodoFim = options?.periodoFim;
+
+  const backup: BackupData = {
+    version: '1.0',
+    exportDate: new Date().toISOString(),
+    periodoInicio,
+    periodoFim,
+    userId: incluirTodos ? userId : undefined,
+    caixas: [],
+    transacoes: [],
+    gastosFixos: [],
+    dividas: [],
+    cofrinhos: [],
+    categorias: [],
+    receitasPrevistas: [],
+    cartoes: [],
+    comprasCartao: [],
+  };
+
+  // 1. Exportar Caixas
+  const caixasSnap = await getDocs(collection(db, 'users', userId, 'caixas'));
+  caixasSnap.forEach((doc) => {
+    backup.caixas.push({ id: doc.id, ...doc.data() } as Caixa);
+  });
+
+  // 2. Exportar Transações
+  const now = new Date();
+  const periodsTransacoes: string[] = [];
+  if (incluirTodos || (!periodoInicio && !periodoFim)) {
+    for (let i = -12; i <= 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      periodsTransacoes.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+  } else if (periodoInicio && periodoFim) {
+    const [anoInicio, mesInicio] = periodoInicio.split('-').map(Number);
+    const [anoFim, mesFim] = periodoFim.split('-').map(Number);
+    const startDate = new Date(anoInicio, mesInicio - 1, 1);
+    const endDate = new Date(anoFim, mesFim, 0);
+    let current = new Date(startDate);
+    while (current <= endDate) {
+      periodsTransacoes.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`);
+      current = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+    }
+  }
+
+  for (const periodo of periodsTransacoes) {
+    try {
+      const transacoesSnap = await getDocs(collection(db, 'users', userId, 'transacoes', periodo, 'itens'));
+      transacoesSnap.forEach((doc) => {
+        backup.transacoes.push({ id: doc.id, ...doc.data() } as Transacao);
+      });
+    } catch {}
+  }
+
+  // 3. Exportar Gastos Fixos
+  const periodsGastos: string[] = [];
+  if (incluirTodos || (!periodoInicio && !periodoFim)) {
+    for (let i = -12; i <= 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      periodsGastos.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+  } else if (periodoInicio && periodoFim) {
+    const [anoInicio, mesInicio] = periodoInicio.split('-').map(Number);
+    const [anoFim, mesFim] = periodoFim.split('-').map(Number);
+    const startDate = new Date(anoInicio, mesInicio - 1, 1);
+    const endDate = new Date(anoFim, mesFim, 0);
+    let current = new Date(startDate);
+    while (current <= endDate) {
+      periodsGastos.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`);
+      current = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+    }
+  }
+
+  for (const periodo of periodsGastos) {
+    try {
+      const gastosSnap = await getDocs(collection(db, 'users', userId, 'gastosFixos', periodo, 'itens'));
+      gastosSnap.forEach((doc) => {
+        backup.gastosFixos.push({ id: doc.id, ...doc.data() } as GastoFixo);
+      });
+    } catch {}
+  }
+
+  // 4. Exportar Dívidas
+  const periodsDividas: string[] = [];
+  if (incluirTodos || (!periodoInicio && !periodoFim)) {
+    for (let i = -12; i <= 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      periodsDividas.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+  } else if (periodoInicio && periodoFim) {
+    const [anoInicio, mesInicio] = periodoInicio.split('-').map(Number);
+    const [anoFim, mesFim] = periodoFim.split('-').map(Number);
+    const startDate = new Date(anoInicio, mesInicio - 1, 1);
+    const endDate = new Date(anoFim, mesFim, 0);
+    let current = new Date(startDate);
+    while (current <= endDate) {
+      periodsDividas.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`);
+      current = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+    }
+  }
+
+  for (const periodo of periodsDividas) {
+    try {
+      const dividasSnap = await getDocs(collection(db, 'users', userId, 'dividas', periodo, 'itens'));
+      dividasSnap.forEach((doc) => {
+        backup.dividas.push({ id: doc.id, ...doc.data() } as Divida);
+      });
+    } catch {}
+  }
+
+  // 5. Exportar Cofrinhos
+  const cofrinhosSnap = await getDocs(collection(db, 'users', userId, 'cofrinhos'));
+  cofrinhosSnap.forEach((doc) => {
+    backup.cofrinhos.push({ id: doc.id, ...doc.data() } as Cofrinho);
+  });
+
+  // 6. Exportar Categorias
+  const categoriasSnap = await getDocs(collection(db, 'users', userId, 'categorias'));
+  categoriasSnap.forEach((doc) => {
+    backup.categorias.push({ id: doc.id, ...doc.data() } as Categoria);
+  });
+
+  // 7. Exportar Receitas Previstas
+  const periodsReceitas: string[] = [];
+  if (incluirTodos || (!periodoInicio && !periodoFim)) {
+    for (let i = -12; i <= 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      periodsReceitas.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+  } else if (periodoInicio && periodoFim) {
+    const [anoInicio, mesInicio] = periodoInicio.split('-').map(Number);
+    const [anoFim, mesFim] = periodoFim.split('-').map(Number);
+    const startDate = new Date(anoInicio, mesInicio - 1, 1);
+    const endDate = new Date(anoFim, mesFim, 0);
+    let current = new Date(startDate);
+    while (current <= endDate) {
+      periodsReceitas.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`);
+      current = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+    }
+  }
+
+  for (const periodo of periodsReceitas) {
+    try {
+      const receitasSnap = await getDocs(collection(db, 'users', userId, 'receitasPrevistas', periodo, 'receitas'));
+      receitasSnap.forEach((doc) => {
+        backup.receitasPrevistas.push({ id: doc.id, ...doc.data() } as ReceitaPrevista);
+      });
+    } catch {}
+  }
+
+  // 8. Exportar Cartões de Crédito
+  const cartoesSnap = await getDocs(collection(db, 'users', userId, 'creditCards'));
+  for (const cardDoc of cartoesSnap.docs) {
+    const cardData = { id: cardDoc.id, ...cardDoc.data() } as CartaoCredito;
+    backup.cartoes.push(cardData);
+
+    // 9. Exportar Compras de cada Cartão
+    try {
+      const comprasSnap = await getDocs(collection(db, 'users', userId, 'creditCards', cardDoc.id, 'compras'));
+      comprasSnap.forEach((doc) => {
+        backup.comprasCartao.push({ id: doc.id, ...doc.data() } as CompraCartao);
+      });
+    } catch {}
+  }
+
+  return backup;
+};
+
+// Importar dados de backup
+export const importUserData = async (
+  userId: string,
+  backup: BackupData,
+  options?: { substituirExistentes?: boolean }
+): Promise<void> => {
+  const substituir = options?.substituirExistentes ?? false;
+
+  // 1. Importar Caixas
+  for (const caixa of backup.caixas) {
+    await setDoc(doc(db, 'users', userId, 'caixas', caixa.id), caixa);
+  }
+
+  // 2. Importar Transações
+  const transacoesPorPeriodo = new Map<string, Transacao[]>();
+  for (const transacao of backup.transacoes) {
+    const periodo = (transacao as any).periodo || 
+      `${new Date(transacao.data + 'T00:00:00').getFullYear()}-${String(new Date(transacao.data + 'T00:00:00').getMonth() + 1).padStart(2, '0')}`;
+    if (!transacoesPorPeriodo.has(periodo)) {
+      transacoesPorPeriodo.set(periodo, []);
+    }
+    transacoesPorPeriodo.get(periodo)!.push(transacao);
+  }
+
+  for (const [periodo, transacoes] of transacoesPorPeriodo.entries()) {
+    for (const transacao of transacoes) {
+      const payload: any = { ...transacao };
+      delete payload.id;
+      Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+      await setDoc(doc(db, 'users', userId, 'transacoes', periodo, 'itens', transacao.id), payload);
+    }
+  }
+
+  // 3. Importar Gastos Fixos
+  const gastosPorPeriodo = new Map<string, GastoFixo[]>();
+  for (const gasto of backup.gastosFixos) {
+    // GastoFixo tem campo 'periodo', não 'dataVencimento'
+    const periodo = (gasto as any).periodo;
+    if (!periodo) {
+      // Se não tiver período no backup, usar período atual como fallback
+      const now = new Date();
+      const fallbackPeriodo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      if (!gastosPorPeriodo.has(fallbackPeriodo)) {
+        gastosPorPeriodo.set(fallbackPeriodo, []);
+      }
+      gastosPorPeriodo.get(fallbackPeriodo)!.push({ ...gasto, periodo: fallbackPeriodo } as GastoFixo);
+    } else {
+      if (!gastosPorPeriodo.has(periodo)) {
+        gastosPorPeriodo.set(periodo, []);
+      }
+      gastosPorPeriodo.get(periodo)!.push(gasto);
+    }
+  }
+
+  for (const [periodo, gastos] of gastosPorPeriodo.entries()) {
+    for (const gasto of gastos) {
+      const payload: any = { ...gasto };
+      delete payload.id;
+      Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+      await setDoc(doc(db, 'users', userId, 'gastosFixos', periodo, 'itens', gasto.id), payload);
+    }
+  }
+
+  // 4. Importar Dívidas
+  const dividasPorPeriodo = new Map<string, Divida[]>();
+  for (const divida of backup.dividas) {
+    const periodo = divida.periodo || 
+      `${new Date(divida.dataVencimento + 'T00:00:00').getFullYear()}-${String(new Date(divida.dataVencimento + 'T00:00:00').getMonth() + 1).padStart(2, '0')}`;
+    if (!dividasPorPeriodo.has(periodo)) {
+      dividasPorPeriodo.set(periodo, []);
+    }
+    dividasPorPeriodo.get(periodo)!.push(divida);
+  }
+
+  for (const [periodo, dividas] of dividasPorPeriodo.entries()) {
+    for (const divida of dividas) {
+      const payload: any = { ...divida };
+      delete payload.id;
+      Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+      await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', divida.id), payload);
+    }
+  }
+
+  // 5. Importar Cofrinhos
+  for (const cofrinho of backup.cofrinhos) {
+    await setDoc(doc(db, 'users', userId, 'cofrinhos', cofrinho.id), cofrinho);
+  }
+
+  // 6. Importar Categorias (só se não existirem ou se substituirExistentes)
+  for (const categoria of backup.categorias) {
+    if (substituir) {
+      await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
+    } else {
+      const catDoc = await getDoc(doc(db, 'users', userId, 'categorias', categoria.id));
+      if (!catDoc.exists()) {
+        await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
+      }
+    }
+  }
+
+  // 7. Importar Receitas Previstas
+  const receitasPorPeriodo = new Map<string, ReceitaPrevista[]>();
+  for (const receita of backup.receitasPrevistas) {
+    const periodo = receita.periodo || 
+      `${new Date(receita.dataVencimento + 'T00:00:00').getFullYear()}-${String(new Date(receita.dataVencimento + 'T00:00:00').getMonth() + 1).padStart(2, '0')}`;
+    if (!receitasPorPeriodo.has(periodo)) {
+      receitasPorPeriodo.set(periodo, []);
+    }
+    receitasPorPeriodo.get(periodo)!.push(receita);
+  }
+
+  for (const [periodo, receitas] of receitasPorPeriodo.entries()) {
+    for (const receita of receitas) {
+      const payload: any = { ...receita };
+      delete payload.id;
+      Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+      await setDoc(doc(db, 'users', userId, 'receitasPrevistas', periodo, 'receitas', receita.id), payload);
+    }
+  }
+
+  // 8. Importar Cartões de Crédito
+  for (const cartao of backup.cartoes) {
+    await setDoc(doc(db, 'users', userId, 'creditCards', cartao.id), cartao);
+  }
+
+  // 9. Importar Compras de Cartão
+  for (const compra of backup.comprasCartao) {
+    if (compra.cardId) {
+      const payload: any = { ...compra };
+      delete payload.id;
+      Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+      await setDoc(doc(db, 'users', userId, 'creditCards', compra.cardId, 'compras', compra.id), payload);
+      
+      // Reconstruir faturas (mirrorPurchaseToInvoices)
+      try {
+        const parcelas = Math.max(1, compra.parcelas || 1);
+        const valorParcela = compra.valorParcela || (compra.valorTotal / parcelas);
+        const first = compra.startMonth || (compra.dataCompra ? `${new Date(compra.dataCompra).getFullYear()}-${String(new Date(compra.dataCompra).getMonth() + 1).padStart(2, '0')}` : undefined);
+        if (first) {
+          const [y0, m0] = first.split('-').map(Number);
+          let y = y0, m = m0;
+          for (let n = 1; n <= parcelas; n++) {
+            const ym = `${y}-${String(m).padStart(2, '0')}`;
+            const id = `${compra.id}-${n}`;
+            const item = {
+              id,
+              purchaseId: compra.id,
+              descricao: compra.descricao,
+              valor: valorParcela,
+              parcela: n,
+              parcelasTotais: parcelas,
+              startMonth: first,
+            } as any;
+            await setDoc(doc(db, 'users', userId, 'creditCards', compra.cardId, 'faturas', ym, 'itens', id), item);
+            m += 1; if (m > 12) { m = 1; y += 1; }
+          }
+        }
+      } catch {}
+    }
+  }
+};
+
