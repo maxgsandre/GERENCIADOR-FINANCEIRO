@@ -17,6 +17,17 @@ export const ymToIndex = (year: number, month1to12: number) => year * 12 + (mont
 
 // Função para calcular valor devido no mês
 export const getMonthlyDue = (d: Divida | CompraCartao, selectedMonth: string): number => {
+  // Se tem período, verificar diretamente (estrutura nova por mês)
+  if ((d as any).periodo && (d as any).periodo === selectedMonth) {
+    if (d.tipo === 'parcelada') {
+      // Para parceladas, usar valorParcela diretamente
+      return (d.valorParcela || 0);
+    }
+    // Para não parceladas, usar valorTotal
+    return (d.valorTotal || 0);
+  }
+  
+  // Fallback: lógica antiga para dívidas sem período (compatibilidade)
   if (d.tipo === 'parcelada') {
     const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
     const selectedYM = parseYYYYMM(selectedMonth);
@@ -74,11 +85,17 @@ export const getMonthlyPaid = (d: Divida | CompraCartao, transacoes: any[], sele
     return 0;
   }
   
-  // Para dívidas normais, buscar transações de pagamento
+  // Para dívidas normais, buscar transações de pagamento APENAS do mês selecionado
+  const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   const descricaoBusca = `Pagamento dívida: ${d.descricao}`;
-  const transacoesPagamento = transacoes.filter(t => 
-    t.descricao === descricaoBusca
-  );
+  const transacoesPagamento = transacoes.filter(t => {
+    if (t.descricao !== descricaoBusca) return false;
+    // Filtrar por mês da transação
+    const dataTransacao = new Date(t.data + 'T00:00:00');
+    const mesTransacao = dataTransacao.getMonth() + 1;
+    const anoTransacao = dataTransacao.getFullYear();
+    return mesTransacao === mesSelecionado && anoTransacao === anoSelecionado;
+  });
   
   return transacoesPagamento.reduce((sum, t) => sum + t.valor, 0);
 };
