@@ -1377,8 +1377,9 @@ export default function DividasManager() {
   });
 
   // Totais mensais usando utilitário compartilhado
+  // Usar apenas as dívidas filtradas do mês selecionado (já filtradas por período)
   const { monthlyTotal, monthlyPaid, monthlyRemaining, monthlyCount } = calculateMonthlyTotals(
-    dividas,
+    dividasFiltradasUnicas,
     comprasCartao,
     cartoes,
     selectedMonth,
