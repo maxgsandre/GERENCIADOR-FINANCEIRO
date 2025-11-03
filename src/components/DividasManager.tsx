@@ -917,15 +917,16 @@ export default function DividasManager() {
         const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
         if (!dividaAtual) return;
 
-      const novoValorPago = dividaAtual.valorPago + valorPagamento;
+      const novoValorPago = (dividaAtual.valorPago || 0) + valorPagamento;
+      const valorParcela = dividaAtual.valorParcela || (dividaAtual.valorTotal / (dividaAtual.parcelas || 1));
       const novasParcelasPagas = dividaAtual.tipo === 'parcelada' 
-        ? Math.floor(novoValorPago / dividaAtual.valorParcela)
+        ? Math.floor(novoValorPago / valorParcela)
         : novoValorPago >= dividaAtual.valorTotal ? 1 : 0;
 
       const atualizada: Divida = {
         ...dividaAtual,
-          valorPago: novoValorPago,
-        parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas),
+        valorPago: novoValorPago,
+        parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas || 1),
       };
 
       await saveDivida(atualizada);
@@ -1169,15 +1170,15 @@ export default function DividasManager() {
       return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
     }
     
-    const parcelaMes = getMonthlyDue(divida, selectedMonth);
-    const parcelaMesPaga = getMonthlyPaid(divida, transacoes, selectedMonth);
+    // Para dívidas parceladas: comparar valorPago vs valorParcela (não usar transações)
+    const valorParcela = divida.valorParcela || (valorTotal / totalParcelas);
     
-    if (parcelaMesPaga >= parcelaMes && parcelaMes > 0) {
-      return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
-    } else if (parcelaMesPaga > 0 && parcelaMesPaga < parcelaMes) {
-      return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
-    } else {
+    if (valorPago === 0) {
       return { status: 'Pendente', cor: 'text-red-600', bg: 'bg-red-50' };
+    } else if (valorPago >= valorParcela) {
+      return { status: 'Pago', cor: 'text-green-600', bg: 'bg-green-50' };
+    } else {
+      return { status: 'Pago Parcial', cor: 'text-orange-600', bg: 'bg-orange-50' };
     }
   };
 
@@ -2697,19 +2698,21 @@ export default function DividasManager() {
                     <TableRow key={divida.id} className={isQuitada ? 'opacity-60' : ''}>
                       <TableCell>
                         <div className="flex items-center justify-center">
-                          {parcelaMes > 0 && (
-                            <div className={`${
-                              getMonthlyPaid(divida, transacoes, selectedMonth) >= parcelaMes 
-                                ? 'text-green-600' 
-                                : 'text-red-600'
-                            }`}>
-                              {getMonthlyPaid(divida, transacoes, selectedMonth) >= parcelaMes ? (
-                                <CheckCircle className="h-5 w-5" />
-                              ) : (
-                                <Circle className="h-5 w-5" />
-                              )}
-                            </div>
-                          )}
+                          {parcelaMes > 0 && (() => {
+                            // Para dívidas parceladas: usar valorPago vs valorParcela (não transações)
+                            const valorPago = divida.valorPago || 0;
+                            const valorParcela = divida.valorParcela || (divida.valorTotal / (divida.parcelas || 1));
+                            const estaPaga = valorPago >= valorParcela;
+                            return (
+                              <div className={estaPaga ? 'text-green-600' : 'text-red-600'}>
+                                {estaPaga ? (
+                                  <CheckCircle className="h-5 w-5" />
+                                ) : (
+                                  <Circle className="h-5 w-5" />
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">
