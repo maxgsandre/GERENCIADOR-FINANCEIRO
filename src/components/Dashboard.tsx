@@ -159,11 +159,11 @@ export default function Dashboard() {
   });
 
   const entradasMes = transacoesMesSelecionado
-    .filter(t => t.tipo === 'entrada')
+    .filter(t => t.tipo === 'entrada' && !t.ignorarDashboard)
     .reduce((sum, t) => sum + t.valor, 0);
 
   const saidasMes = transacoesMesSelecionado
-    .filter(t => t.tipo === 'saida')
+    .filter(t => t.tipo === 'saida' && !t.ignorarDashboard)
     .reduce((sum, t) => sum + t.valor, 0);
 
   // Filtrar receitas apenas do mês selecionado
