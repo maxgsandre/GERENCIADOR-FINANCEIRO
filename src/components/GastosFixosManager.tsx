@@ -639,9 +639,9 @@ export default function GastosFixosManager() {
       return;
     }
     
-    // Verificar saldo do caixa
+    // Verificar saldo do caixa (usar saldo real do mês)
     const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
-    if (caixa && caixa.saldo < valorPago) {
+    if (caixa && saldoRealDoMes(caixa) < valorPago) {
       alert('Saldo insuficiente no caixa selecionado.');
       return;
     }
@@ -1215,7 +1215,8 @@ export default function GastosFixosManager() {
               {caixaPagamento && (() => {
                 const caixa = caixas?.find((c: any) => c.id === caixaPagamento);
                 const valorPago = parseFloat(valorPagoInput.replace(',', '.')) || 0;
-                return caixa && valorPago > caixa.saldo ? (
+                const saldoFinalMes = caixa ? saldoRealDoMes(caixa) : 0;
+                return caixa && valorPago > saldoFinalMes ? (
                   <p className="text-sm text-red-600">Saldo insuficiente no caixa selecionado</p>
                 ) : null;
               })()}
