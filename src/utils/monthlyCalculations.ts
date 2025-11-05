@@ -51,53 +51,81 @@ export const getMonthlyDue = (d: Divida | CompraCartao, selectedMonth: string): 
   return 0;
 };
 
-// Função para calcular valor pago no mês (considera pagamentos via transações)
+// Função para calcular valor pago no mês (baseado em parcelasPagas, não transações)
 export const getMonthlyPaid = (d: Divida | CompraCartao, transacoes: any[], selectedMonth: string, cartoes?: any[]): number => {
-  // Se é uma dívida marcada como paga diretamente, retorna o valor devido no mês
-  if ('pago' in d && d.pago) {
-    return getMonthlyDue(d, selectedMonth);
-  }
-  
-  // Para compras de cartão mapeadas como dívidas, usar lógica de fatura
-  if (d.id && d.id.includes('purchase:')) {
-    const cardId = (d as any).cardId;
-    const cartao = cartoes?.find(c => c.id === cardId);
-    const nomeCartao = cartao?.nome || '';
+  // Para dívidas parceladas: calcular baseado em parcelasPagas
+  if (d.tipo === 'parcelada' && d.parcelas > 1) {
+    const parcelasPagas = d.parcelasPagas || 0;
+    const totalParcelas = d.parcelas || 1;
+    const valorParcela = d.valorParcela || (d.valorTotal / totalParcelas);
     
-    // Verificar se há transação de pagamento da fatura para este cartão no mês selecionado
-    const transacoesFatura = transacoes.filter(t => 
-      t.descricao.includes(`Fatura ${nomeCartao}`) ||
-      t.descricao.includes(`Pagamento fatura: ${nomeCartao}`)
-    );
+    // Calcular valor total pago baseado nas parcelas pagas
+    const valorPago = parcelasPagas * valorParcela;
     
-    // Verificar se há transação de pagamento da fatura no mês atual
-    const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
-    const mesAtual = `${anoSelecionado}-${String(mesSelecionado).padStart(2, '0')}`;
-    const transacaoFaturaMes = transacoesFatura.find(t => 
-      t.data.startsWith(mesAtual)
-    );
+    // Se todas as parcelas foram pagas, incluir ajuste de centavos
+    if (parcelasPagas >= totalParcelas) {
+      const ajusteCentavos = Math.round(d.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+      return (valorPago + ajusteCentavos / 100);
+    }
     
-    // Se encontrou transação de fatura no mês, retorna o valor devido
-    if (transacaoFaturaMes) {
-      return getMonthlyDue(d, selectedMonth);
+    // Para o mês selecionado, verificar se a parcela deste mês foi paga
+    const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+    const selectedYM = parseYYYYMM(selectedMonth);
+    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
+    
+    // Se a parcela deste mês foi paga (idx < parcelasPagas), retornar valor da parcela
+    if (idx >= 0 && idx < totalParcelas && idx < parcelasPagas) {
+      const base = valorParcela;
+      const isLast = idx === totalParcelas - 1;
+      const delta = Math.round(d.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+      return base + (isLast ? delta / 100 : 0);
     }
     
     return 0;
   }
   
-  // Para dívidas normais, buscar transações de pagamento APENAS do mês selecionado
-  const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
-  const descricaoBusca = `Pagamento dívida: ${d.descricao}`;
-  const transacoesPagamento = transacoes.filter(t => {
-    if (t.descricao !== descricaoBusca) return false;
-    // Filtrar por mês da transação
-    const dataTransacao = new Date(t.data + 'T00:00:00');
-    const mesTransacao = dataTransacao.getMonth() + 1;
-    const anoTransacao = dataTransacao.getFullYear();
-    return mesTransacao === mesSelecionado && anoTransacao === anoSelecionado;
-  });
+  // Para compras de cartão mapeadas como dívidas: usar parcelasPagas
+  if (d.id && d.id.includes('purchase:')) {
+    const parcelasPagas = d.parcelasPagas || 0;
+    const totalParcelas = d.parcelas || 1;
+    const valorParcela = d.valorParcela || (d.valorTotal / totalParcelas);
+    
+    // Calcular valor total pago baseado nas parcelas pagas
+    const valorPago = parcelasPagas * valorParcela;
+    
+    // Se todas as parcelas foram pagas, incluir ajuste de centavos
+    if (parcelasPagas >= totalParcelas) {
+      const ajusteCentavos = Math.round(d.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+      return (valorPago + ajusteCentavos / 100);
+    }
+    
+    // Para o mês selecionado, verificar se a parcela deste mês foi paga
+    const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+    const selectedYM = parseYYYYMM(selectedMonth);
+    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
+    
+    // Se a parcela deste mês foi paga (idx < parcelasPagas), retornar valor da parcela
+    if (idx >= 0 && idx < totalParcelas && idx < parcelasPagas) {
+      const base = valorParcela;
+      const isLast = idx === totalParcelas - 1;
+      const delta = Math.round(d.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+      return base + (isLast ? delta / 100 : 0);
+    }
+    
+    return 0;
+  }
   
-  return transacoesPagamento.reduce((sum, t) => sum + t.valor, 0);
+  // Para dívidas à vista (tipo 'total'): usar valorPago diretamente
+  const valorPago = (d as any).valorPago || 0;
+  const valorDue = getMonthlyDue(d, selectedMonth);
+  
+  // Se o valor pago é maior ou igual ao valor devido, retornar o valor devido
+  if (valorPago >= valorDue) {
+    return valorDue;
+  }
+  
+  // Caso contrário, retornar o valor pago (pagamento parcial)
+  return valorPago;
 };
 
 // Função para mapear compras de cartão como dívidas
