@@ -26,6 +26,8 @@ export default function DividasManager() {
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const scrollBeforeDialogRef = useRef<number>(0);
+  const isSavingRef = useRef<boolean>(false);
+  const transacoesEmCriacaoRef = useRef<Set<string>>(new Set());
   const [editingDivida, setEditingDivida] = useState<Divida | null>(null);
   const [isPagamentoOpen, setIsPagamentoOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -621,32 +623,99 @@ export default function DividasManager() {
     setIsPagamentoOpen(true);
   };
 
-  const confirmarPagamento = async () => {
-    if (!dividaSelecionada && !compraSelecionada) return;
-    if (!caixaPagamento) { 
-      alert('Selecione um caixa.'); 
-      return; 
+  const confirmarPagamento = async (e?: React.MouseEvent) => {
+    // Prevenir comportamento padrão e propagação
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
     
-    const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
-    if (isNaN(valorPagamento) || valorPagamento <= 0) {
-      alert('Valor inválido.');
+    // Verificação síncrona usando ref para evitar duplo clique
+    if (isSavingRef.current) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       return;
     }
-
-    const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
-    if (c && c.saldo < valorPagamento) { 
-      alert('Saldo insuficiente no caixa selecionado.'); 
-      return; 
-    }
-
+    
+    // Definir lock IMEDIATAMENTE
+    isSavingRef.current = true;
     setIsSaving(true);
     
     try {
+      if (!dividaSelecionada && !compraSelecionada) {
+        isSavingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+      
+      if (!caixaPagamento) { 
+        alert('Selecione um caixa.'); 
+        isSavingRef.current = false;
+        setIsSaving(false);
+        return; 
+      }
+      
+      const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
+      if (isNaN(valorPagamento) || valorPagamento <= 0) {
+        alert('Valor inválido.');
+        isSavingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
+      const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
+      if (c && c.saldo < valorPagamento) { 
+        alert('Saldo insuficiente no caixa selecionado.'); 
+        isSavingRef.current = false;
+        setIsSaving(false);
+        return; 
+      }
+
       if (dividaSelecionada) {
         // Atualizar dívida
         const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
-        if (!dividaAtual) return;
+        if (!dividaAtual) {
+          isSavingRef.current = false;
+          setIsSaving(false);
+          return;
+        }
+
+        // Verificar duplicatas ANTES de fazer qualquer operação
+        const descricaoTransacao = `Pagamento dívida: ${dividaAtual.descricao}`;
+        const dataTransacao = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+        const horaTransacao = new Date().toTimeString().slice(0,5);
+        
+        // Criar chave única para esta transação
+        const transacaoKey = `${descricaoTransacao}-${valorPagamento}-${caixaPagamento}-${dataTransacao}-${horaTransacao}`;
+        
+        // Verificar se já está sendo criada
+        if (transacoesEmCriacaoRef.current.has(transacaoKey)) {
+          isSavingRef.current = false;
+          setIsSaving(false);
+          return;
+        }
+        
+        // Verificar se já existe no banco
+        const transacoesRecentes = (transacoes || []).filter((t: any) => {
+          const mesmaDescricao = t.descricao === descricaoTransacao;
+          const mesmoValor = Math.abs(t.valor - valorPagamento) < 0.01;
+          const mesmoCaixa = t.caixaId === caixaPagamento;
+          const mesmaData = t.data === dataTransacao;
+          const mesmaHora = t.hora === horaTransacao;
+          return mesmaDescricao && mesmoValor && mesmoCaixa && mesmaData && mesmaHora;
+        });
+
+        // Se já existe transação idêntica, não continuar
+        if (transacoesRecentes.length > 0) {
+          isSavingRef.current = false;
+          setIsSaving(false);
+          return;
+        }
+        
+        // Marcar como em criação
+        transacoesEmCriacaoRef.current.add(transacaoKey);
 
         const novoValorPago = (dividaAtual.valorPago || 0) + valorPagamento;
         
@@ -662,27 +731,38 @@ export default function DividasManager() {
           setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
         }
 
-        await (saveTransacao && saveTransacao({
-          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
-          caixaId: caixaPagamento,
-          tipo: 'saida',
-          valor: valorPagamento,
-          descricao: `Pagamento dívida: ${dividaAtual.descricao}`,
-          categoria: 'Dívidas',
-          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-          hora: new Date().toTimeString().slice(0,5)
-        }));
+        // Criar transação com ID único baseado em timestamp + dados
+        if (saveTransacao) {
+          const transactionId = `${Date.now()}-${dividaAtual.id}-${valorPagamento}`;
+          await saveTransacao({
+            id: transactionId,
+            caixaId: caixaPagamento,
+            tipo: 'saida',
+            valor: valorPagamento,
+            descricao: descricaoTransacao,
+            categoria: 'Dívidas',
+            data: dataTransacao,
+            hora: horaTransacao
+          });
+        }
 
         const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
         if (cx) {
           await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
         }
+        
+        // Remover da lista de transações em criação após 3 segundos
+        setTimeout(() => {
+          transacoesEmCriacaoRef.current.delete(transacaoKey);
+        }, 3000);
       }
 
       if (compraSelecionada) {
         // Atualizar compra
         const compra = comprasCartao.find((p: CompraCartao) => p.id === compraSelecionada.id);
         if (!compra) {
+          isSavingRef.current = false;
+          setIsSaving(false);
           return;
         }
 
@@ -738,39 +818,74 @@ export default function DividasManager() {
         }
       }
 
-    setIsPagamentoOpen(false);
-    setDividaSelecionada(null);
+      // Fechar modal e limpar apenas após TODAS as operações completarem
+      setIsPagamentoOpen(false);
+      setDividaSelecionada(null);
       setCompraSelecionada(null);
       setValorPagamentoInput('');
       setDataPagamento('');
       setHoraPagamento('');
     } catch (error: any) {
       alert('Erro ao processar pagamento: ' + (error.message || error));
+      // Em caso de erro, NÃO fechar o modal para o usuário poder tentar novamente
+      // Limpar qualquer transação em criação em caso de erro
+      transacoesEmCriacaoRef.current.clear();
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
 
-  const confirmarEstorno = async () => {
-    if (!dividaSelecionada && !compraSelecionada) return;
-    if (!caixaPagamento) { 
-      alert('Selecione um caixa.'); 
-      return; 
+  const confirmarEstorno = async (e?: React.MouseEvent) => {
+    // Prevenir comportamento padrão e propagação
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
     
-    const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
-    if (isNaN(valorPagamento) || valorPagamento <= 0) {
-      alert('Valor inválido.');
+    // Verificação síncrona usando ref para evitar duplo clique
+    if (isSavingRef.current) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       return;
     }
-
+    
+    // Definir lock IMEDIATAMENTE
+    isSavingRef.current = true;
     setIsSaving(true);
     
     try {
+      if (!dividaSelecionada && !compraSelecionada) {
+        isSavingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+      
+      if (!caixaPagamento) { 
+        alert('Selecione um caixa.'); 
+        isSavingRef.current = false;
+        setIsSaving(false);
+        return; 
+      }
+      
+      const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
+      if (isNaN(valorPagamento) || valorPagamento <= 0) {
+        alert('Valor inválido.');
+        isSavingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
       if (dividaSelecionada) {
         // Atualizar dívida (reverter pagamento)
         const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
-        if (!dividaAtual) return;
+        if (!dividaAtual) {
+          isSavingRef.current = false;
+          setIsSaving(false);
+          return;
+        }
 
         const novoValorPago = Math.max(0, (dividaAtual.valorPago || 0) - valorPagamento);
         
@@ -808,7 +923,11 @@ export default function DividasManager() {
       if (compraSelecionada) {
         // Atualizar compra (reverter pagamento)
         const compra = comprasCartao.find((p: CompraCartao) => p.id === compraSelecionada.id);
-        if (!compra) return;
+        if (!compra) {
+          isSavingRef.current = false;
+          setIsSaving(false);
+          return;
+        }
 
         const novoValorPago = Math.max(0, ((compra as any).valorPago || 0) - valorPagamento);
         
@@ -840,6 +959,7 @@ export default function DividasManager() {
         }
       }
 
+      // Fechar modal e limpar apenas após TODAS as operações completarem
       setIsPagamentoOpen(false);
       setDividaSelecionada(null);
       setCompraSelecionada(null);
@@ -848,7 +968,9 @@ export default function DividasManager() {
       setValorPagamentoInput('');
     } catch (error: any) {
       alert('Erro ao processar estorno: ' + (error.message || error));
+      // Em caso de erro, NÃO fechar o modal para o usuário poder tentar novamente
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -1562,14 +1684,32 @@ export default function DividasManager() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)} disabled={isSaving}>Cancelar</Button>
             {modoPagamento === 'pay' ? (
-              <Button onClick={confirmarPagamento} disabled={!caixaPagamento || isSaving}>
-                {isSaving ? 'Processando...' : 'Confirmar pagamento'}
+              <Button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!isSavingRef.current && !isSaving) {
+                    confirmarPagamento(e);
+                  }
+                }} 
+                disabled={!caixaPagamento || isSaving}
+              >
+                {isSaving ? 'Salvando...' : 'Confirmar pagamento'}
               </Button>
             ) : (
-              <Button onClick={confirmarEstorno} disabled={!caixaPagamento || isSaving}>
-                {isSaving ? 'Processando...' : 'Confirmar estorno'}
+              <Button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!isSavingRef.current && !isSaving) {
+                    confirmarEstorno(e);
+                  }
+                }} 
+                disabled={!caixaPagamento || isSaving}
+              >
+                {isSaving ? 'Salvando...' : 'Confirmar estorno'}
               </Button>
             )}
           </DialogFooter>
@@ -1784,7 +1924,12 @@ export default function DividasManager() {
         </Dialog>
 
       {/* Dialog de pagamento */}
-      <Dialog open={isPagamentoOpen} onOpenChange={(o) => { setIsPagamentoOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } }}>
+      <Dialog open={isPagamentoOpen} onOpenChange={(o) => { 
+        // Impedir fechar o modal enquanto está salvando
+        if (!o && isSaving) return;
+        setIsPagamentoOpen(o); 
+        if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 0); } catch {} } 
+      }}>
           <DialogContent className="max-h-[90vh] overflow-y-auto overscroll-contain">
           <DialogHeader>
             <DialogTitle>Registrar Pagamento</DialogTitle>
