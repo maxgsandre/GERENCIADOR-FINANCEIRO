@@ -32,6 +32,7 @@
             "class-variance-authority": "^0.7.1",
             "clsx": "*",
             "cmdk": "^1.1.1",
+            "dotenv": "^17.2.3",
             "embla-carousel-react": "^8.6.0",
             "firebase": "*",
             "input-otp": "^1.4.2",
@@ -45,6 +46,7 @@
             "recharts": "^2.15.2",
             "sonner": "^2.0.3",
             "tailwind-merge": "*",
+            "tsx": "^4.20.6",
             "vaul": "^1.1.2",
             "xlsx": "^0.18.5"
       },
