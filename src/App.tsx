@@ -35,9 +35,10 @@ export interface Transacao {
   tipo: 'entrada' | 'saida';
   valor: number;
   descricao: string;
-  categoria: string;
+  categoria?: string; // opcional para transferências/ajustes
   data: string;
   hora: string;
+  ignorarDashboard?: boolean; // quando true, não entra nos totais de entradas/saídas do Dashboard
   periodo?: string; // YYYY-MM para armazenamento por mês
 }
 
