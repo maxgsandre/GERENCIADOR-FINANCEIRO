@@ -1257,7 +1257,7 @@ export default function DividasManager() {
     return valorTotal > 0 ? (valorPago / valorTotal) * 100 : 0;
   };
 
-  // Função para calcular valor restante baseado em parcelaIndex
+  // Função para calcular valor restante baseado em parcelasPagas (não transações)
   const getValorRestante = (divida: Divida): number => {
     // Para dívidas parceladas com parcelaIndex, calcular baseado nas parcelas restantes
     if (divida.tipo === 'parcelada' && divida.parcelaIndex !== undefined && divida.parcelaTotal !== undefined) {
@@ -1276,7 +1276,25 @@ export default function DividasManager() {
       return Math.max(0, Math.round(restante * 100) / 100);
     }
     
-    // Fallback: usar valor total - valor pago
+    // Para dívidas parceladas sem parcelaIndex: usar parcelasPagas
+    if (divida.tipo === 'parcelada' && divida.parcelas > 1) {
+      const parcelasPagas = divida.parcelasPagas || 0;
+      const totalParcelas = divida.parcelas || 1;
+      const valorParcela = divida.valorParcela || (divida.valorTotal / totalParcelas);
+      const valorPago = parcelasPagas * valorParcela;
+      
+      // Se todas as parcelas foram pagas, incluir ajuste de centavos
+      let valorPagoTotal = valorPago;
+      if (parcelasPagas >= totalParcelas) {
+        const ajusteCentavos = Math.round(divida.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+        valorPagoTotal = valorPago + ajusteCentavos / 100;
+      }
+      
+      const restante = divida.valorTotal - valorPagoTotal;
+      return Math.max(0, Math.round(restante * 100) / 100);
+    }
+    
+    // Para dívidas à vista: usar valorPago
     return Math.max(0, divida.valorTotal - (divida.valorPago || 0));
   };
 
@@ -1600,7 +1618,36 @@ export default function DividasManager() {
   // Totais combinados
   const totalDividas = totalDividasNormais + totalFaturasCartao;
   const totalPago = totalPagoNormais + totalPagoCartao;
-  const totalRestante = Math.max(0, totalDividas - totalPago);
+  
+  // Calcular total restante somando todos os restantes individuais
+  // Para dívidas: usar getValorRestante de cada dívida agrupada (representando a dívida completa)
+  const totalRestanteDividas = Array.from(dividasAgrupadas.values()).reduce((sum, grupo) => {
+    const primeiraDivida = grupo[0];
+    // Calcular restante individual exatamente como na tabela
+    const restante = getValorRestante(primeiraDivida);
+    return sum + restante;
+  }, 0);
+  
+  // Para compras de cartão: calcular restante individual de cada compra
+  const totalRestanteCartao = (comprasCartao || []).reduce((sum, compra) => {
+    const parcelasPagas = compra.parcelasPagas || 0;
+    const totalParcelas = compra.parcelas || 1;
+    const valorParcela = compra.valorParcela || (compra.valorTotal / totalParcelas);
+    const valorPago = parcelasPagas * valorParcela;
+    
+    // Se todas as parcelas foram pagas, incluir ajuste de centavos
+    let valorPagoTotal = valorPago;
+    if (parcelasPagas >= totalParcelas) {
+      const ajusteCentavos = Math.round(compra.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+      valorPagoTotal = valorPago + ajusteCentavos / 100;
+    }
+    
+    const restante = Math.max(0, compra.valorTotal - valorPagoTotal);
+    return sum + restante;
+  }, 0);
+  
+  // Total restante = soma de todos os restantes individuais
+  const totalRestante = totalRestanteDividas + totalRestanteCartao;
 
   // Dívidas próximas do vencimento (próximos 30 dias)
   const hoje = new Date();
