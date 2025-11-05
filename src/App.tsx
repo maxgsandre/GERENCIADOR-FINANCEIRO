@@ -133,6 +133,7 @@ export interface CompraCartao {
   startMonth: string; // YYYY-MM primeira competência
   dataCompra: string; // YYYY-MM-DD
   parcelasPagas: number;
+  valorPago?: number; // Valor total pago (distribuído proporcionalmente ao pagar fatura)
   startDay?: number;
 }
 
