@@ -44,6 +44,56 @@ export default function GastosFixosManager() {
   const [horaPagamento, setHoraPagamento] = useState('');
   const [descricaoPagamento, setDescricaoPagamento] = useState('');
   const caixaSelecionado = caixas?.find((c: any) => c.id === caixaPagamento) || null;
+
+  // Saldo real do mês selecionado para um caixa: saldo inicial do mês + (entradas - saídas) do mês
+  const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
+  const parseYM = (ym: string) => { const [yy, mm] = ym.split('-').map(Number); return { y: yy, m: mm }; };
+  const nextYM = (y: number, m: number) => ({ y: m === 12 ? y + 1 : y, m: m === 12 ? 1 : m + 1 });
+  const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
+    return (transacoes as any[])
+      .filter(t => t.caixaId === caixaId)
+      .filter(t => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
+      .reduce((s, t) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+  };
+  const computeInitialForMonth = (caixa: any, ym: string) => {
+    const init = (caixa as any).initialByMonth as Record<string, number> | undefined;
+    if (init && Object.prototype.hasOwnProperty.call(init, ym)) {
+      return (init as any)[ym] ?? 0;
+    }
+    if (!init) return 0;
+    const { y: ty, m: tm } = parseYM(ym);
+    let bestKey: string | null = null;
+    Object.keys(init).forEach(k => {
+      const { y, m } = parseYM(k);
+      if (ymToIndex(y, m) <= ymToIndex(ty, tm)) {
+        if (bestKey === null) bestKey = k; else {
+          const { y: by, m: bm } = parseYM(bestKey);
+          if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k;
+        }
+      }
+    });
+    if (!bestKey) return 0;
+    const { y: sy, m: sm } = parseYM(bestKey);
+    let currentInitial = (init as any)[bestKey] ?? 0;
+    let cy = sy, cm = sm;
+    while (!(cy === ty && cm === tm)) {
+      currentInitial = currentInitial + monthlyTotalFor((caixa as any).id, cy, cm);
+      const n = nextYM(cy, cm); cy = n.y; cm = n.m;
+    }
+    return currentInitial;
+  };
+  const saldoRealDoMes = (caixa: any): number => {
+    if (!caixa) return 0;
+    const [ys, ms] = selectedMonth.split('-').map(Number);
+    const inicial = computeInitialForMonth(caixa, selectedMonth);
+    const fluxoMes = monthlyTotalFor(caixa.id, ys, ms);
+    const calculado = inicial + fluxoMes;
+    // Fallback para bases legadas sem initialByMonth: usa saldo legado se fizer sentido
+    if ((!caixa.initialByMonth || Object.keys(caixa.initialByMonth || {}).length === 0) && (caixa.saldo || 0) !== 0) {
+      return caixa.saldo;
+    }
+    return calculado;
+  };
   const autoCleanRanRef = useRef(false);
   const [isDuplicarDialogOpen, setIsDuplicarDialogOpen] = useState(false);
   const [mesOrigem, setMesOrigem] = useState('');
@@ -180,7 +230,6 @@ export default function GastosFixosManager() {
     };
   }, [transacoes, gastosFixos]);
   const valorPagamentoNum = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
-  const saldoInsuficiente = modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado ? (caixaSelecionado.saldo < valorPagamentoNum) : false;
 
   // Preencher automaticamente o valor sugerido ao abrir o modal de pagamento
   useEffect(() => {
@@ -197,6 +246,11 @@ export default function GastosFixosManager() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
+
+  const isSaldoInsuficiente = (): boolean => {
+    if (!(modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado)) return false;
+    return saldoRealDoMes(caixaSelecionado) < valorPagamentoNum;
+  };
 
   // Replicação idempotente de gastos fixos ao mudar de mês (usa meta no Firestore)
   useEffect(() => {
@@ -833,7 +887,6 @@ export default function GastosFixosManager() {
     }
   };
 
-  const ymToIndex = (year: number, month1to12: number) => year * 12 + (month1to12 - 1);
 
   const confirmarPagamentoVinculado = async () => {
     if (!gastoSelecionado || !caixaPagamento) return;
@@ -1038,9 +1091,12 @@ export default function GastosFixosManager() {
               <div className="space-y-2">
                 <Label>Selecionar Caixa</Label>
                 <select className="w-full border rounded h-9 px-2 bg-background" value={caixaPagamento || ''} onChange={(e) => setCaixaPagamento(e.target.value)}>
-                  {caixas.map((c: any) => (
-                    <option key={c.id} value={c.id}>{c.nome}</option>
-                  ))}
+                  {caixas.map((c: any) => {
+                    const saldo = saldoRealDoMes(c);
+                    return (
+                      <option key={c.id} value={c.id}>{c.nome} - R$ {saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</option>
+                    );
+                  })}
                 </select>
               </div>
             )}
@@ -1057,16 +1113,18 @@ export default function GastosFixosManager() {
               <p className="text-sm text-muted-foreground">Valor total: <strong>R$ {gastoSelecionado?.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
             </div>
             {caixaSelecionado && (
-              <p className={`text-sm ${saldoInsuficiente ? 'text-red-600' : 'text-muted-foreground'}`}>Saldo do caixa: <strong>R$ {caixaSelecionado.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
+              <p className={`text-sm ${isSaldoInsuficiente() ? 'text-red-600' : 'text-muted-foreground'}`}>
+                Saldo do caixa no mês: <strong>R$ {saldoRealDoMes(caixaSelecionado).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+              </p>
             )}
-            {saldoInsuficiente && (
+            {isSaldoInsuficiente() && (
               <p className="text-sm text-red-600">Saldo insuficiente. Selecione outro caixa ou ajuste o valor.</p>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsPagamentoOpen(false)}>Cancelar</Button>
             {modoPagamento === 'pay' ? (
-              <Button onClick={confirmarPagamentoVinculado} disabled={!caixaPagamento || saldoInsuficiente}>Confirmar pagamento</Button>
+              <Button onClick={confirmarPagamentoVinculado} disabled={!caixaPagamento || isSaldoInsuficiente()}>Confirmar pagamento</Button>
             ) : (
               <Button onClick={confirmarEstornoVinculado} disabled={!caixaPagamento}>Confirmar estorno</Button>
             )}
@@ -1144,17 +1202,8 @@ export default function GastosFixosManager() {
                 </SelectTrigger>
                 <SelectContent>
                   {caixas?.map((caixa: any) => {
-                    // Exibir o saldo final do mês selecionado, não o saldo persistido
-                    const [yy, mm] = selectedMonth.split('-').map(Number);
-                    const valorInicial = (caixa.initialByMonth && caixa.initialByMonth[selectedMonth]) ?? 0;
-                    const totalMes = (transacoes || [])
-                      .filter((t: any) => t.caixaId === caixa.id)
-                      .filter((t: any) => {
-                        const d = new Date(t.data + 'T00:00:00');
-                        return d.getFullYear() === yy && d.getMonth() === (mm - 1);
-                      })
-                      .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
-                    const saldoFinalMes = valorInicial + totalMes;
+                    // Usar saldoRealDoMes que já calcula corretamente: initialByMonth propagado + transações do mês
+                    const saldoFinalMes = saldoRealDoMes(caixa);
                     return (
                       <SelectItem key={caixa.id} value={caixa.id}>
                         {caixa.nome} - R$ {saldoFinalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
