@@ -1587,11 +1587,17 @@ export default function CaixasManager() {
                   onChange={(e) => setCaixaReceita(e.target.value)}
                 >
                   <option value="" disabled>Selecione um caixa</option>
-                  {caixas.map((c: any) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome} - Saldo: R$ {c.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </option>
-                  ))}
+                  {caixas.map((c: any) => {
+                    const { y: ano, m: mes } = parseYM(selectedMonth);
+                    const valorInicial = computeInitialForMonth(c as Caixa, selectedMonth);
+                    const totalMes = monthlyTotalFor(c.id, ano, mes);
+                    const saldoFinalMes = valorInicial + totalMes;
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.nome} - Saldo: R$ {saldoFinalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
