@@ -278,6 +278,7 @@ export default function DividasManager() {
       startMonth,
       dataCompra: purchaseDate,
       parcelasPagas: parcelasPagas,
+      valorPago: 0, // Inicializar valorPago como 0
       startDay,
     } as any;
     setIsSubmittingCreatePurchase(true);
@@ -798,6 +799,74 @@ export default function DividasManager() {
       // Pagamento de cartão (dívida temporária)
       if (dividaSelecionada && dividaSelecionada.id.startsWith('card:')) {
         const cardId = dividaSelecionada.id.replace('card:', '');
+        
+        // Encontrar todas as compras do cartão que têm parcela no mês selecionado
+        const comprasDoMes = (comprasCartao as CompraCartao[])
+          .filter(p => p.cardId === cardId)
+          .map(p => {
+            const [sy, sm] = p.startMonth.split('-').map(Number);
+            const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+            if (idx >= 0 && idx < p.parcelas) {
+              const valorParcelaMes = purchaseInstallmentValue(p, idx);
+              return { compra: p, idx, valorParcelaMes };
+            }
+            return null;
+          })
+          .filter((x): x is { compra: CompraCartao; idx: number; valorParcelaMes: number } => x !== null);
+        
+        // Calcular valor total da fatura
+        const valorTotalFatura = comprasDoMes.reduce((sum, item) => sum + item.valorParcelaMes, 0);
+        
+        // Distribuir o pagamento proporcionalmente entre as compras
+        if (valorTotalFatura > 0 && comprasDoMes.length > 0) {
+          for (const item of comprasDoMes) {
+            const proporcao = item.valorParcelaMes / valorTotalFatura;
+            const valorPagoNestaCompra = valorPagamento * proporcao;
+            
+            // Atualizar valorPago da compra
+            const valorPagoAtual = item.compra.valorPago || 0;
+            const novoValorPago = valorPagoAtual + valorPagoNestaCompra;
+            
+            // Calcular parcelasPagas baseado no novo valorPago
+            const totalParcelas = item.compra.parcelas || 1;
+            const valorParcela = item.compra.valorParcela || (item.compra.valorTotal / totalParcelas);
+            let novasParcelasPagas = item.compra.parcelasPagas || 0;
+            
+            // Se todas as parcelas foram pagas, incluir ajuste de centavos
+            let valorPagoCalculado = novasParcelasPagas * valorParcela;
+            if (novasParcelasPagas >= totalParcelas) {
+              const ajusteCentavos = Math.round(item.compra.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+              valorPagoCalculado += ajusteCentavos / 100;
+            }
+            
+            // Se o novo valorPago é maior que o calculado, atualizar parcelasPagas
+            if (novoValorPago > valorPagoCalculado) {
+              // Calcular quantas parcelas foram pagas baseado no valorPago
+              const parcelasParciais = novoValorPago / valorParcela;
+              novasParcelasPagas = Math.min(totalParcelas, Math.floor(parcelasParciais));
+              
+              // Verificar se completou todas as parcelas
+              if (novasParcelasPagas >= totalParcelas) {
+                const valorPagoCompleto = totalParcelas * valorParcela;
+                const ajusteCentavos = Math.round(item.compra.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+                const valorEsperado = valorPagoCompleto + (ajusteCentavos / 100);
+                if (novoValorPago >= valorEsperado) {
+                  novasParcelasPagas = totalParcelas;
+                }
+              }
+            }
+            
+            // Atualizar compra
+            const compraAtualizada = {
+              ...item.compra,
+              valorPago: novoValorPago,
+              parcelasPagas: novasParcelasPagas
+            } as CompraCartao;
+            
+            await saveCompraCartao(compraAtualizada);
+            setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === compraAtualizada.id ? compraAtualizada : p));
+          }
+        }
         
         // Criar transação
         await (saveTransacao && saveTransacao({
