@@ -119,12 +119,13 @@ export default function TransacoesManager() {
     categoria: '',
     data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
     hora: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+    incluirNoDashboard: true,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    if (!formData.caixaId || !formData.valor || !formData.descricao || !formData.categoria) return;
+    if (!formData.caixaId || !formData.valor || !formData.descricao) return;
     setIsSubmitting(true);
     const novaTransacao: Transacao = {
       id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
@@ -132,9 +133,10 @@ export default function TransacoesManager() {
       tipo: formData.tipo,
       valor: parseFloat(formData.valor.replace(',', '.')),
       descricao: formData.descricao,
-      categoria: formData.categoria,
+      categoria: formData.categoria || undefined,
       data: formData.data,
       hora: formData.hora,
+      ignorarDashboard: !formData.incluirNoDashboard,
     };
 
     const caixaAtual = caixas.find(c => c.id === formData.caixaId);
@@ -183,6 +185,7 @@ export default function TransacoesManager() {
       categoria: '',
       data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
       hora: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+      incluirNoDashboard: true,
     });
     setAdicionarDivida(false);
     setIsDialogOpen(false);
@@ -307,6 +310,7 @@ export default function TransacoesManager() {
       categoria: transacao.categoria,
       data: transacao.data,
       hora: transacao.hora,
+      incluirNoDashboard: !transacao.ignorarDashboard,
     });
     setIsDialogOpen(true);
   };
@@ -315,7 +319,7 @@ export default function TransacoesManager() {
     e.preventDefault();
     if (isSubmitting) return;
     if (!editingTransacao) return;
-    if (!formData.caixaId || !formData.valor || !formData.descricao || !formData.categoria) return;
+    if (!formData.caixaId || !formData.valor || !formData.descricao) return;
     setIsSubmitting(true);
 
     const transacaoAtualizada: Transacao = {
@@ -324,9 +328,10 @@ export default function TransacoesManager() {
       tipo: formData.tipo,
       valor: parseFloat(formData.valor.replace(',', '.')),
       descricao: formData.descricao,
-      categoria: formData.categoria,
+      categoria: formData.categoria || undefined,
       data: formData.data,
       hora: formData.hora,
+      ignorarDashboard: !formData.incluirNoDashboard,
     };
 
     const caixaAntiga = caixas.find(c => c.id === editingTransacao.caixaId);
@@ -588,6 +593,18 @@ export default function TransacoesManager() {
                 </div>
               </div>
               
+              {/* Flag: não contabilizar no Dashboard */}
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="incluirNoDashboard"
+                  checked={formData.incluirNoDashboard}
+                  onCheckedChange={(v) => setFormData(prev => ({ ...prev, incluirNoDashboard: v }))}
+                />
+                <Label htmlFor="incluirNoDashboard" className="text-sm">
+                  Contabilizar esta transação nas entradas/saídas do Dashboard
+                </Label>
+              </div>
+
               {/* Checkbox para adicionar à lista de dívidas (apenas para saídas) */}
               {formData.tipo === 'saida' && (
                 <div className="flex items-center space-x-2">
