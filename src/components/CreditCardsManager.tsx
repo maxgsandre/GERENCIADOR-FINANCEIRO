@@ -96,6 +96,7 @@ export default function CreditCardsManager() {
       startMonth,
       dataCompra,
       parcelasPagas: 0,
+      valorPago: 0, // Inicializar valorPago como 0
     } as any;
     setIsSubmittingPurchase(true);
     await saveCompraCartao(p);

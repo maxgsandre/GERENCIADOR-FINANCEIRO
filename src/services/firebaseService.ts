@@ -1076,7 +1076,10 @@ export const subscribeToCreditCards = (userId: string, callback: (cards: CartaoC
 const migratePurchaseToCard = async (userId: string, purchase: CompraCartao) => {
   try {
     if (!purchase.cardId) return;
-    const payload: any = { ...purchase };
+    const payload: any = { 
+      ...purchase,
+      valorPago: purchase.valorPago ?? 0 // Garantir que valorPago seja sempre definido
+    };
     Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
     await setDoc(doc(db, 'users', userId, 'creditCards', purchase.cardId, 'compras', purchase.id), payload);
     // Apagar doc antigo
@@ -1087,7 +1090,10 @@ const migratePurchaseToCard = async (userId: string, purchase: CompraCartao) => 
 export const saveCreditCardPurchase = async (userId: string, purchase: CompraCartao) => {
   if (!purchase.cardId) throw new Error('Compra deve estar vinculada a um cartão');
   
-  const payload: any = { ...purchase };
+  const payload: any = { 
+    ...purchase,
+    valorPago: purchase.valorPago ?? 0 // Garantir que valorPago seja sempre definido
+  };
   Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
   await setDoc(doc(db, 'users', userId, 'creditCards', purchase.cardId, 'compras', purchase.id), payload);
   
@@ -1157,7 +1163,15 @@ export const subscribeToCreditCardPurchases = (userId: string, callback: (purcha
         const comprasCol = collection(db, 'users', userId, 'creditCards', cardId, 'compras');
         const comprasUnsub = onSnapshot(comprasCol, (comprasSnap) => {
           const compras: CompraCartao[] = [];
-          comprasSnap.forEach((doc) => compras.push({ id: doc.id, ...doc.data() } as CompraCartao));
+          comprasSnap.forEach((doc) => {
+            const data = doc.data();
+            // Garantir que valorPago seja inicializado como 0 se não existir
+            compras.push({ 
+              id: doc.id, 
+              ...data,
+              valorPago: data.valorPago ?? 0
+            } as CompraCartao);
+          });
           purchasesByCard.set(cardId, compras);
           emitir();
         });
@@ -1186,7 +1200,11 @@ export const subscribeToCreditCardPurchases = (userId: string, callback: (purcha
     snapshot.forEach((d) => {
       const data = d.data() as any;
       if (data && data.cardId && data.descricao) {
-        const purchase: CompraCartao = { id: d.id, ...data } as any;
+        const purchase: CompraCartao = { 
+          id: d.id, 
+          ...data,
+          valorPago: data.valorPago ?? 0 // Garantir que valorPago seja inicializado
+        } as any;
         jobs.push(migratePurchaseToCard(userId, purchase));
       }
     });
