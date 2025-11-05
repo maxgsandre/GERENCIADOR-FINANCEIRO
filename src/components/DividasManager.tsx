@@ -1362,54 +1362,50 @@ export default function DividasManager() {
       return parcelaMes;
     }
     
-    const transacoesDivida = (transacoes as any[]).filter(t => 
-      t.descricao === `Pagamento dívida: ${d.descricao}`
-    );
-    
-    const totalPagoViaTransacoes = transacoesDivida.reduce((sum, t) => sum + t.valor, 0);
-    
+    // Para dívidas parceladas: usar parcelasPagas ao invés de transações
     if (d.tipo === 'parcelada') {
+      const parcelasPagas = d.parcelasPagas || 0;
       const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
       const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
       if (idx < 0 || idx >= d.parcelas) return 0;
       
-      const parcelaMes = getMonthlyDue(d);
-      const valorAteEstaParcela = (idx + 1) * d.valorParcela;
-      
-      if (totalPagoViaTransacoes >= valorAteEstaParcela) {
+      // Se a parcela deste mês foi paga (idx < parcelasPagas), retornar valor da parcela
+      if (idx < parcelasPagas) {
+        const parcelaMes = getMonthlyDue(d);
         return parcelaMes;
-      } else if (totalPagoViaTransacoes > idx * d.valorParcela) {
-        return Math.min(parcelaMes, totalPagoViaTransacoes - (idx * d.valorParcela));
       }
       
       return 0;
     }
     
+    // Para dívidas à vista (tipo 'total'): usar valorPago diretamente
     const vencYM = parseYYYYMMDDtoYM(d.dataVencimento);
     if (vencYM.y === selectedYM.y && vencYM.m === selectedYM.m) {
-      return totalPagoViaTransacoes;
+      const valorPago = d.valorPago || 0;
+      const valorDue = getMonthlyDue(d);
+      // Se o valor pago é maior ou igual ao valor devido, retornar o valor devido
+      if (valorPago >= valorDue) {
+        return valorDue;
+      }
+      // Caso contrário, retornar o valor pago (pagamento parcial)
+      return valorPago;
     }
     return 0;
   };
 
   const getMonthlyPaidCompra = (c: CompraCartao): number => {
-    const transacoesCompra = (transacoes as any[]).filter(t => 
-      t.descricao === `Pagamento cartão: ${c.descricao}`
-    );
-    
-    const totalPagoViaTransacoes = transacoesCompra.reduce((sum, t) => sum + t.valor, 0);
+    // Usar parcelasPagas ao invés de transações
+    const parcelasPagas = c.parcelasPagas || 0;
+    const totalParcelas = c.parcelas || 1;
     
     const [sy, sm] = c.startMonth.split('-').map(Number);
     const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-    if (idx < 0 || idx >= c.parcelas) return 0;
+    if (idx < 0 || idx >= totalParcelas) return 0;
     
-    const parcelaMes = purchaseInstallmentValue(c, idx);
-    const valorAteEstaParcela = (idx + 1) * c.valorParcela;
-    
-    if (totalPagoViaTransacoes >= valorAteEstaParcela) {
+    // Se a parcela deste mês foi paga (idx < parcelasPagas), retornar valor da parcela
+    if (idx < parcelasPagas) {
+      const parcelaMes = purchaseInstallmentValue(c, idx);
       return parcelaMes;
-    } else if (totalPagoViaTransacoes > idx * c.valorParcela) {
-      return Math.min(parcelaMes, totalPagoViaTransacoes - (idx * c.valorParcela));
     }
     
     return 0;
@@ -1558,8 +1554,26 @@ export default function DividasManager() {
   }, 0);
   
   const totalPagoNormais = Array.from(dividasAgrupadas.values()).reduce((sum, grupo) => {
-    // Somar valorPago de todas as parcelas do grupo
-    return sum + grupo.reduce((s, d) => s + (d.valorPago || 0), 0);
+    // Pegar a primeira dívida do grupo (representa a dívida completa)
+    const primeiraDivida = grupo[0];
+    
+    // Para dívidas parceladas: calcular baseado em parcelasPagas
+    if (primeiraDivida.tipo === 'parcelada' && primeiraDivida.parcelas > 1) {
+      const parcelasPagas = primeiraDivida.parcelasPagas || 0;
+      const valorParcela = primeiraDivida.valorParcela || (primeiraDivida.valorTotal / primeiraDivida.parcelas);
+      const valorPago = parcelasPagas * valorParcela;
+      
+      // Se todas as parcelas foram pagas, incluir ajuste de centavos
+      if (parcelasPagas >= primeiraDivida.parcelas) {
+        const ajusteCentavos = Math.round(primeiraDivida.valorTotal * 100) - Math.round(valorParcela * 100) * primeiraDivida.parcelas;
+        return sum + (valorPago + ajusteCentavos / 100);
+      }
+      
+      return sum + valorPago;
+    }
+    
+    // Para dívidas à vista: usar valorPago diretamente
+    return sum + (primeiraDivida.valorPago || 0);
   }, 0);
   
   // Calcular totais das faturas dos cartões (somar TODAS as parcelas de TODAS as compras)
@@ -1570,7 +1584,16 @@ export default function DividasManager() {
   // Calcular total pago das compras de cartão baseado em parcelas pagas
   const totalPagoCartao = (comprasCartao || []).reduce((sum, compra) => {
     const parcelasPagas = compra.parcelasPagas || 0;
-    const valorPago = parcelasPagas * (compra.valorParcela || 0);
+    const totalParcelas = compra.parcelas || 1;
+    const valorParcela = compra.valorParcela || (compra.valorTotal / totalParcelas);
+    const valorPago = parcelasPagas * valorParcela;
+    
+    // Se todas as parcelas foram pagas, incluir ajuste de centavos
+    if (parcelasPagas >= totalParcelas) {
+      const ajusteCentavos = Math.round(compra.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+      return sum + (valorPago + ajusteCentavos / 100);
+    }
+    
     return sum + valorPago;
   }, 0);
   
@@ -2742,14 +2765,17 @@ export default function DividasManager() {
         <CardContent>
           <div className="space-y-2">
             {(() => {
-              const percentualGeral = totalDividas > 0 && isFinite(totalDividas) && isFinite(totalPago) 
-                ? (totalPago / totalDividas) * 100 
+              // Calcular progresso geral baseado em totais: (Total Pago) / (Total das Dívidas)
+              // Total Pago = Total das Dívidas - Total Restante
+              const totalPagoCalculado = totalDividas - totalRestante;
+              const percentualGeral = totalDividas > 0 && isFinite(totalDividas) && isFinite(totalPagoCalculado) 
+                ? (totalPagoCalculado / totalDividas) * 100 
                 : 0;
               return (
                 <>
                   <Progress value={Math.max(0, Math.min(100, percentualGeral))} />
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>R$ {isFinite(totalPago) ? totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'} pago</span>
+                    <span>R$ {isFinite(totalPagoCalculado) ? totalPagoCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'} pago</span>
                     <span>{isFinite(percentualGeral) ? percentualGeral.toFixed(1) : '0,0'}%</span>
                   </div>
                 </>
