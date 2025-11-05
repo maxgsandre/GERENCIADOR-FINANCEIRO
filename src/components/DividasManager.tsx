@@ -1510,17 +1510,52 @@ export default function DividasManager() {
                   <SelectValue placeholder="Selecione o caixa" />
                 </SelectTrigger>
                 <SelectContent>
-                  {caixas?.map((caixa: any) => (
-                    <SelectItem key={caixa.id} value={caixa.id}>
-                      {caixa.nome} - R$ {caixa.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </SelectItem>
-                  ))}
+                  {caixas?.map((caixa: any) => {
+                    // Saldo real do mês selecionado (igual ao usado em Transações/Dashboard)
+                    const ym = selectedMonth;
+                    const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
+                    const parseYM = (s: string) => { const [yy, mm] = s.split('-').map(Number); return { y: yy, m: mm }; };
+                    const nextYM = (y: number, m: number) => ({ y: m === 12 ? y + 1 : y, m: m === 12 ? 1 : m + 1 });
+                    const { y: ys, m: ms } = parseYM(ym);
+                    const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
+                      return (transacoes as any[])
+                        .filter((t: any) => t.caixaId === caixaId)
+                        .filter((t: any) => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
+                        .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+                    };
+                    const init = (caixa as any).initialByMonth as Record<string, number> | undefined;
+                    let initial = 0;
+                    if (init && Object.prototype.hasOwnProperty.call(init, ym)) initial = (init as any)[ym] ?? 0; else if (init) {
+                      let bestKey: string | null = null;
+                      Object.keys(init).forEach(k => { const { y, m } = parseYM(k); if (ymToIndex(y, m) <= ymToIndex(ys, ms)) { if (bestKey === null) bestKey = k; else { const { y: by, m: bm } = parseYM(bestKey); if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k; } } });
+                      if (bestKey) {
+                        initial = (init as any)[bestKey] ?? 0;
+                        let cy = parseYM(bestKey).y, cm = parseYM(bestKey).m;
+                        while (!(cy === ys && cm === ms)) { initial += monthlyTotalFor(caixa.id, cy, cm); const n = nextYM(cy, cm); cy = n.y; cm = n.m; }
+                      }
+                    }
+                    const saldoMes = initial + monthlyTotalFor(caixa.id, ys, ms);
+                    return (
+                      <SelectItem key={caixa.id} value={caixa.id}>
+                        {caixa.nome} - R$ {saldoMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               {caixaPagamento && (() => {
                 const caixa = caixas?.find((c: any) => c.id === caixaPagamento);
+                // Recalcular saldo real do mês para validação
+                const ym = selectedMonth; const [ys, ms] = ym.split('-').map(Number);
+                const monthlyTotalFor = (caixaId: string, y: number, m: number) => (transacoes as any[])
+                  .filter((t: any) => t.caixaId === caixaId)
+                  .filter((t: any) => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
+                  .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+                let initial = 0; const init = (caixa as any)?.initialByMonth;
+                if (init && Object.prototype.hasOwnProperty.call(init, ym)) initial = init[ym] ?? 0;
+                const saldoMes = caixa ? (initial + monthlyTotalFor(caixa.id, ys, ms)) : 0;
                 const valorPago = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
-                return caixa && valorPago > caixa.saldo ? (
+                return caixa && valorPago > saldoMes ? (
                   <p className="text-sm text-red-600">Saldo insuficiente no caixa selecionado</p>
                 ) : null;
               })()}
@@ -1797,17 +1832,34 @@ export default function DividasManager() {
                 <span className="text-muted-foreground">Saldo: R$ {(() => {
                   const caixa = caixas.find((c: any) => c.id === caixaPagamento);
                   if (!caixa) return '0,00';
-                  // Exibir o saldo final do mês selecionado, não o saldo persistido
+                  // Mesma lógica da página Caixas: initialByMonth propagado + (entradas - saídas) do mês
+                  const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
+                  const parseYM = (ym: string) => { const [yy, mm] = ym.split('-').map(Number); return { y: yy, m: mm }; };
+                  const nextYM = (y: number, m: number) => { const nm = m === 12 ? 1 : m + 1; const ny = m === 12 ? y + 1 : y; return { y: ny, m: nm }; };
+                  const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
+                    return (transacoes || [])
+                      .filter((t: any) => t.caixaId === caixaId)
+                      .filter((t: any) => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
+                      .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
+                  };
+                  const computeInitialForMonth = (cx: any, ym: string) => {
+                    const init = cx.initialByMonth as Record<string, number> | undefined;
+                    if (init && Object.prototype.hasOwnProperty.call(init, ym)) return (init as any)[ym] ?? 0;
+                    if (!init) return 0;
+                    const { y: ty, m: tm } = parseYM(ym);
+                    let bestKey: string | null = null;
+                    Object.keys(init).forEach(k => { const { y, m } = parseYM(k); if (ymToIndex(y, m) <= ymToIndex(ty, tm)) { if (bestKey === null) bestKey = k; else { const { y: by, m: bm } = parseYM(bestKey); if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k; } } });
+                    if (!bestKey) return 0;
+                    const { y: sy, m: sm } = parseYM(bestKey);
+                    let current = (init as any)[bestKey] ?? 0;
+                    let cy = sy, cm = sm;
+                    while (!(cy === ty && cm === tm)) { current = current + monthlyTotalFor(cx.id, cy, cm); const n = nextYM(cy, cm); cy = n.y; cm = n.m; }
+                    return current;
+                  };
                   const [yy, mm] = selectedMonth.split('-').map(Number);
-                  const valorInicial = (caixa.initialByMonth && caixa.initialByMonth[selectedMonth]) ?? 0;
-                  const totalMes = (transacoes || [])
-                    .filter((t: any) => t.caixaId === caixa.id)
-                    .filter((t: any) => {
-                      const d = new Date(t.data + 'T00:00:00');
-                      return d.getFullYear() === yy && d.getMonth() === (mm - 1);
-                    })
-                    .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
-                  const saldoFinalMes = valorInicial + totalMes;
+                  const initial = computeInitialForMonth(caixa, selectedMonth);
+                  const totalMes = monthlyTotalFor(caixa.id, yy, mm);
+                  const saldoFinalMes = initial + totalMes;
                   return saldoFinalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
                 })()}</span>
               </div>
