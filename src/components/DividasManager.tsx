@@ -2546,14 +2546,29 @@ export default function DividasManager() {
                       </div>
                     </div>
                     {/* Linha secundária: informações de vencimento e limite */}
-                    <div className="mt-1 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                      <span>Dia Vencimento: <span className="text-foreground font-medium">{c.diaVencimento || '-'}</span></span>
+                    <div className="mt-1 text-xs text-muted-foreground whitespace-normal">
+                      <span>
+                        Dia Vencimento:{" "}
+                        <span className="text-foreground font-medium">{c.diaVencimento || "-"}</span>
+                      </span>
+                      {"\u00A0\u2022\u00A0"}
                       {typeof c.limite === 'number' && (() => {
                         const disp = Math.max(0, Number(c.limite) - totalMes);
                         return (
                           <>
-                            <span>Limite total: <span className="text-foreground font-medium">R$ {Number(c.limite).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></span>
-                            <span>Disponível <span className={`${disp > 0 ? 'text-green-600' : 'text-destructive'} font-medium`}>R$ {disp.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></span>
+                            <span>
+                              Limite total:{" "}
+                              <span className="text-foreground font-medium">
+                                R$ {Number(c.limite).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                              </span>
+                            </span>
+                            {"\u00A0\u2022\u00A0"}
+                            <span>
+                              Disponível{" "}
+                              <span className={`${disp > 0 ? "text-green-600" : "text-destructive"} font-medium`}>
+                                R$ {disp.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                              </span>
+                            </span>
                           </>
                         );
                       })()}
