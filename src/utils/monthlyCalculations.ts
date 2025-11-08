@@ -244,56 +244,43 @@ const getMonthlyRemaining = (d: Divida | CompraCartao, selectedMonth: string): n
   const valorDue = getMonthlyDue(d, selectedMonth);
   if (valorDue === 0) return 0;
   
-  // Para compras de cartão e dívidas com valorPago, calcular baseado em valorPago e valorParcela
-  const valorPagoTotal = (d as any).valorPago;
-  const hasValorPago = valorPagoTotal !== undefined && valorPagoTotal !== null;
+  // Calcular valor da parcela do mês
+  let valorParcelaMes = valorDue;
   
-  if (hasValorPago) {
-    // Para dívidas parceladas ou compras de cartão
-    if (d.tipo === 'parcelada' && d.parcelas > 1) {
-      const totalParcelas = d.parcelas || 1;
-      const valorParcela = d.valorParcela || (d.valorTotal / totalParcelas);
-      
-      // Calcular índice da parcela do mês
-      let startYM;
-      if ((d as any).startMonth) {
-        startYM = parseYYYYMM((d as any).startMonth);
-      } else {
-        startYM = parseYYYYMMDDtoYM(d.dataVencimento);
-      }
-      const selectedYM = parseYYYYMM(selectedMonth);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
-      
-      if (idx < 0 || idx >= totalParcelas) return 0;
-      
-      // Calcular valor da parcela deste mês
-      const base = valorParcela;
-      const isLast = idx === totalParcelas - 1;
-      const delta = Math.round(d.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
-      const valorParcelaMes = base + (isLast ? delta / 100 : 0);
-      
-      // Calcular quanto foi pago até esta parcela (incluindo)
-      let valorPagoAteEstaParcela = 0;
-      for (let i = 0; i <= idx && i < totalParcelas; i++) {
-        const isLastParcela = i === totalParcelas - 1;
-        const valorParcelaI = base + (isLastParcela ? delta / 100 : 0);
-        valorPagoAteEstaParcela += valorParcelaI;
-      }
-      
-      // Calcular quanto foi pago desta parcela específica
-      const valorPagoAteParcelaAnterior = valorPagoAteEstaParcela - valorParcelaMes;
-      const valorPagoDestaParcela = Math.max(0, Math.min(valorParcelaMes, valorPagoTotal - valorPagoAteParcelaAnterior));
-      
-      // Restante = valor da parcela - valor pago desta parcela
-      return Math.max(0, valorParcelaMes - valorPagoDestaParcela);
-    }
+  // Para dívidas parceladas ou compras de cartão, calcular o valor exato da parcela do mês
+  if (d.tipo === 'parcelada' && d.parcelas > 1) {
+    const totalParcelas = d.parcelas || 1;
+    const valorParcela = d.valorParcela || (d.valorTotal / totalParcelas);
     
-    // Para dívidas à vista (tipo 'total')
-    return Math.max(0, valorDue - Math.min(valorDue, valorPagoTotal));
+    // Calcular índice da parcela do mês
+    let startYM;
+    if ((d as any).startMonth) {
+      startYM = parseYYYYMM((d as any).startMonth);
+    } else {
+      startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+    }
+    const selectedYM = parseYYYYMM(selectedMonth);
+    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
+    
+    if (idx < 0 || idx >= totalParcelas) return 0;
+    
+    // Calcular valor da parcela deste mês
+    const base = valorParcela;
+    const isLast = idx === totalParcelas - 1;
+    const delta = Math.round(d.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
+    valorParcelaMes = base + (isLast ? delta / 100 : 0);
   }
   
-  // Fallback: se não tem valorPago, usar cálculo padrão
-  return Math.max(0, valorDue);
+  // Obter valorPago (pode ser 0 se não tiver)
+  const valorPago = (d as any).valorPago || 0;
+  
+  // Lógica simples: se valorPago >= valorParcelaMes, restante = 0
+  // Caso contrário, restante = valorParcelaMes - valorPago
+  if (valorPago >= valorParcelaMes) {
+    return 0;
+  }
+  
+  return valorParcelaMes - valorPago;
 };
 
 // Função principal para calcular totais mensais
