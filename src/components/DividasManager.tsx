@@ -1238,11 +1238,47 @@ export default function DividasManager() {
     if (comprasDoMes.length === 0) {
       return { status: 'Sem parcelas este mês', cor: 'text-muted-foreground' };
     }
+    
+    // Verificar se todas as compras do mês estão pagas baseado no valorPago
+    const todasPagas = comprasDoMes.every(compra => {
+      const [sy, sm] = compra.startMonth.split('-').map(Number);
+      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+      const valorPago = (compra.valorPago || 0);
+      const parcelasPagas = compra.parcelasPagas || 0;
+      
+      // Se valorPago >= valorTotal, está totalmente pago
+      if (valorPago >= compra.valorTotal) {
+        return true;
+      }
+      
+      // Se parcelasPagas >= idx + 1, significa que a parcela do mês foi paga
+      // (idx é 0-based, então a parcela do mês é idx + 1)
+      if (parcelasPagas >= idx + 1) {
+        return true;
+      }
+      
+      // Verificar se o valorPago cobre pelo menos o valor da parcela do mês
+      // Calcular o valor total das parcelas até a parcela do mês (inclusive)
+      let valorEsperadoAteMes = 0;
+      for (let i = 0; i <= idx; i++) {
+        valorEsperadoAteMes += purchaseInstallmentValue(compra, i);
+      }
+      
+      // Se o valorPago é maior ou igual ao valor esperado até a parcela do mês
+      return valorPago >= valorEsperadoAteMes;
+    });
+    
+    if (todasPagas) {
+      return { status: '✓ Pago', cor: 'text-green-600' };
+    }
+    
+    // Verificar também se existe transação de pagamento (fallback)
     const cartao = (cartoes || []).find((c: any) => c.id === cardId);
     const nomeCartao = cartao?.nome || '';
     const transacoesFatura = (transacoes || []).filter(t => 
       t.descricao.includes(`Fatura ${nomeCartao}`) ||
-      t.descricao.includes(`Pagamento fatura: ${nomeCartao}`)
+      t.descricao.includes(`Pagamento fatura: ${nomeCartao}`) ||
+      t.descricao.includes(`Pagamento fatura: Fatura ${nomeCartao}`)
     );
     const mesAtual = `${selectedYM.y}-${String(selectedYM.m).padStart(2, '0')}`;
     const transacaoFaturaMes = transacoesFatura.find(t => 
@@ -1251,6 +1287,7 @@ export default function DividasManager() {
     if (transacaoFaturaMes) {
       return { status: '✓ Pago', cor: 'text-green-600' };
     }
+    
     return { status: '⏳ Pendente', cor: 'text-red-600' };
   };
 
