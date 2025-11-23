@@ -122,6 +122,15 @@ export default function TransacoesManager() {
     incluirNoDashboard: true,
   });
 
+  // Quando o tipo for 'saida', marcar automaticamente "Adicionar à lista de dívidas"
+  useEffect(() => {
+    if (formData.tipo === 'saida') {
+      setAdicionarDivida(true);
+    } else {
+      setAdicionarDivida(false);
+    }
+  }, [formData.tipo]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -430,7 +439,15 @@ export default function TransacoesManager() {
                   <Label htmlFor="tipo">Tipo</Label>
                   <Select 
                     value={formData.tipo} 
-                    onValueChange={(value: 'entrada' | 'saida') => setFormData(prev => ({ ...prev, tipo: value }))}
+                    onValueChange={(value: 'entrada' | 'saida') => {
+                      setFormData(prev => ({ ...prev, tipo: value }));
+                      // Quando for saída, marcar automaticamente "Adicionar à lista de dívidas"
+                      if (value === 'saida') {
+                        setAdicionarDivida(true);
+                      } else {
+                        setAdicionarDivida(false);
+                      }
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
