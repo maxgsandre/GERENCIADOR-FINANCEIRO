@@ -161,6 +161,7 @@ export interface FinanceiroContextType {
   selectedCaixaId: string | null;
   setSelectedCaixaId: React.Dispatch<React.SetStateAction<string | null>>;
   goToTab: (key: string) => void;
+  currentUser: any; // User do Firebase
   // Funções para salvar no Firebase
   saveCaixa: (caixa: Caixa) => Promise<void>;
   deleteCaixa: (caixaId: string) => Promise<void>;
@@ -473,6 +474,7 @@ function AppContent() {
       } catch {}
       setIsSheetOpen(false);
     },
+    currentUser,
     saveCaixa,
     deleteCaixa,
     saveTransacao,
