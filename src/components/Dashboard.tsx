@@ -465,41 +465,51 @@ export default function Dashboard() {
           <CardDescription>Visão geral das suas finanças</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="space-y-3">
+          <div className="flex flex-wrap gap-3">
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <ArrowUpCircle className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-muted-foreground">Total de Receitas Previstas</p>
+                <ArrowUpCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Total de Receitas Previstas</p>
               </div>
               <p className="text-xl font-semibold text-green-600">
                 R$ {totalReceitasPrevistas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-orange-600" />
-                <p className="text-sm text-muted-foreground">Gastos Totais do Mês</p>
+                <CreditCard className="h-4 w-4 text-orange-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Gastos Totais do Mês</p>
               </div>
               <p className="text-xl font-semibold text-orange-600">
                 R$ {totalGastosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-blue-600" />
-                <p className="text-sm text-muted-foreground">Previsão de Déficit/Superávit</p>
+                <TrendingDown className="h-4 w-4 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Gastos Esporádicos do Mês</p>
+              </div>
+              <p className="text-xl font-semibold text-red-600">
+                R$ {totalGastosEsporadicos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Previsão de Déficit/Superávit</p>
               </div>
               <p className={`text-xl font-semibold ${previsaoDeficitSuperavit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 R$ {previsaoDeficitSuperavit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <PiggyBank className="h-4 w-4 text-blue-600" />
-                <p className="text-sm text-muted-foreground">Rendimentos</p>
+                <PiggyBank className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Rendimentos</p>
               </div>
               <p className="text-xl font-semibold text-blue-600">
                 +R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês
