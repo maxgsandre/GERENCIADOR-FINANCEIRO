@@ -130,7 +130,8 @@ export default function Dashboard() {
   };
 
   const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => sum + (cofrinho.tipo === 'cdi' ? computeCdiSaldoLiquido(cofrinho) : cofrinho.saldo), 0);
-  const totalCaixas = totalCaixasSomenteCaixas + totalCofrinhos;
+  // Total em Caixas: apenas caixas, sem cofrinhos
+  const totalCaixas = totalCaixasSomenteCaixas;
   
   // Total de investimentos: soma de todos os cofrinhos já com rendimentos
   const totalInvestimentos = totalCofrinhos;
@@ -287,6 +288,22 @@ export default function Dashboard() {
     return { nome: caixa.nome, saldo: inicial + totalMes };
   });
 
+  // Filtrar dívidas esporádicas do mês (criadaViaTransacao: true, não parceladas, não cartão)
+  const dividasEsporadicasDoMes = dividasFiltradas.filter(d => {
+    // Deve ter criadaViaTransacao: true
+    if (!(d as any).criadaViaTransacao) return false;
+    
+    // Excluir dívidas parceladas
+    if (d.tipo === 'parcelada') return false;
+    
+    // Excluir dívidas de cartão (identificadas por id ou categoria)
+    if (d.id.startsWith('card:') || d.id.startsWith('purchase:') || d.categoria === 'Cartão de Crédito') {
+      return false;
+    }
+    
+    return true;
+  });
+
   // Dados para gráfico de pizza - gastos por categoria (apenas do mês filtrado)
   const gastosPorCategoria = gastosFixosDoMes
     .reduce((acc, gasto) => {
@@ -294,7 +311,26 @@ export default function Dashboard() {
       return acc;
     }, {} as Record<string, number>);
 
+  // Adicionar gastos esporádicos (dívidas criadaViaTransacao) por categoria
+  dividasEsporadicasDoMes.forEach(divida => {
+    const categoria = divida.categoria || 'Esporádicos';
+    gastosPorCategoria[categoria] = (gastosPorCategoria[categoria] || 0) + divida.valorTotal;
+  });
+
   const dadosGastos = Object.entries(gastosPorCategoria).map(([categoria, valor]) => ({
+    name: categoria,
+    value: valor,
+  }));
+
+  // Dados separados para gráficos de Gastos Esporádicos
+  const gastosEsporadicosPorCategoria = dividasEsporadicasDoMes
+    .reduce((acc, divida) => {
+      const categoria = divida.categoria || 'Esporádicos';
+      acc[categoria] = (acc[categoria] || 0) + divida.valorTotal;
+      return acc;
+    }, {} as Record<string, number>);
+
+  const dadosGastosEsporadicos = Object.entries(gastosEsporadicosPorCategoria).map(([categoria, valor]) => ({
     name: categoria,
     value: valor,
   }));
@@ -302,6 +338,11 @@ export default function Dashboard() {
   const totalGastosCategorias = dadosGastos.reduce((sum, d) => sum + (d.value as number), 0);
   const maxValorCategoria = dadosGastos.reduce((m, d) => Math.max(m, d.value as number), 0);
   const yAxisMax = maxValorCategoria > 0 ? maxValorCategoria * 1.15 : 1;
+
+  // Calcular totais e máximos para gastos esporádicos
+  const totalGastosEsporadicos = dadosGastosEsporadicos.reduce((sum, d) => sum + (d.value as number), 0);
+  const maxValorEsporadico = dadosGastosEsporadicos.reduce((m, d) => Math.max(m, d.value as number), 0);
+  const yAxisMaxEsporadico = maxValorEsporadico > 0 ? maxValorEsporadico * 1.15 : 1;
 
   const cores = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00'];
 
@@ -425,41 +466,51 @@ export default function Dashboard() {
           <CardDescription>Visão geral das suas finanças</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="space-y-3">
+          <div className="flex flex-wrap gap-3">
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <ArrowUpCircle className="h-4 w-4 text-green-600" />
-                <p className="text-sm text-muted-foreground">Total de Receitas Previstas</p>
+                <ArrowUpCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Total de Receitas Previstas</p>
               </div>
               <p className="text-xl font-semibold text-green-600">
                 R$ {totalReceitasPrevistas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-orange-600" />
-                <p className="text-sm text-muted-foreground">Gastos Totais do Mês</p>
+                <CreditCard className="h-4 w-4 text-orange-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Gastos Totais do Mês</p>
               </div>
               <p className="text-xl font-semibold text-orange-600">
                 R$ {totalGastosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-blue-600" />
-                <p className="text-sm text-muted-foreground">Previsão de Déficit/Superávit</p>
+                <TrendingDown className="h-4 w-4 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Gastos Esporádicos do Mês</p>
+              </div>
+              <p className="text-xl font-semibold text-red-600">
+                R$ {totalGastosEsporadicos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Previsão de Déficit/Superávit</p>
               </div>
               <p className={`text-xl font-semibold ${previsaoDeficitSuperavit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 R$ {previsaoDeficitSuperavit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <PiggyBank className="h-4 w-4 text-blue-600" />
-                <p className="text-sm text-muted-foreground">Rendimentos</p>
+                <PiggyBank className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Rendimentos</p>
               </div>
               <p className="text-xl font-semibold text-blue-600">
                 +R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês
@@ -591,6 +642,88 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Gráficos de Gastos Esporádicos */}
+      {dadosGastosEsporadicos.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Gastos Esporádicos por Categoria</CardTitle>
+              <CardDescription>Distribuição dos gastos não planejados</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={dadosGastosEsporadicos}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={true}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                    paddingAngle={1}
+                  >
+                    {dadosGastosEsporadicos.map((entry, index) => (
+                      <Cell key={`cell-esporadico-${index}`} fill={cores[index % cores.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Gráfico de barras - Gastos Esporádicos por categoria */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Gastos Esporádicos por Categoria</CardTitle>
+              <CardDescription>Valores em reais por categoria</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <ResponsiveContainer width={Math.max(400, dadosGastosEsporadicos.length * 80)} height={300}>
+                  <BarChart data={dadosGastosEsporadicos} margin={{ top: 16, right: 16, left: 0, bottom: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="name" 
+                      tick={{ fontSize: 12 }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
+                      domain={[0, yAxisMaxEsporadico]}
+                    />
+                    <Tooltip 
+                      formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
+                    />
+                    <Bar dataKey="value">
+                      <LabelList position="top" content={(props: any) => {
+                        const { x, y, width, value } = props;
+                        const pct = totalGastosEsporadicos > 0 ? (Number(value) / totalGastosEsporadicos) * 100 : 0;
+                        return (
+                          <text x={x + width / 2} y={y - 6} fill="#9ca3af" textAnchor="middle" fontSize={12}>
+                            {`${pct.toFixed(0)}%`}
+                          </text>
+                        );
+                      }} />
+                      {dadosGastosEsporadicos.map((entry, index) => (
+                        <Cell key={`cell-esporadico-bar-${index}`} fill={cores[index % cores.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Cards dos Cofrinhos */}
       {cofrinhos.length > 0 && (

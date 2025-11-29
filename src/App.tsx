@@ -17,6 +17,7 @@ import AuthWrapper from './components/Auth/AuthWrapper';
 import LoadingSpinner from './components/LoadingSpinner';
 import Logo from './components/Logo';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Toaster } from './components/ui/sonner';
 import * as firebaseService from './services/firebaseService';
 
 // Types para os dados financeiros
@@ -160,6 +161,7 @@ export interface FinanceiroContextType {
   selectedCaixaId: string | null;
   setSelectedCaixaId: React.Dispatch<React.SetStateAction<string | null>>;
   goToTab: (key: string) => void;
+  currentUser: any; // User do Firebase
   // Funções para salvar no Firebase
   saveCaixa: (caixa: Caixa) => Promise<void>;
   deleteCaixa: (caixaId: string) => Promise<void>;
@@ -472,6 +474,7 @@ function AppContent() {
       } catch {}
       setIsSheetOpen(false);
     },
+    currentUser,
     saveCaixa,
     deleteCaixa,
     saveTransacao,
@@ -688,6 +691,7 @@ export default function App() {
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={true} storageKey="theme">
       <AuthProvider>
         <AppContent />
+        <Toaster />
       </AuthProvider>
     </ThemeProvider>
   );

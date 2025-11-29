@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, ArrowUp, ArrowDown, Filter, Tag, Edit, ArrowLeftRight } from 'lucide-react';
+import { Trash2, Plus, ArrowUp, ArrowDown, Filter, Tag, Edit, ArrowLeftRight, Search } from 'lucide-react';
 import { Switch } from './ui/switch';
 import { FinanceiroContext, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
@@ -93,6 +93,7 @@ export default function TransacoesManager() {
   };
   const [filtroDe, setFiltroDe] = useState('');
   const [filtroAte, setFiltroAte] = useState('');
+  const [filtroDescricao, setFiltroDescricao] = useState('');
 
   // Preencher automaticamente o período do mês atual APENAS quando vazio
   useEffect(() => {
@@ -368,7 +369,7 @@ export default function TransacoesManager() {
     setIsSubmitting(false);
   };
 
-  // Filtrar transações (por tipo/período e, se houver, por caixa selecionada)
+  // Filtrar transações (por tipo/período, descrição e, se houver, por caixa selecionada)
   const transacoesFiltradas = transacoes.filter(transacao => {
     const passaCaixa = !selectedCaixaId || transacao.caixaId === selectedCaixaId;
     const passaTipoFiltro = filtroTipo === 'todos' || transacao.tipo === filtroTipo;
@@ -384,7 +385,11 @@ export default function TransacoesManager() {
       passaPeriodo = passaPeriodo && dataTransacao <= fim;
     }
 
-    return passaCaixa && passaTipoFiltro && passaPeriodo;
+    // Filtro por descrição (case-insensitive)
+    const passaDescricao = !filtroDescricao || 
+      (transacao.descricao && transacao.descricao.toLowerCase().includes(filtroDescricao.toLowerCase()));
+
+    return passaCaixa && passaTipoFiltro && passaPeriodo && passaDescricao;
   });
 
   // Ordenar por data e hora (mais recentes primeiro)
@@ -782,12 +787,24 @@ export default function TransacoesManager() {
             />
           </div>
           
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              value={filtroDescricao}
+              onChange={(e) => setFiltroDescricao(e.target.value)}
+              placeholder="Buscar por descrição..."
+              className="pl-10"
+            />
+          </div>
+          
           <Button 
             variant="outline" 
             onClick={() => {
               setFiltroTipo('todos');
               setFiltroDe('');
               setFiltroAte('');
+              setFiltroDescricao('');
               setSelectedCaixaId(null);
             }}
             className="w-full md:w-auto"

@@ -957,6 +957,74 @@ export const moveReceitasBetweenPeriods = async (
   }
 };
 
+// Duplicar receitas de um período para outro (sem pagamentos)
+export const duplicateReceitasFromPeriod = async (userId: string, fromPeriod: string, toPeriod: string) => {
+  try {
+    const fromCol = collection(db, 'users', userId, 'receitasPrevistas', fromPeriod, 'receitas');
+    const fromSnap = await getDocs(fromCol);
+    
+    if (fromSnap.empty) {
+      throw new Error(`Nenhuma receita encontrada no período ${fromPeriod}`);
+    }
+    
+    const jobs: Promise<void>[] = [];
+    
+    fromSnap.forEach((d) => {
+      const data = d.data() as ReceitaPrevista;
+      if (data && data.descricao && data.valor != null) {
+        // Calcular nova data de vencimento para o mês destino
+        const [toYear, toMonth] = toPeriod.split('-').map(Number);
+        
+        let newDataVencimento = data.dataVencimento;
+        if (data.dataVencimento) {
+          try {
+            const dataVenc = new Date(data.dataVencimento + 'T00:00:00');
+            if (!isNaN(dataVenc.getTime())) {
+              const diaVenc = dataVenc.getDate();
+              const newDate = new Date(toYear, toMonth - 1, Math.min(diaVenc, new Date(toYear, toMonth, 0).getDate()));
+              newDataVencimento = newDate.toISOString().split('T')[0];
+            }
+          } catch {}
+        }
+        
+        // Gerar novo ID único para a receita duplicada
+        const novoId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
+          ? (crypto as any).randomUUID() 
+          : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Criar nova receita com todos os dados originais, exceto id, periodo, recebido e dataVencimento
+        const novaReceita: ReceitaPrevista = {
+          ...data,
+          id: novoId, // NOVO ID
+          periodo: toPeriod, // NOVO PERÍODO
+          dataVencimento: newDataVencimento || data.dataVencimento, // Data atualizada
+          recebido: false, // Sempre false
+          diaVencimento: data.diaVencimento || (newDataVencimento ? new Date(newDataVencimento + 'T00:00:00').getDate() : data.diaVencimento),
+        };
+        
+        // Limpar campos relacionados a recebimento
+        if ((novaReceita as any).caixaId) {
+          delete (novaReceita as any).caixaId;
+        }
+        
+        // Limpar campos undefined
+        Object.keys(novaReceita).forEach((k) => { if ((novaReceita as any)[k] === undefined) delete (novaReceita as any)[k]; });
+        
+        // Salvar com o novo ID no período destino
+        jobs.push(setDoc(doc(db, 'users', userId, 'receitasPrevistas', toPeriod, 'receitas', novoId), novaReceita));
+      }
+    });
+    
+    if (jobs.length === 0) {
+      throw new Error('Nenhuma receita válida encontrada para duplicar');
+    }
+    
+    await Promise.all(jobs);
+  } catch (error: any) {
+    throw new Error(`Erro ao duplicar receitas: ${error?.message || 'Erro desconhecido'}`);
+  }
+};
+
 // Replicação idempotente: cria receitas de (mês anterior) em (targetPeriod) apenas 1x
 export const replicateReceitasIfNeeded = async (userId: string, targetPeriod: string) => {
   // Doc meta para marcar que já replicou uma vez

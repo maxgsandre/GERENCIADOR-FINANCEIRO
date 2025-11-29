@@ -8,8 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Wallet, PiggyBank, CreditCard, TrendingUp, Target, Percent, DollarSign, CheckCircle, Circle, Calendar } from 'lucide-react';
+import { Trash2, Plus, Edit, Wallet, PiggyBank, CreditCard, TrendingUp, Target, Percent, DollarSign, CheckCircle, Circle, Calendar, Copy } from 'lucide-react';
 import { FinanceiroContext, Caixa, Cofrinho, ReceitaPrevista } from '../App';
+import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../lib/firebase';
 
 const tiposIcon = {
   conta_corrente: Wallet,
@@ -28,6 +30,8 @@ const tiposLabel = {
 export default function CaixasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
+
+  const { currentUser } = useAuth();
 
   const { 
     caixas, 
@@ -68,6 +72,9 @@ export default function CaixasManager() {
   const [cofrinhoMovimentos, setCofrinhoMovimentos] = useState<any[]>([]);
   const unsubscribeCofrinhoMovRef = useRef<null | (() => void)>(null);
   const [editingReceita, setEditingReceita] = useState<ReceitaPrevista | null>(null);
+  const [isDuplicarReceitaDialogOpen, setIsDuplicarReceitaDialogOpen] = useState(false);
+  const [mesOrigemReceita, setMesOrigemReceita] = useState('');
+  const [isDuplicandoReceita, setIsDuplicandoReceita] = useState(false);
   const [formData, setFormData] = useState({
     nome: '',
     saldo: '',
@@ -250,7 +257,7 @@ export default function CaixasManager() {
     try {
       const svc = await import('../services/firebaseService');
       const movId = ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `${Date.now()}`);
-      await (svc as any).saveCofrinhoMovimento?.((context as any).currentUser?.uid, atualizado.id, {
+      await (svc as any).saveCofrinhoMovimento?.(currentUser?.uid, atualizado.id, {
         id: movId,
         tipo: valor >= 0 ? 'aporte' : 'retirada',
         valor,
@@ -401,7 +408,7 @@ export default function CaixasManager() {
         }
         const svc = await import('../services/firebaseService');
         if (unsubscribeCofrinhoMovRef.current) { unsubscribeCofrinhoMovRef.current(); }
-        unsubscribeCofrinhoMovRef.current = (svc as any).subscribeCofrinhoMovimentos?.((context as any).currentUser?.uid, editingCofrinho.id, selectedMonth, setCofrinhoMovimentos) || null;
+        unsubscribeCofrinhoMovRef.current = (svc as any).subscribeCofrinhoMovimentos?.(currentUser?.uid, editingCofrinho.id, selectedMonth, setCofrinhoMovimentos) || null;
       } catch {}
     })();
     return () => { if (unsubscribeCofrinhoMovRef.current) { unsubscribeCofrinhoMovRef.current(); unsubscribeCofrinhoMovRef.current = null; } };
@@ -608,6 +615,55 @@ export default function CaixasManager() {
     }
   };
 
+  // Função para duplicar receitas de um mês para outro
+  const handleDuplicarReceitas = async () => {
+    if (!mesOrigemReceita || mesOrigemReceita === selectedMonth) {
+      alert('Selecione um mês de origem diferente do mês atual');
+      return;
+    }
+    
+    if (!confirm(`Deseja duplicar todas as receitas previstas de ${mesOrigemReceita} para ${selectedMonth}? As receitas originais serão mantidas intactas e as novas virão sem marcação de recebidas.`)) {
+      return;
+    }
+    
+    setIsDuplicandoReceita(true);
+    try {
+      // Tentar obter o usuário de múltiplas fontes
+      let user = currentUser || auth.currentUser;
+      
+      // Se ainda não tiver usuário, aguardar um pouco e tentar novamente
+      if (!user?.uid) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        user = currentUser || auth.currentUser;
+      }
+      
+      if (!user?.uid) {
+        console.error('currentUser do useAuth:', currentUser);
+        console.error('auth.currentUser:', auth.currentUser);
+        throw new Error('Usuário não autenticado. Por favor, faça login novamente.');
+      }
+      
+      const svc = await import('../services/firebaseService');
+      await (svc as any).duplicateReceitasFromPeriod(user.uid, mesOrigemReceita, selectedMonth);
+      
+      alert(`Receitas previstas duplicadas com sucesso de ${mesOrigemReceita} para ${selectedMonth}!`);
+      setIsDuplicarReceitaDialogOpen(false);
+      setMesOrigemReceita('');
+    } catch (error: any) {
+      console.error('Erro ao duplicar receitas:', error);
+      alert(`Erro ao duplicar receitas previstas: ${error?.message || 'Erro desconhecido'}`);
+    } finally {
+      setIsDuplicandoReceita(false);
+    }
+  };
+
+  // Verificar se o mês selecionado é posterior ao mês atual
+  const isMesPosterior = () => {
+    const hoje = new Date();
+    const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    return selectedMonth > mesAtual;
+  };
+
   // Monitora mudanças nas transações para verificar consistência
   useEffect(() => {
     // Aguardar as operações de gravação para evitar falso positivo
@@ -640,7 +696,7 @@ export default function CaixasManager() {
     if (selectedMonth === lastCheckedMonth) return;
     (async () => {
       try {
-        const uid = (context as any)?.currentUser?.uid;
+        const uid = currentUser?.uid;
         if (!uid) {
           // Tentativa de obter uid via window (fallback)
         }
@@ -650,7 +706,7 @@ export default function CaixasManager() {
         } else if ((require as any)) {
           // Import dinâmico para evitar circular
           const svc = await import('../services/firebaseService');
-          (svc as any).replicateReceitasIfNeeded && await (svc as any).replicateReceitasIfNeeded(context.currentUser!.uid, selectedMonth);
+          (svc as any).replicateReceitasIfNeeded && currentUser?.uid && await (svc as any).replicateReceitasIfNeeded(currentUser.uid, selectedMonth);
         }
       } catch (e) {
         // silencioso
@@ -966,13 +1022,23 @@ export default function CaixasManager() {
               </CardTitle>
               <CardDescription>Gerencie seus recebimentos mensais</CardDescription>
             </div>
-            <Dialog open={isReceitaDialogOpen} onOpenChange={setIsReceitaDialogOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={() => resetReceitaForm()}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nova Receita
+            <div className="flex items-center gap-2">
+              {isMesPosterior() && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsDuplicarReceitaDialogOpen(true)}
+                  title="Duplicar receitas de outro mês"
+                >
+                  <Copy className="h-4 w-4" />
                 </Button>
-              </DialogTrigger>
+              )}
+              <Dialog open={isReceitaDialogOpen} onOpenChange={setIsReceitaDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button onClick={() => resetReceitaForm()}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Nova Receita
+                  </Button>
+                </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>
@@ -1034,6 +1100,7 @@ export default function CaixasManager() {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
         </CardHeader>
         
@@ -1131,98 +1198,47 @@ export default function CaixasManager() {
         </CardContent>
       </Card>
 
-      {/* Lista de caixas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-        {caixas.map((caixa) => {
-          const IconComponent = tiposIcon[caixa.tipo];
-          // Cálculo do saldo final do mês selecionado: valor inicial do mês + soma de lançamentos do mês
-          const valorInicial = computeInitialForMonth(caixa, selectedMonth);
-          const [ano, mes] = selectedMonth.split('-').map(Number);
-          const totalMes = monthlyTotalFor(caixa.id, ano, mes);
-          const saldoFinalMes = valorInicial + totalMes;
-          
-          return (
-            <Card key={caixa.id} className="relative">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <IconComponent className="h-5 w-5 text-muted-foreground" />
-                    <CardTitle className="text-lg">{caixa.nome}</CardTitle>
-                  </div>
-                  <Badge variant="secondary">
-                    {tiposLabel[caixa.tipo]}
-                  </Badge>
-                </div>
-              </CardHeader>
-              
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Saldo inicial ({selectedMonth})</p>
-                    <p className="text-lg font-medium">R$ {formatBR2.format(valorInicial)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Lançamentos do mês</p>
-                    <p className={`text-lg font-medium ${totalMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {totalMes >= 0 ? '+' : ''}R$ {formatBR2.format(Math.abs(totalMes))}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Saldo final ({selectedMonth})</p>
-                    <p className={`text-2xl font-bold ${saldoFinalMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      R$ {formatBR2.format(saldoFinalMes)}
-                    </p>
-                  </div>
-                  
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEdit(caixa)}
-                      className="flex-1"
-                    >
-                      <Edit className="h-4 w-4 md:mr-1" />
-                      <span className="hidden md:inline">Editar</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => { setSelectedCaixaId(caixa.id); goToTab('transacoes'); }}
-                      className="flex-1"
-                    >
-                      Extrato
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDelete(caixa.id)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {caixas.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <Wallet className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Nenhuma caixa cadastrada</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              Comece criando sua primeira caixa para organizar seus recursos financeiros.
-            </p>
-            <Button onClick={() => setIsDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Criar primeira caixa
+      {/* Modal de Duplicar Receitas */}
+      <Dialog open={isDuplicarReceitaDialogOpen} onOpenChange={setIsDuplicarReceitaDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Duplicar Receitas Previstas</DialogTitle>
+            <DialogDescription>
+              Selecione o mês de origem para duplicar as receitas previstas para {selectedMonth}. As receitas originais serão mantidas intactas. As novas receitas virão sem marcação de recebidas e com datas atualizadas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="mes-origem-receita">Mês de origem</Label>
+              <Input
+                id="mes-origem-receita"
+                type="month"
+                value={mesOrigemReceita}
+                onChange={(e) => setMesOrigemReceita(e.target.value)}
+                max={selectedMonth}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsDuplicarReceitaDialogOpen(false);
+                setMesOrigemReceita('');
+              }}
+              disabled={isDuplicandoReceita}
+            >
+              Cancelar
             </Button>
-          </CardContent>
-        </Card>
-      )}
+            <Button 
+              onClick={handleDuplicarReceitas} 
+              disabled={!mesOrigemReceita || mesOrigemReceita === selectedMonth || isDuplicandoReceita}
+            >
+              {isDuplicandoReceita ? 'Duplicando...' : 'Duplicar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Separator className="my-8" />
 

@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Separator } from '../ui/separator';
-import { Eye, EyeOff, Mail, Lock, User, Info } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, Info, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchSignInMethodsForEmail } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
@@ -19,6 +19,7 @@ export default function Register({ onToggleMode }: RegisterProps) {
   const [email, setEmail] = useState('');
   const [lastName, setLastName] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   
   const { sendSignUpLink } = useAuth();
@@ -33,6 +34,7 @@ export default function Register({ onToggleMode }: RegisterProps) {
 
     try {
       setError('');
+      setSuccess('');
       setLoading(true);
       const normalizedEmail = email.trim().toLowerCase();
       // Se já existir senha para este email, orientar login/esqueci senha
@@ -45,6 +47,14 @@ export default function Register({ onToggleMode }: RegisterProps) {
       localStorage.setItem('signup_name', `${name} ${lastName}`.trim());
       localStorage.setItem('signup_email', normalizedEmail);
       await sendSignUpLink(normalizedEmail);
+      
+      // Mostrar mensagem de sucesso
+      setSuccess(`Link de cadastro enviado! Verifique sua caixa de entrada em ${normalizedEmail} e clique no link para finalizar seu cadastro.`);
+      
+      // Limpar campos após sucesso
+      setName('');
+      setLastName('');
+      setEmail('');
     } catch (error: any) {
       console.error('Erro no registro');
       
@@ -85,6 +95,15 @@ export default function Register({ onToggleMode }: RegisterProps) {
           
         </CardHeader>
         <CardContent className="space-y-4">
+          {success && (
+            <Alert className="border-green-500 dark:border-green-400 bg-green-50/80 dark:bg-green-950/40">
+              <CheckCircle2 className="h-4 w-4 flex-shrink-0" style={{ color: 'rgb(34, 197, 94)' }} />
+              <AlertDescription className="text-green-800 dark:text-green-200">
+                {success}
+              </AlertDescription>
+            </Alert>
+          )}
+          
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
