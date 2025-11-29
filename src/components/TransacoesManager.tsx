@@ -151,13 +151,27 @@ export default function TransacoesManager() {
 
     const caixaAtual = caixas.find(c => c.id === formData.caixaId);
     if (caixaAtual) {
-        const novoSaldo = formData.tipo === 'entrada' 
-        ? caixaAtual.saldo + novaTransacao.valor
-        : caixaAtual.saldo - novaTransacao.valor;
+      // Calcular saldo real do mês usando initialByMonth + transações
+      const dataTransacao = new Date(novaTransacao.data + 'T00:00:00');
+      const anoTransacao = dataTransacao.getFullYear();
+      const mesTransacao = dataTransacao.getMonth() + 1;
+      const ymTransacao = `${anoTransacao}-${String(mesTransacao).padStart(2, '0')}`;
+      
+      const valorInicial = computeInitialForMonth(caixaAtual, ymTransacao);
+      const totalMes = monthlyTotalFor(caixaAtual.id, anoTransacao, mesTransacao);
+      const saldoRealAtual = valorInicial + totalMes;
+      
+      // Calcular novo saldo considerando a transação que será adicionada
+      const novoSaldo = formData.tipo === 'entrada' 
+        ? saldoRealAtual + novaTransacao.valor
+        : saldoRealAtual - novaTransacao.valor;
+        
       if (novoSaldo < 0) {
         alert('Saldo insuficiente no caixa selecionado. A operação foi bloqueada.');
         return;
       }
+      
+      // Atualizar saldo legado (para compatibilidade, mas o correto é usar initialByMonth)
       await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
     }
 
@@ -346,21 +360,52 @@ export default function TransacoesManager() {
 
     const caixaAntiga = caixas.find(c => c.id === editingTransacao.caixaId);
     if (caixaAntiga) {
+      // Reverter usando saldo real do mês
+      const dataAntiga = new Date(editingTransacao.data + 'T00:00:00');
+      const anoAntigo = dataAntiga.getFullYear();
+      const mesAntigo = dataAntiga.getMonth() + 1;
+      const ymAntigo = `${anoAntigo}-${String(mesAntigo).padStart(2, '0')}`;
+      
+      const valorInicialAntigo = computeInitialForMonth(caixaAntiga, ymAntigo);
+      const totalMesAntigo = monthlyTotalFor(caixaAntiga.id, anoAntigo, mesAntigo);
+      const saldoRealAntigo = valorInicialAntigo + totalMesAntigo;
+      
       const saldoRevertido = editingTransacao.tipo === 'entrada' 
-        ? caixaAntiga.saldo - editingTransacao.valor
-        : caixaAntiga.saldo + editingTransacao.valor;
+        ? saldoRealAntigo - editingTransacao.valor
+        : saldoRealAntigo + editingTransacao.valor;
       await saveCaixa({ ...caixaAntiga, saldo: saldoRevertido });
     }
 
     const caixaNova = caixas.find(c => c.id === transacaoAtualizada.caixaId);
     if (caixaNova) {
+      // Calcular saldo real do mês usando initialByMonth + transações
+      const dataTransacao = new Date(transacaoAtualizada.data + 'T00:00:00');
+      const anoTransacao = dataTransacao.getFullYear();
+      const mesTransacao = dataTransacao.getMonth() + 1;
+      const ymTransacao = `${anoTransacao}-${String(mesTransacao).padStart(2, '0')}`;
+      
+      const valorInicial = computeInitialForMonth(caixaNova, ymTransacao);
+      const totalMes = monthlyTotalFor(caixaNova.id, anoTransacao, mesTransacao);
+      let saldoRealAtual = valorInicial + totalMes;
+      
+      // Se mudou de caixa, já revertemos o antigo acima, então só aplicar o novo
+      // Se é o mesmo caixa, precisamos reverter a transação antiga primeiro
+      if (caixaAntiga && caixaAntiga.id === caixaNova.id) {
+        // Mesmo caixa: reverter transação antiga
+        saldoRealAtual = editingTransacao.tipo === 'entrada' 
+          ? saldoRealAtual - editingTransacao.valor
+          : saldoRealAtual + editingTransacao.valor;
+      }
+      
       const saldoAplicado = transacaoAtualizada.tipo === 'entrada' 
-        ? caixaNova.saldo + transacaoAtualizada.valor
-        : caixaNova.saldo - transacaoAtualizada.valor;
+        ? saldoRealAtual + transacaoAtualizada.valor
+        : saldoRealAtual - transacaoAtualizada.valor;
+        
       if (saldoAplicado < 0) {
         alert('Saldo insuficiente no caixa selecionado após a edição. A operação foi bloqueada.');
         return;
       }
+      
       await saveCaixa({ ...caixaNova, saldo: saldoAplicado });
     }
 
