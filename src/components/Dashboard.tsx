@@ -287,6 +287,22 @@ export default function Dashboard() {
     return { nome: caixa.nome, saldo: inicial + totalMes };
   });
 
+  // Filtrar dívidas esporádicas do mês (criadaViaTransacao: true, não parceladas, não cartão)
+  const dividasEsporadicasDoMes = dividasFiltradas.filter(d => {
+    // Deve ter criadaViaTransacao: true
+    if (!(d as any).criadaViaTransacao) return false;
+    
+    // Excluir dívidas parceladas
+    if (d.tipo === 'parcelada') return false;
+    
+    // Excluir dívidas de cartão (identificadas por id ou categoria)
+    if (d.id.startsWith('card:') || d.id.startsWith('purchase:') || d.categoria === 'Cartão de Crédito') {
+      return false;
+    }
+    
+    return true;
+  });
+
   // Dados para gráfico de pizza - gastos por categoria (apenas do mês filtrado)
   const gastosPorCategoria = gastosFixosDoMes
     .reduce((acc, gasto) => {
@@ -294,7 +310,26 @@ export default function Dashboard() {
       return acc;
     }, {} as Record<string, number>);
 
+  // Adicionar gastos esporádicos (dívidas criadaViaTransacao) por categoria
+  dividasEsporadicasDoMes.forEach(divida => {
+    const categoria = divida.categoria || 'Esporádicos';
+    gastosPorCategoria[categoria] = (gastosPorCategoria[categoria] || 0) + divida.valorTotal;
+  });
+
   const dadosGastos = Object.entries(gastosPorCategoria).map(([categoria, valor]) => ({
+    name: categoria,
+    value: valor,
+  }));
+
+  // Dados separados para gráficos de Gastos Esporádicos
+  const gastosEsporadicosPorCategoria = dividasEsporadicasDoMes
+    .reduce((acc, divida) => {
+      const categoria = divida.categoria || 'Esporádicos';
+      acc[categoria] = (acc[categoria] || 0) + divida.valorTotal;
+      return acc;
+    }, {} as Record<string, number>);
+
+  const dadosGastosEsporadicos = Object.entries(gastosEsporadicosPorCategoria).map(([categoria, valor]) => ({
     name: categoria,
     value: valor,
   }));
@@ -302,6 +337,11 @@ export default function Dashboard() {
   const totalGastosCategorias = dadosGastos.reduce((sum, d) => sum + (d.value as number), 0);
   const maxValorCategoria = dadosGastos.reduce((m, d) => Math.max(m, d.value as number), 0);
   const yAxisMax = maxValorCategoria > 0 ? maxValorCategoria * 1.15 : 1;
+
+  // Calcular totais e máximos para gastos esporádicos
+  const totalGastosEsporadicos = dadosGastosEsporadicos.reduce((sum, d) => sum + (d.value as number), 0);
+  const maxValorEsporadico = dadosGastosEsporadicos.reduce((m, d) => Math.max(m, d.value as number), 0);
+  const yAxisMaxEsporadico = maxValorEsporadico > 0 ? maxValorEsporadico * 1.15 : 1;
 
   const cores = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00'];
 
@@ -591,6 +631,88 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Gráficos de Gastos Esporádicos */}
+      {dadosGastosEsporadicos.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Gastos Esporádicos por Categoria</CardTitle>
+              <CardDescription>Distribuição dos gastos não planejados</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={dadosGastosEsporadicos}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={true}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                    paddingAngle={1}
+                  >
+                    {dadosGastosEsporadicos.map((entry, index) => (
+                      <Cell key={`cell-esporadico-${index}`} fill={cores[index % cores.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Gráfico de barras - Gastos Esporádicos por categoria */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Gastos Esporádicos por Categoria</CardTitle>
+              <CardDescription>Valores em reais por categoria</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <ResponsiveContainer width={Math.max(400, dadosGastosEsporadicos.length * 80)} height={300}>
+                  <BarChart data={dadosGastosEsporadicos} margin={{ top: 16, right: 16, left: 0, bottom: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="name" 
+                      tick={{ fontSize: 12 }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
+                      domain={[0, yAxisMaxEsporadico]}
+                    />
+                    <Tooltip 
+                      formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
+                    />
+                    <Bar dataKey="value">
+                      <LabelList position="top" content={(props: any) => {
+                        const { x, y, width, value } = props;
+                        const pct = totalGastosEsporadicos > 0 ? (Number(value) / totalGastosEsporadicos) * 100 : 0;
+                        return (
+                          <text x={x + width / 2} y={y - 6} fill="#9ca3af" textAnchor="middle" fontSize={12}>
+                            {`${pct.toFixed(0)}%`}
+                          </text>
+                        );
+                      }} />
+                      {dadosGastosEsporadicos.map((entry, index) => (
+                        <Cell key={`cell-esporadico-bar-${index}`} fill={cores[index % cores.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Cards dos Cofrinhos */}
       {cofrinhos.length > 0 && (
