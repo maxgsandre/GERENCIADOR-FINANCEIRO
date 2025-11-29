@@ -130,7 +130,8 @@ export default function Dashboard() {
   };
 
   const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => sum + (cofrinho.tipo === 'cdi' ? computeCdiSaldoLiquido(cofrinho) : cofrinho.saldo), 0);
-  const totalCaixas = totalCaixasSomenteCaixas + totalCofrinhos;
+  // Total em Caixas: apenas caixas, sem cofrinhos
+  const totalCaixas = totalCaixasSomenteCaixas;
   
   // Total de investimentos: soma de todos os cofrinhos já com rendimentos
   const totalInvestimentos = totalCofrinhos;
