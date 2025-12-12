@@ -804,15 +804,33 @@ export default function DividasManager() {
         const todasComprasDoCartao = (comprasCartao as CompraCartao[])
           .filter(p => p.cardId === cardId);
         
-        // Atualizar todas as compras do cartão: valorPago = valorTotal
+        // Atualizar todas as compras do cartão: calcular parcelas pagas baseado no mês atual
         for (const compra of todasComprasDoCartao) {
           const totalParcelas = compra.parcelas || 1;
           
-          // Atualizar compra com valorPago = valorTotal e parcelasPagas = totalParcelas
+          // Calcular qual parcela corresponde ao mês selecionado
+          const [sy, sm] = compra.startMonth.split('-').map(Number);
+          const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
+          
+          // Se a compra tem parcela no mês selecionado, atualizar parcelasPagas para idx + 1
+          // (idx é 0-based, então a parcela do mês é idx + 1)
+          let novasParcelasPagas = compra.parcelasPagas || 0;
+          if (idx >= 0 && idx < totalParcelas) {
+            // Atualizar parcelasPagas para pelo menos a parcela do mês atual
+            novasParcelasPagas = Math.max(novasParcelasPagas, idx + 1);
+          }
+          
+          // Calcular o valor pago até a parcela atual (incluindo)
+          let valorPagoAteParcelaAtual = 0;
+          for (let i = 0; i <= idx && i < totalParcelas; i++) {
+            valorPagoAteParcelaAtual += purchaseInstallmentValue(compra, i);
+          }
+          
+          // Atualizar compra com valorPago baseado nas parcelas pagas e parcelasPagas atualizado
           const compraAtualizada = {
             ...compra,
-            valorPago: compra.valorTotal,
-            parcelasPagas: totalParcelas
+            valorPago: Math.max(compra.valorPago || 0, valorPagoAteParcelaAtual),
+            parcelasPagas: novasParcelasPagas
           } as CompraCartao;
           
           await saveCompraCartao(compraAtualizada);
@@ -1239,40 +1257,7 @@ export default function DividasManager() {
       return { status: 'Sem parcelas este mês', cor: 'text-muted-foreground' };
     }
     
-    // Verificar se todas as compras do mês estão pagas baseado no valorPago
-    const todasPagas = comprasDoMes.every(compra => {
-      const [sy, sm] = compra.startMonth.split('-').map(Number);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-      const valorPago = (compra.valorPago || 0);
-      const parcelasPagas = compra.parcelasPagas || 0;
-      
-      // Se valorPago >= valorTotal, está totalmente pago
-      if (valorPago >= compra.valorTotal) {
-        return true;
-      }
-      
-      // Se parcelasPagas >= idx + 1, significa que a parcela do mês foi paga
-      // (idx é 0-based, então a parcela do mês é idx + 1)
-      if (parcelasPagas >= idx + 1) {
-        return true;
-      }
-      
-      // Verificar se o valorPago cobre pelo menos o valor da parcela do mês
-      // Calcular o valor total das parcelas até a parcela do mês (inclusive)
-      let valorEsperadoAteMes = 0;
-      for (let i = 0; i <= idx; i++) {
-        valorEsperadoAteMes += purchaseInstallmentValue(compra, i);
-      }
-      
-      // Se o valorPago é maior ou igual ao valor esperado até a parcela do mês
-      return valorPago >= valorEsperadoAteMes;
-    });
-    
-    if (todasPagas) {
-      return { status: '✓ Pago', cor: 'text-green-600' };
-    }
-    
-    // Verificar também se existe transação de pagamento (fallback)
+    // Verificar se existe transação de pagamento da fatura no mês selecionado
     const cartao = (cartoes || []).find((c: any) => c.id === cardId);
     const nomeCartao = cartao?.nome || '';
     const transacoesFatura = (transacoes || []).filter(t => 
