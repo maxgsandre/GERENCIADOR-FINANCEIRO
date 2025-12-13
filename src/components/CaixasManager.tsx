@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Wallet, PiggyBank, CreditCard, TrendingUp, Target, Percent, DollarSign, CheckCircle, Circle, Calendar, Copy } from 'lucide-react';
+import { Trash2, Plus, Edit, Wallet, PiggyBank, CreditCard, TrendingUp, Target, Percent, DollarSign, CheckCircle, Circle, Calendar, Copy, Loader2 } from 'lucide-react';
 import { FinanceiroContext, Caixa, Cofrinho, ReceitaPrevista } from '../App';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../lib/firebase';
@@ -528,6 +528,7 @@ export default function CaixasManager() {
   const [isReceitaPagamentoOpen, setIsReceitaPagamentoOpen] = useState(false);
   const [receitaSelecionada, setReceitaSelecionada] = useState<ReceitaPrevista | null>(null);
   const [caixaReceita, setCaixaReceita] = useState<string | null>(null);
+  const [isSavingReceitaPagamento, setIsSavingReceitaPagamento] = useState(false);
 
   const toggleReceitaRecebida = async (receita: ReceitaPrevista) => {
     if (!receita.recebido) {
@@ -542,35 +543,47 @@ export default function CaixasManager() {
   };
 
   const confirmarReceitaPagamento = async () => {
-    if (!receitaSelecionada || !caixaReceita) return;
+    if (isSavingReceitaPagamento) return;
+    setIsSavingReceitaPagamento(true);
+    try {
+      if (!receitaSelecionada || !caixaReceita) return;
+      if (!currentUser?.uid) {
+        alert('Usuário não autenticado. Faça login novamente.');
+        return;
+      }
 
-    const caixaSelecionado = caixas.find(c => c.id === caixaReceita);
-    if (!caixaSelecionado) return;
+      const caixaSelecionado = caixas.find(c => c.id === caixaReceita);
+      if (!caixaSelecionado) return;
 
-    // Atualizar saldo do caixa
-    const novoSaldo = caixaSelecionado.saldo + receitaSelecionada.valor;
-    await saveCaixa({ ...caixaSelecionado, saldo: novoSaldo });
+      // Atualizar saldo do caixa
+      const novoSaldo = caixaSelecionado.saldo + receitaSelecionada.valor;
+      await saveCaixa({ ...caixaSelecionado, saldo: novoSaldo });
 
-    // Criar transação de entrada
-    await saveTransacao({
-      id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
-      caixaId: caixaReceita,
-      tipo: 'entrada',
-      valor: receitaSelecionada.valor,
-      descricao: `Receita recebida: ${receitaSelecionada.descricao}`,
-      categoria: 'Receitas',
-      data: new Date().toISOString().slice(0,10),
-      hora: new Date().toTimeString().slice(0,5)
-    });
+      // Criar transação de entrada (com data/hora locais)
+      const dataHoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+      const horaAgora = new Date().toTimeString().slice(0,5);
+      await saveTransacao({
+        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+        caixaId: caixaReceita,
+        tipo: 'entrada',
+        valor: receitaSelecionada.valor,
+        descricao: `Receita recebida: ${receitaSelecionada.descricao}`,
+        categoria: 'Receitas',
+        data: dataHoje,
+        hora: horaAgora,
+      });
 
-    // Marcar receita como recebida e guardar o caixaId
-    const receitaAtualizada = { ...receitaSelecionada, recebido: true, caixaId: caixaReceita };
-    await saveReceitaPrevista(receitaAtualizada);
+      // Marcar receita como recebida e guardar o caixaId
+      const receitaAtualizada = { ...receitaSelecionada, recebido: true, caixaId: caixaReceita };
+      await saveReceitaPrevista(receitaAtualizada);
 
-    // Fechar modal e limpar estados
-    setIsReceitaPagamentoOpen(false);
-    setReceitaSelecionada(null);
-    setCaixaReceita(null);
+      // Fechar modal e limpar estados
+      setIsReceitaPagamentoOpen(false);
+      setReceitaSelecionada(null);
+      setCaixaReceita(null);
+    } finally {
+      setIsSavingReceitaPagamento(false);
+    }
   };
 
   // Função para verificar e reverter receitas sem transação correspondente
@@ -1585,7 +1598,7 @@ export default function CaixasManager() {
       </div>
 
       {/* Modal de seleção de caixa para receita */}
-      <Dialog open={isReceitaPagamentoOpen} onOpenChange={setIsReceitaPagamentoOpen}>
+      <Dialog open={isReceitaPagamentoOpen} onOpenChange={(o) => { if (isSavingReceitaPagamento) return; setIsReceitaPagamentoOpen(o); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Receber receita</DialogTitle>
@@ -1624,14 +1637,19 @@ export default function CaixasManager() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsReceitaPagamentoOpen(false)}>
+            <Button variant="outline" onClick={() => { if (isSavingReceitaPagamento) return; setIsReceitaPagamentoOpen(false); }}>
               Cancelar
             </Button>
             <Button 
               onClick={confirmarReceitaPagamento}
-              disabled={!caixaReceita}
+              disabled={!caixaReceita || isSavingReceitaPagamento}
             >
-              Confirmar Recebimento
+              {isSavingReceitaPagamento ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processando...
+                </>
+              ) : 'Confirmar Recebimento'}
             </Button>
           </DialogFooter>
         </DialogContent>
