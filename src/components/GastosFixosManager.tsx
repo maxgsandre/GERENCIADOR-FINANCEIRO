@@ -1120,7 +1120,7 @@ export default function GastosFixosManager() {
             {isSaldoInsuficiente() && (
               <p className="text-sm text-red-600">Saldo insuficiente. Selecione outro caixa ou ajuste o valor.</p>
             )}
-          </div>
+        </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsPagamentoOpen(false)}>Cancelar</Button>
             {modoPagamento === 'pay' ? (
