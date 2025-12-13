@@ -539,11 +539,10 @@ export default function GastosFixosManager() {
       const valorTotalPago = gasto.pagamentos.reduce((sum, p) => sum + p.valor, 0);
       const valorRestante = Math.max(0, gasto.valor - valorTotalPago);
       
-      // Se é fracionado e ainda há valor restante, sugerir o restante
-      if (gasto.fracionado && valorRestante > 0) {
+      // Sempre sugerir o restante, se houver; senão, o total
+      if (valorRestante > 0) {
         setValorPagoInput(valorRestante.toFixed(2).replace('.', ','));
       } else {
-        // Se não é fracionado ou já está completo, sugerir valor total
         setValorPagoInput(gasto.valor.toFixed(2).replace('.', ','));
       }
     } else {
