@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign, Wallet } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign, Wallet, Loader2 } from 'lucide-react';
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
 
@@ -1014,14 +1014,19 @@ export default function DividasManager() {
   };
 
   const processarPagamento = async (valorPagamento: number) => {
-    if (!dividaSelecionada && !compraSelecionada) return;
-    if (!caixaPagamento) { 
-      alert('Selecione um caixa.'); 
-      return; 
-    }
-    // Bloqueio de saldo negativo
-    const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
-    if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
+    // Evitar duplo clique
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    setIsSaving(true);
+    try {
+      if (!dividaSelecionada && !compraSelecionada) return;
+      if (!caixaPagamento) { 
+        alert('Selecione um caixa.'); 
+        return; 
+      }
+      // Bloqueio de saldo negativo
+      const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
+      if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
 
     if (dividaSelecionada) {
       // Verificar se é pagamento de cartão (dívida temporária)
@@ -1152,6 +1157,11 @@ export default function DividasManager() {
     setCompraSelecionada(null);
     setDataPagamento('');
     setHoraPagamento('');
+    setValorPagamentoInput('');
+  } finally {
+    isSavingRef.current = false;
+    setIsSaving(false);
+  }
   };
 
   // Helpers de competência mensal
@@ -1796,32 +1806,44 @@ export default function DividasManager() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)} disabled={isSaving}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)} disabled={isSaving || isSavingRef.current}>Cancelar</Button>
             {modoPagamento === 'pay' ? (
               <Button 
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  if (isSavingRef.current || isSaving) return;
                   if (!isSavingRef.current && !isSaving) {
                     confirmarPagamento(e);
                   }
                 }} 
-                disabled={!caixaPagamento || isSaving}
+                disabled={!caixaPagamento || isSaving || isSavingRef.current}
               >
-                {isSaving ? 'Salvando...' : 'Confirmar pagamento'}
+                {(isSaving || isSavingRef.current) ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Carregando...
+                  </>
+                ) : 'Confirmar pagamento'}
               </Button>
             ) : (
               <Button 
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  if (isSavingRef.current || isSaving) return;
                   if (!isSavingRef.current && !isSaving) {
                     confirmarEstorno(e);
                   }
                 }} 
-                disabled={!caixaPagamento || isSaving}
+                disabled={!caixaPagamento || isSaving || isSavingRef.current}
               >
-                {isSaving ? 'Salvando...' : 'Confirmar estorno'}
+                {(isSaving || isSavingRef.current) ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Carregando...
+                  </>
+                ) : 'Confirmar estorno'}
               </Button>
             )}
           </DialogFooter>
@@ -2052,6 +2074,7 @@ export default function DividasManager() {
           
           <form onSubmit={(e) => {
             e.preventDefault();
+            if (isSavingRef.current || isSaving) return;
             const valor = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
             if (valor > 0) {
               processarPagamento(valor);
@@ -2165,11 +2188,21 @@ export default function DividasManager() {
             )}
             
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setIsPagamentoOpen(false); setDataPagamento(''); setHoraPagamento(''); }}>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => { if (isSavingRef.current || isSaving) return; setIsPagamentoOpen(false); setDataPagamento(''); setHoraPagamento(''); }} 
+                disabled={isSaving || isSavingRef.current}
+              >
                 Cancelar
               </Button>
-              <Button type="submit">
-                Confirmar Pagamento
+              <Button type="submit" disabled={isSaving || isSavingRef.current}>
+                {(isSaving || isSavingRef.current) ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Carregando...
+                  </>
+                ) : 'Confirmar Pagamento'}
               </Button>
             </DialogFooter>
           </form>
