@@ -680,13 +680,6 @@ export default function CaixasManager() {
     }
   };
 
-  // Verificar se o mês selecionado é posterior ao mês atual
-  const isMesPosterior = () => {
-    const hoje = new Date();
-    const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-    return selectedMonth > mesAtual;
-  };
-
   // Monitora mudanças nas transações para verificar consistência
   useEffect(() => {
     // Aguardar as operações de gravação para evitar falso positivo
@@ -1046,15 +1039,13 @@ export default function CaixasManager() {
               <CardDescription>Gerencie seus recebimentos mensais</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              {isMesPosterior() && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => setIsDuplicarReceitaDialogOpen(true)}
-                  title="Duplicar receitas de outro mês"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              )}
+              <Button 
+                variant="outline" 
+                onClick={() => setIsDuplicarReceitaDialogOpen(true)}
+                title="Duplicar receitas de outro mês"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
               <Dialog open={isReceitaDialogOpen} onOpenChange={setIsReceitaDialogOpen}>
                 <DialogTrigger asChild>
                   <Button onClick={() => resetReceitaForm()}>
