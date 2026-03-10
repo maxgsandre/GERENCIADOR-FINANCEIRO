@@ -254,16 +254,6 @@ export default function GastosFixosManager() {
     return saldoRealDoMes(caixaSelecionado) < valorPagamentoNum;
   };
 
-  // Replicação idempotente de gastos fixos ao mudar de mês (usa meta no Firestore)
-  useEffect(() => {
-    (async () => {
-      try {
-        const svc = await import('../services/firebaseService');
-        (svc as any).replicateGastosIfNeeded && currentUser?.uid && await (svc as any).replicateGastosIfNeeded(currentUser.uid, selectedMonth);
-      } catch {}
-    })();
-  }, [selectedMonth, currentUser]);
-
   // Filtrar gastos fixos pelo mês selecionado
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
   
