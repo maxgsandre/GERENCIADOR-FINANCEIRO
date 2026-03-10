@@ -528,6 +528,8 @@ export default function CaixasManager() {
   const [isReceitaPagamentoOpen, setIsReceitaPagamentoOpen] = useState(false);
   const [receitaSelecionada, setReceitaSelecionada] = useState<ReceitaPrevista | null>(null);
   const [caixaReceita, setCaixaReceita] = useState<string | null>(null);
+  const [dataRecebimento, setDataRecebimento] = useState<string>('');
+  const [horaRecebimento, setHoraRecebimento] = useState<string>('');
   const [isSavingReceitaPagamento, setIsSavingReceitaPagamento] = useState(false);
 
   const toggleReceitaRecebida = async (receita: ReceitaPrevista) => {
@@ -535,6 +537,12 @@ export default function CaixasManager() {
       // Se está marcando como recebida, abrir modal para selecionar caixa
       setReceitaSelecionada(receita);
       setCaixaReceita(caixas && caixas.length > 0 ? caixas[0].id : null);
+      // Data/hora padrão: hoje, como nos outros fluxos (gastos/dividas)
+      const agora = new Date();
+      const hojeStr = agora.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+      const horaStr = agora.toTimeString().slice(0,5);
+      setDataRecebimento(hojeStr);
+      setHoraRecebimento(horaStr);
       setIsReceitaPagamentoOpen(true);
     } else {
       // Não permitir desmarcar diretamente - deve excluir a transação
@@ -559,9 +567,9 @@ export default function CaixasManager() {
       const novoSaldo = caixaSelecionado.saldo + receitaSelecionada.valor;
       await saveCaixa({ ...caixaSelecionado, saldo: novoSaldo });
 
-      // Criar transação de entrada (com data/hora locais)
-      const dataHoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
-      const horaAgora = new Date().toTimeString().slice(0,5);
+      // Criar transação de entrada usando a data/hora escolhidas
+      const dataTransacao = dataRecebimento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+      const horaTransacao = horaRecebimento || new Date().toTimeString().slice(0,5);
       await saveTransacao({
         id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
         caixaId: caixaReceita,
@@ -569,8 +577,8 @@ export default function CaixasManager() {
         valor: receitaSelecionada.valor,
         descricao: `Receita recebida: ${receitaSelecionada.descricao}`,
         categoria: 'Receitas',
-        data: dataHoje,
-        hora: horaAgora,
+        data: dataTransacao,
+        hora: horaTransacao,
       });
 
       // Marcar receita como recebida e guardar o caixaId
@@ -581,6 +589,8 @@ export default function CaixasManager() {
       setIsReceitaPagamentoOpen(false);
       setReceitaSelecionada(null);
       setCaixaReceita(null);
+      setDataRecebimento('');
+      setHoraRecebimento('');
     } finally {
       setIsSavingReceitaPagamento(false);
     }
@@ -1597,16 +1607,16 @@ export default function CaixasManager() {
         )}
       </div>
 
-      {/* Modal de seleção de caixa para receita */}
+      {/* Modal de seleção de caixa e data para receita */}
       <Dialog open={isReceitaPagamentoOpen} onOpenChange={(o) => { if (isSavingReceitaPagamento) return; setIsReceitaPagamentoOpen(o); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Receber receita</DialogTitle>
             <DialogDescription>
-              Selecione o caixa onde a receita será creditada: {receitaSelecionada?.descricao}
+              Defina o caixa e a data deste recebimento: {receitaSelecionada?.descricao}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
+          <div className="space-y-4">
             {caixas && caixas.length > 0 && (
               <div className="space-y-2">
                 <Label>Selecionar Caixa</Label>
@@ -1630,9 +1640,31 @@ export default function CaixasManager() {
                 </select>
               </div>
             )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Data do recebimento</Label>
+                <Input
+                  type="date"
+                  value={dataRecebimento}
+                  onChange={(e) => setDataRecebimento(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Hora do recebimento</Label>
+                <Input
+                  type="time"
+                  value={horaRecebimento}
+                  onChange={(e) => setHoraRecebimento(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
             {receitaSelecionada && (
               <div className="text-sm text-muted-foreground">
-                Valor: R$ {receitaSelecionada.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                Valor: <strong>R$ {receitaSelecionada.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
               </div>
             )}
           </div>
@@ -1642,7 +1674,7 @@ export default function CaixasManager() {
             </Button>
             <Button 
               onClick={confirmarReceitaPagamento}
-              disabled={!caixaReceita || isSavingReceitaPagamento}
+              disabled={!caixaReceita || !dataRecebimento || !horaRecebimento || isSavingReceitaPagamento}
             >
               {isSavingReceitaPagamento ? (
                 <>
