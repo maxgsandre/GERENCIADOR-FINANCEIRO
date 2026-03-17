@@ -10,7 +10,8 @@ import {
   query,
   where,
   orderBy,
-  Timestamp
+  Timestamp,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { User } from 'firebase/auth';
@@ -849,7 +850,7 @@ export const subscribeToReceitasPrevistas = (userId: string, callback: (receitas
       if (data && data.descricao) {
         // Extrair ID real da receita se o docId inclui período (formato antigo intermediário)
         let receitaId = docId;
-        let periodoDoId = null;
+        let periodoDoId: string | null = null;
         
         // Se o ID começa com período (YYYY-MM-...), extrair
         if (/^\d{4}-\d{2}-/.test(docId)) {
@@ -1172,37 +1173,85 @@ export const saveCreditCardPurchase = async (userId: string, purchase: CompraCar
 };
 
 export const deleteCreditCardPurchase = async (userId: string, purchaseId: string, cardId?: string) => {
-  if (cardId) {
-    // Deletar direto se souber o cardId
-    await deleteDoc(doc(db, 'users', userId, 'creditCards', cardId, 'compras', purchaseId));
-    // Limpar itens de fatura relacionados
+  // Para apagar itens mensais, precisamos saber cardId/startMonth/parcelas.
+  // Se cardId não for informado, tentamos localizar a compra em algum cartão.
+  let resolvedCardId = cardId;
+  let purchaseData: any | null = null;
+
+  if (resolvedCardId) {
+    const ref = doc(db, 'users', userId, 'creditCards', resolvedCardId, 'compras', purchaseId);
+    const snap = await getDoc(ref).catch(() => null as any);
+    if (snap && snap.exists?.()) purchaseData = snap.data();
+  } else {
+    const cardsSnap = await getDocs(collection(db, 'users', userId, 'creditCards')).catch(() => null as any);
+    const cardDocs = cardsSnap?.docs || [];
+    for (const c of cardDocs) {
+      const ref = doc(db, 'users', userId, 'creditCards', c.id, 'compras', purchaseId);
+      const snap = await getDoc(ref).catch(() => null as any);
+      if (snap && snap.exists?.()) {
+        resolvedCardId = c.id;
+        purchaseData = snap.data();
+        break;
+      }
+    }
+  }
+
+  // Se não conseguiu localizar, pelo menos tentar apagar o cadastro (fallback)
+  if (!resolvedCardId) return;
+
+  const startMonth: string | undefined = purchaseData?.startMonth;
+  const parcelas: number = Math.max(1, Number(purchaseData?.parcelas || 1));
+
+  const addMonths = (ym: string, add: number) => {
+    const [y, m] = ym.split('-').map(Number);
+    const idx = y * 12 + (m - 1) + add;
+    const ny = Math.floor(idx / 12);
+    const nm = (idx % 12) + 1;
+    return `${ny}-${String(nm).padStart(2, '0')}`;
+  };
+
+  // Deletar compra + todos os itens de fatura que pertencem a ela, em todos os meses
+  let batch = writeBatch(db);
+  let ops = 0;
+  const commit = async () => {
+    if (!ops) return;
+    await batch.commit();
+    batch = writeBatch(db);
+    ops = 0;
+  };
+
+  // 1) Itens mensais (se souber startMonth)
+  if (startMonth) {
+    for (let n = 1; n <= parcelas; n++) {
+      const ym = addMonths(startMonth, n - 1);
+      const itemId = `${purchaseId}-${n}`;
+      const itemRef = doc(db, 'users', userId, 'creditCards', resolvedCardId, 'faturas', ym, 'itens', itemId);
+      batch.delete(itemRef);
+      ops++;
+      if (ops >= 450) await commit();
+    }
+  } else {
+    // Fallback: limpa apenas janela de 24 meses (compatibilidade)
     const now = new Date();
-    const tasks: Promise<void>[] = [];
     for (let i = -12; i <= 12; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const q = query(collection(db, 'users', userId, 'creditCards', cardId, 'faturas', ym, 'itens'));
-      getDocs(q).then((snap) => {
-        snap.forEach((docSnap) => {
-          const data = docSnap.data() as any;
-          if (data.purchaseId === purchaseId || docSnap.id.startsWith(`${purchaseId}-`)) {
-            tasks.push(deleteDoc(docSnap.ref).catch(() => undefined));
-          }
-        });
-      }).catch(() => {});
+      for (let n = 1; n <= parcelas; n++) {
+        const itemId = `${purchaseId}-${n}`;
+        const itemRef = doc(db, 'users', userId, 'creditCards', resolvedCardId, 'faturas', ym, 'itens', itemId);
+        batch.delete(itemRef);
+        ops++;
+        if (ops >= 450) await commit();
+      }
     }
-    if (tasks.length) await Promise.all(tasks);
-    return;
   }
-  
-  // Sem cardId: buscar em todos os cartões
-  const cardsCol = collection(db, 'users', userId, 'creditCards');
-  const cardsSnap = await getDocs(cardsCol);
-  const tasks: Promise<void>[] = [];
-  cardsSnap.forEach((cardDoc) => {
-    tasks.push(deleteDoc(doc(db, 'users', userId, 'creditCards', cardDoc.id, 'compras', purchaseId)).catch(() => undefined));
-  });
-  await Promise.all(tasks);
+
+  // 2) Cadastro base
+  const compraRef = doc(db, 'users', userId, 'creditCards', resolvedCardId, 'compras', purchaseId);
+  batch.delete(compraRef);
+  ops++;
+
+  await commit();
 };
 
 export const subscribeToCreditCardPurchases = (userId: string, callback: (purchases: CompraCartao[]) => void) => {
@@ -1287,6 +1336,87 @@ export const subscribeToCreditCardPurchases = (userId: string, callback: (purcha
 };
 
 // =======================
+// Cartões - Itens de fatura por mês (fonte mensal, igual dívidas)
+// Estrutura: users/{uid}/creditCards/{cardId}/faturas/{YYYY-MM}/itens/{purchaseId}-{n}
+// =======================
+export type CreditCardInvoiceItem = {
+  id: string;
+  purchaseId: string;
+  cardId?: string;
+  descricao: string;
+  valor: number;
+  parcela: number;
+  parcelasTotais: number;
+  startMonth?: string;
+  pago?: boolean;
+  pagamentoTransacaoId?: string;
+  pagamentoData?: string; // YYYY-MM-DD
+  pagamentoHora?: string; // HH:mm
+  estornoTransacaoId?: string;
+  estornoData?: string; // YYYY-MM-DD
+  estornoHora?: string; // HH:mm
+};
+
+export const subscribeToCreditCardInvoiceItems = (
+  userId: string,
+  cardId: string,
+  periodo: string,
+  callback: (items: CreditCardInvoiceItem[]) => void
+) => {
+  const q = query(collection(db, 'users', userId, 'creditCards', cardId, 'faturas', periodo, 'itens'));
+  return onSnapshot(q, (snap) => {
+    const arr: CreditCardInvoiceItem[] = [];
+    snap.forEach((d) => arr.push({ id: d.id, ...(d.data() as any) } as CreditCardInvoiceItem));
+    callback(arr);
+  });
+};
+
+export const markCreditCardInvoiceItemsPaid = async (
+  userId: string,
+  cardId: string,
+  periodo: string,
+  itemIds: string[],
+  opts: { transacaoId: string; data: string; hora?: string }
+) => {
+  const batch = writeBatch(db);
+  for (const itemId of itemIds) {
+    const ref = doc(db, 'users', userId, 'creditCards', cardId, 'faturas', periodo, 'itens', itemId);
+    batch.update(ref, {
+      pago: true,
+      pagamentoTransacaoId: opts.transacaoId,
+      pagamentoData: opts.data,
+      pagamentoHora: opts.hora ?? null,
+      estornoTransacaoId: null,
+      estornoData: null,
+      estornoHora: null,
+      updatedAt: Timestamp.fromDate(new Date()),
+    } as any);
+  }
+  await batch.commit();
+};
+
+export const markCreditCardInvoiceItemsRefunded = async (
+  userId: string,
+  cardId: string,
+  periodo: string,
+  itemIds: string[],
+  opts: { transacaoId: string; data: string; hora?: string }
+) => {
+  const batch = writeBatch(db);
+  for (const itemId of itemIds) {
+    const ref = doc(db, 'users', userId, 'creditCards', cardId, 'faturas', periodo, 'itens', itemId);
+    batch.update(ref, {
+      pago: false,
+      estornoTransacaoId: opts.transacaoId,
+      estornoData: opts.data,
+      estornoHora: opts.hora ?? null,
+      updatedAt: Timestamp.fromDate(new Date()),
+    } as any);
+  }
+  await batch.commit();
+};
+
+// =======================
 // Cartões - Faturas por mês a partir das compras parceladas
 // Estrutura: users/{uid}/creditCards/{cardId}/faturas/{YYYY-MM}/itens/{purchaseId}-{n}
 // =======================
@@ -1296,6 +1426,7 @@ const mirrorPurchaseToInvoices = async (userId: string, purchase: CompraCartao) 
     if (!first) return;
     const parcelas = Math.max(1, purchase.parcelas || 1);
     const valorParcela = purchase.valorParcela || (purchase.valorTotal / parcelas);
+    const parcelasPagas = Math.max(0, Math.min(parcelas, purchase.parcelasPagas || 0));
     const [y0, m0] = first.split('-').map(Number);
     let y = y0, m = m0;
     for (let n = 1; n <= parcelas; n++) {
@@ -1304,11 +1435,16 @@ const mirrorPurchaseToInvoices = async (userId: string, purchase: CompraCartao) 
       const item = {
         id,
         purchaseId: purchase.id,
+        cardId: purchase.cardId,
         descricao: purchase.descricao,
         valor: valorParcela,
         parcela: n,
         parcelasTotais: parcelas,
         startMonth: first,
+        dataCompra: purchase.dataCompra,
+        valorTotal: purchase.valorTotal,
+        valorParcela: valorParcela,
+        pago: n <= parcelasPagas,
       } as any;
       await setDoc(doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', id), item);
       // avançar mês

@@ -189,26 +189,40 @@ export const mapPurchasesAsDividas = (
   return comprasCartao.map((c) => {
     const card = cartoes.find(x => x.id === c.cardId);
     const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
-    
     const parcelasPagasAtualizadas = c.parcelasPagas || 0;
-    const valorPagoAtual = c.valorPago || 0;
+    const totalParcelas = c.parcelas || 1;
+    const valorParcelaBase = c.valorParcela || (c.valorTotal / totalParcelas);
+    const valorTotalCalculado = Math.max(
+      c.valorTotal || 0,
+      // proteção contra arredondamento: soma das parcelas
+      (valorParcelaBase * totalParcelas)
+    );
+    // Valor pago real: considera tanto o campo salvo quanto o que seria pago pelas parcelasPagas
+    const valorPagoAtual = Math.max(
+      c.valorPago || 0,
+      parcelasPagasAtualizadas * valorParcelaBase
+    );
+    const isFullyPaid =
+      parcelasPagasAtualizadas >= totalParcelas ||
+      Math.round((valorPagoAtual || 0) * 100) >= Math.round(valorTotalCalculado * 100);
     
     // Verificar se esta compra tem parcela no mês selecionado
     const selectedYM = parseYYYYMM(selectedMonth);
     const [sy, sm] = c.startMonth.split('-').map(Number);
     const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-    const temParcelaNoMes = idx >= 0 && idx < c.parcelas;
+    const temParcelaNoMes = idx >= 0 && idx < totalParcelas;
     
-    // Se não tem parcela no mês, retornar dívida com valor 0 (será filtrada)
-    if (!temParcelaNoMes) {
+    // Se não tem parcela no mês ou a compra já foi totalmente quitada,
+    // retornar dívida com valor 0 (será filtrada dos totais do mês)
+    if (!temParcelaNoMes || isFullyPaid) {
       return {
         id: `purchase:${c.id}`,
         descricao: `Cartão ${card?.nome || 'Desconhecido'}: ${c.descricao}`,
         valorTotal: 0,
-        valorPago: 0,
+        valorPago: valorPagoAtual,
         parcelasPagas: parcelasPagasAtualizadas,
         parcelas: c.parcelas,
-        valorParcela: c.valorParcela,
+        valorParcela: 0,
         dataVencimento: `${anoSelecionado}-${String(mesSelecionado).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`,
         categoria: 'Cartão de Crédito',
         tipo: c.parcelas > 1 ? 'parcelada' : 'total',
