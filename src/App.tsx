@@ -180,7 +180,10 @@ export interface FinanceiroContextType {
   saveCartao: (card: CartaoCredito) => Promise<void>;
   deleteCartao: (cardId: string) => Promise<void>;
   saveCompraCartao: (purchase: CompraCartao) => Promise<void>;
-  deleteCompraCartao: (purchaseId: string) => Promise<void>;
+  deleteCompraCartao: (
+    purchaseId: string,
+    opts?: { cardId?: string; startMonth?: string; parcelas?: number }
+  ) => Promise<void>;
 }
 
 export const FinanceiroContext = React.createContext<FinanceiroContextType | null>(null);
@@ -438,9 +441,12 @@ function AppContent() {
     }
   };
 
-  const deleteCompraCartao = async (purchaseId: string) => {
+  const deleteCompraCartao = async (
+    purchaseId: string,
+    opts?: { cardId?: string; startMonth?: string; parcelas?: number }
+  ) => {
     if (currentUser) {
-      await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId);
+      await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId, opts);
       // Atualizar estado local imediatamente para melhor UX
       setComprasCartao(prev => prev.filter(p => p.id !== purchaseId));
     }
@@ -492,7 +498,7 @@ function AppContent() {
     saveCartao: async (card: CartaoCredito) => { if (currentUser) await (firebaseService as any).saveCreditCard(currentUser.uid, card); },
     deleteCartao: async (cardId: string) => { if (currentUser) await (firebaseService as any).deleteCreditCard(currentUser.uid, cardId); },
     saveCompraCartao: async (purchase: CompraCartao) => { if (currentUser) await (firebaseService as any).saveCreditCardPurchase(currentUser.uid, purchase); },
-    deleteCompraCartao: async (purchaseId: string) => { if (currentUser) await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId); },
+    deleteCompraCartao: async (purchaseId: string, opts?: any) => { if (currentUser) await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId, opts); },
   };
 
   // Mostrar loading enquanto carrega
