@@ -12,6 +12,7 @@ import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSi
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
 import { subscribeToCreditCardInvoiceItems, markCreditCardInvoiceItemsPaid, markCreditCardInvoiceItemsRefunded, CreditCardInvoiceItem } from '../services/firebaseService';
+import { toast } from 'sonner';
 
 type DividaView = Divida & { dataVencimentoExibida?: string };
 
@@ -294,6 +295,13 @@ export default function DividasManager() {
     if (isSubmittingCreatePurchase) return;
     if (!selectedCardId || !purchaseDesc || !purchaseValorTotal || !purchaseValorParcela || !purchaseStartDate) return;
     const startMonth = purchaseStartDate.slice(0,7);
+    const purchaseYM = (purchaseDate || '').slice(0, 7);
+    if (purchaseYM && purchaseYM > startMonth) {
+      toast.error('Data da compra inválida', {
+        description: 'A data da compra não pode ser posterior ao mês em que começa a cobrar.',
+      });
+      return;
+    }
     const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
     const startDay = selectedCard?.diaVencimento || 5;
     
@@ -409,6 +417,13 @@ export default function DividasManager() {
     if (!editingPurchase || !selectedCardId) return;
     
     const startMonth = purchaseStartDate.slice(0,7);
+    const purchaseYM = (purchaseDate || '').slice(0, 7);
+    if (purchaseYM && purchaseYM > startMonth) {
+      toast.error('Data da compra inválida', {
+        description: 'A data da compra não pode ser posterior ao mês em que começa a cobrar.',
+      });
+      return;
+    }
     const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
     const startDay = selectedCard?.diaVencimento || 5;
     
