@@ -117,10 +117,14 @@ export default function DividasManager() {
   // Estados para dívida em andamento na compra
   const [purchaseEmAndamento, setPurchaseEmAndamento] = useState(false);
   const [purchaseParcelasRestantes, setPurchaseParcelasRestantes] = useState('');
-  const [purchaseCobrarAPartir, setPurchaseCobrarAPartir] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
-  });
+  
+  const addMonthsYYYYMM = (ym: string, add: number) => {
+    const [y, m] = ym.split('-').map(Number);
+    const idx = ymToIndex(y, m) + add;
+    const ny = Math.floor(idx / 12);
+    const nm = (idx % 12) + 1;
+    return `${ny}-${String(nm).padStart(2, '0')}`;
+  };
 
   // Calcula automaticamente o valor da parcela quando total/parcelas mudarem.
   const recomputeParcela = (totalStr: string, parcelasStr: string) => {
@@ -293,20 +297,14 @@ export default function DividasManager() {
     const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
     const startDay = selectedCard?.diaVencimento || 5;
     
-    // Se estiver em andamento, o usuário informa parcelas restantes + mês a cobrar a partir
+    // Se estiver em andamento, o usuário informa apenas "parcelas restantes".
+    // O mês "a cobrar a partir" é derivado: startMonth + parcelasPagas.
     const totalParcelas = parseInt(purchaseParcelas || '1');
-    const restantes = purchaseEmAndamento ? Math.max(0, Math.min(totalParcelas, parseInt(purchaseParcelasRestantes || '0'))) : totalParcelas;
+    const restantes = purchaseEmAndamento
+      ? Math.max(0, Math.min(totalParcelas, parseInt(purchaseParcelasRestantes || '0')))
+      : totalParcelas;
     const parcelasPagas = purchaseEmAndamento ? Math.max(0, totalParcelas - restantes) : 0;
-
-    // startMonth deve ser o mês da 1ª parcela (para materializar também as já pagas)
-    const addMonths = (ym: string, add: number) => {
-      const [y, m] = ym.split('-').map(Number);
-      const idx = ymToIndex(y, m) + add;
-      const ny = Math.floor(idx / 12);
-      const nm = (idx % 12) + 1;
-      return `${ny}-${String(nm).padStart(2, '0')}`;
-    };
-    const startMonthReal = purchaseEmAndamento ? addMonths(purchaseCobrarAPartir, -parcelasPagas) : startMonth;
+    const startMonthReal = startMonth;
     
     const p: CompraCartao = {
       id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(),
@@ -327,7 +325,7 @@ export default function DividasManager() {
 
     setIsPurchaseDialogOpen(false);
     setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); setPurchaseStartDate(`${selectedMonth}-05`);
-    setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseCobrarAPartir(`${selectedMonth}`); setPurchaseDataUltimoPagamento('');
+    setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseDataUltimoPagamento('');
     setIsSubmittingCreatePurchase(false);
   };
 
@@ -371,7 +369,6 @@ export default function DividasManager() {
     setPurchaseDate(new Date(purchase.dataCompra).toISOString().slice(0,10));
     setPurchaseEmAndamento(purchase.parcelasPagas > 0);
     setPurchaseParcelasRestantes(String(Math.max(0, (purchase.parcelas || 1) - (purchase.parcelasPagas || 0))));
-    setPurchaseCobrarAPartir(purchase.startMonth);
     setSelectedCardId(purchase.cardId);
     setIsEditPurchaseDialogOpen(true);
   };
@@ -416,17 +413,11 @@ export default function DividasManager() {
     const startDay = selectedCard?.diaVencimento || 5;
     
     const totalParcelas = parseInt(purchaseParcelas || '1');
-    const restantes = purchaseEmAndamento ? Math.max(0, Math.min(totalParcelas, parseInt(purchaseParcelasRestantes || '0'))) : totalParcelas;
+    const restantes = purchaseEmAndamento
+      ? Math.max(0, Math.min(totalParcelas, parseInt(purchaseParcelasRestantes || '0')))
+      : totalParcelas;
     const parcelasPagas = purchaseEmAndamento ? Math.max(0, totalParcelas - restantes) : 0;
-
-    const addMonths = (ym: string, add: number) => {
-      const [y, m] = ym.split('-').map(Number);
-      const idx = ymToIndex(y, m) + add;
-      const ny = Math.floor(idx / 12);
-      const nm = (idx % 12) + 1;
-      return `${ny}-${String(nm).padStart(2, '0')}`;
-    };
-    const startMonthReal = purchaseEmAndamento ? addMonths(purchaseCobrarAPartir, -parcelasPagas) : startMonth;
+    const startMonthReal = startMonth;
     
     const atualizado: CompraCartao = {
       ...editingPurchase,
@@ -447,7 +438,7 @@ export default function DividasManager() {
       setIsEditPurchaseDialogOpen(false);
       setEditingPurchase(null);
       setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela('');
-      setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseCobrarAPartir(selectedMonth);
+      setPurchaseEmAndamento(false); setPurchaseParcelasRestantes('');
     } catch (e) {
       alert('Não foi possível salvar a compra.');
     }
@@ -2521,14 +2512,16 @@ export default function DividasManager() {
                           </div>
                           
                           <div className="space-y-2">
-                            <Label htmlFor="purchaseCobrarAPartir">Cobrar no sistema a partir</Label>
-                            <Input
-                              id="purchaseCobrarAPartir"
-                              type="month"
-                              value={purchaseCobrarAPartir}
-                              onChange={(e) => setPurchaseCobrarAPartir(e.target.value)}
-                              required={purchaseEmAndamento}
-                            />
+                            <Label>Cobrar no sistema a partir</Label>
+                            <div className="h-9 px-3 flex items-center rounded border bg-background text-sm">
+                              {(() => {
+                                const total = Math.max(1, parseInt(purchaseParcelas || '1'));
+                                const rest = Math.max(0, Math.min(total, parseInt(purchaseParcelasRestantes || '0')));
+                                const pagas = Math.max(0, total - rest);
+                                const startYm = purchaseStartDate.slice(0, 7);
+                                return addMonthsYYYYMM(startYm, pagas);
+                              })()}
+                            </div>
                           </div>
                         </div>
 
@@ -2560,7 +2553,7 @@ export default function DividasManager() {
                         setIsPurchaseDialogOpen(false);
                         setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); 
                         setPurchaseStartDate(`${selectedMonth}-05`); setPurchaseDate(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
-                        setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseCobrarAPartir(selectedMonth); setPurchaseDataUltimoPagamento('');
+                        setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseDataUltimoPagamento('');
                       }}>Cancelar</Button>
                       <Button type="submit" disabled={isSubmittingCreatePurchase}>{isSubmittingCreatePurchase ? 'Adicionando...' : 'Adicionar'}</Button>
                     </DialogFooter>
@@ -2907,11 +2900,15 @@ export default function DividasManager() {
                 </div>
                 <div className="space-y-2">
                   <Label>Cobrar no sistema a partir</Label>
-                  <Input
-                    type="month"
-                    value={purchaseCobrarAPartir}
-                    onChange={(e) => setPurchaseCobrarAPartir(e.target.value)}
-                  />
+                  <div className="h-9 px-3 flex items-center rounded border bg-background text-sm">
+                    {(() => {
+                      const total = Math.max(1, parseInt(purchaseParcelas || '1'));
+                      const rest = Math.max(0, Math.min(total, parseInt(purchaseParcelasRestantes || '0')));
+                      const pagas = Math.max(0, total - rest);
+                      const startYm = purchaseStartDate.slice(0, 7);
+                      return addMonthsYYYYMM(startYm, pagas);
+                    })()}
+                  </div>
                 </div>
               </div>
             )}

@@ -1711,6 +1711,44 @@ export const importUserData = async (
 ): Promise<void> => {
   const substituir = options?.substituirExistentes ?? false;
 
+  // Mapa de cartões por id (para casar a descrição das transações com o card correto)
+  const cartoesById = new Map<string, CartaoCredito>();
+  for (const c of backup.cartoes || []) {
+    if (c?.id) cartoesById.set(c.id, c);
+  }
+
+  // Mapear transações de pagamento de fatura por (cardId, periodo YYYY-MM)
+  // Isso permite reconstruir "pago" por competência (não fixo em todo mês).
+  const paymentByCardIdPeriodo = new Map<string, Transacao>();
+  const hasAnyPaymentByCardId = new Set<string>();
+  for (const tx of backup.transacoes || []) {
+    if (!tx) continue;
+    if (tx.categoria !== 'Cartão de Crédito') continue;
+    if (tx.tipo !== 'saida') continue;
+    if (!tx.descricao) continue;
+
+    // Esperado: "Pagamento fatura: Fatura <nome>"
+    const m = tx.descricao.match(/^Pagamento fatura:\s*Fatura\s*(.+)$/i);
+    if (!m) continue;
+    const cardNome = m[1]?.trim();
+    if (!cardNome) continue;
+
+    // Descobrir cardId pelo nome
+    const matched = Array.from(cartoesById.values()).find((c) => (c.nome || '').trim() === cardNome);
+    if (!matched?.id) continue;
+
+    const periodo =
+      (tx as any).periodo ||
+      (tx.data
+        ? `${new Date(tx.data + 'T00:00:00').getFullYear()}-${String(new Date(tx.data + 'T00:00:00').getMonth() + 1).padStart(2, '0')}`
+        : undefined);
+    if (!periodo) continue;
+
+    const key = `${matched.id}|${periodo}`;
+    paymentByCardIdPeriodo.set(key, tx);
+    hasAnyPaymentByCardId.add(matched.id);
+  }
+
   // 1. Importar Caixas
   for (const caixa of backup.caixas) {
     await setDoc(doc(db, 'users', userId, 'caixas', caixa.id), caixa);
@@ -1835,29 +1873,78 @@ export const importUserData = async (
       delete payload.id;
       Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
       await setDoc(doc(db, 'users', userId, 'creditCards', compra.cardId, 'compras', compra.id), payload);
-      
-      // Reconstruir faturas (mirrorPurchaseToInvoices)
+
+      // Reconstruir faturas no modelo mensal (por competência), usando transações de pagamento
+      // Quando existir ao menos 1 pagamento do card no backup, marcamos "pago" apenas
+      // para os meses que tiveram transação de pagamento de fatura.
+      // Caso não tenha transações para o card, usamos fallback baseado em parcelasPagas.
       try {
+        const first =
+          compra.startMonth ||
+          (compra.dataCompra
+            ? `${new Date(compra.dataCompra).getFullYear()}-${String(new Date(compra.dataCompra).getMonth() + 1).padStart(2, '0')}`
+            : undefined);
+        if (!first) continue;
+
         const parcelas = Math.max(1, compra.parcelas || 1);
-        const valorParcela = compra.valorParcela || (compra.valorTotal / parcelas);
-        const first = compra.startMonth || (compra.dataCompra ? `${new Date(compra.dataCompra).getFullYear()}-${String(new Date(compra.dataCompra).getMonth() + 1).padStart(2, '0')}` : undefined);
-        if (first) {
-          const [y0, m0] = first.split('-').map(Number);
-          let y = y0, m = m0;
-          for (let n = 1; n <= parcelas; n++) {
-            const ym = `${y}-${String(m).padStart(2, '0')}`;
-            const id = `${compra.id}-${n}`;
-            const item = {
-              id,
-              purchaseId: compra.id,
-              descricao: compra.descricao,
-              valor: valorParcela,
-              parcela: n,
-              parcelasTotais: parcelas,
-              startMonth: first,
-            } as any;
-            await setDoc(doc(db, 'users', userId, 'creditCards', compra.cardId, 'faturas', ym, 'itens', id), item);
-            m += 1; if (m > 12) { m = 1; y += 1; }
+        const valorParcela =
+          compra.valorParcela || (compra.valorTotal / parcelas);
+        const parcelasPagasFinal =
+          Math.max(0, Math.min(parcelas, compra.parcelasPagas || 0));
+
+        const [y0, m0] = first.split('-').map(Number);
+        let y = y0,
+          m = m0;
+
+        for (let n = 1; n <= parcelas; n++) {
+          const ym = `${y}-${String(m).padStart(2, '0')}`;
+          const itemId = `${compra.id}-${n}`;
+
+          const txPagamento = paymentByCardIdPeriodo.get(`${compra.cardId}|${ym}`);
+          const usingTx = hasAnyPaymentByCardId.has(compra.cardId);
+
+          const pago =
+            usingTx ? Boolean(txPagamento) : n <= parcelasPagasFinal;
+
+          const item: any = {
+            id: itemId,
+            purchaseId: compra.id,
+            cardId: compra.cardId,
+            descricao: compra.descricao,
+            valor: valorParcela,
+            parcela: n,
+            parcelasTotais: parcelas,
+            startMonth: first,
+            dataCompra: compra.dataCompra,
+            valorTotal: compra.valorTotal,
+            valorParcela: valorParcela,
+            pago,
+            pagamentoTransacaoId: txPagamento?.id ?? null,
+            pagamentoData: txPagamento?.data ?? null,
+            pagamentoHora: txPagamento?.hora ?? null,
+            updatedAt: Timestamp.fromDate(new Date()),
+          };
+
+          await setDoc(
+            doc(
+              db,
+              'users',
+              userId,
+              'creditCards',
+              compra.cardId,
+              'faturas',
+              ym,
+              'itens',
+              itemId
+            ),
+            item,
+            { merge: true }
+          );
+
+          m += 1;
+          if (m > 12) {
+            m = 1;
+            y += 1;
           }
         }
       } catch {}
