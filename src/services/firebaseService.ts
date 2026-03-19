@@ -1159,6 +1159,92 @@ const migratePurchaseToCard = async (userId: string, purchase: CompraCartao) => 
 export const saveCreditCardPurchase = async (userId: string, purchase: CompraCartao) => {
   if (!purchase.cardId) throw new Error('Compra deve estar vinculada a um cartão');
   
+  // Ao editar uma compra, precisamos evitar duplicatas nas faturas mensais.
+  // Estratégia: ler a compra anterior (se existir), coletar status de pagamento por parcela,
+  // e por competência (YYYY-MM), deletar itens antigos (e também os novos destinos) e então recriar
+  // itens no novo cronograma preservando pagamentos quando possível.
+  const prevRef = doc(db, 'users', userId, 'creditCards', purchase.cardId, 'compras', purchase.id);
+  const prevSnap = await getDoc(prevRef).catch(() => null as any);
+  const prevData = prevSnap?.exists?.() ? (prevSnap.data() as any) : null;
+
+  const addMonths = (ym: string, add: number) => {
+    const [y, m] = ym.split('-').map(Number);
+    const idx = y * 12 + (m - 1) + add;
+    const ny = Math.floor(idx / 12);
+    const nm = (idx % 12) + 1;
+    return `${ny}-${String(nm).padStart(2, '0')}`;
+  };
+
+  const prevStartMonth: string | undefined = prevData?.startMonth;
+  const prevParcelas: number = Math.max(1, Number(prevData?.parcelas || 1));
+  const nextStartMonth: string | undefined = purchase.startMonth;
+  const nextParcelas: number = Math.max(1, Number(purchase.parcelas || 1));
+
+  // Preservar status/transações por parcela (n) quando já existir item materializado.
+  const preservedByN = new Map<number, any>();
+  // Preservar status/transações por competência (YYYY-MM). Isso é o mais fiel quando existe
+  // pagamento de fatura por mês (transação), mesmo após ajustar startMonth/parcelas.
+  const preservedByYM = new Map<string, any>();
+  if (prevStartMonth) {
+    for (let n = 1; n <= prevParcelas; n++) {
+      const ym = addMonths(prevStartMonth, n - 1);
+      const itemId = `${purchase.id}-${n}`;
+      const itemRef = doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', itemId);
+      const itemSnap = await getDoc(itemRef).catch(() => null as any);
+      if (itemSnap?.exists?.()) {
+        const d = itemSnap.data() as any;
+        const preserved = {
+          pago: d.pago ?? false,
+          pagamentoTransacaoId: d.pagamentoTransacaoId ?? null,
+          pagamentoData: d.pagamentoData ?? null,
+          pagamentoHora: d.pagamentoHora ?? null,
+          estornoTransacaoId: d.estornoTransacaoId ?? null,
+          estornoData: d.estornoData ?? null,
+          estornoHora: d.estornoHora ?? null,
+        };
+        preservedByN.set(n, preserved);
+        // Por competência: se este mês estava pago, manter a marcação quando recriar.
+        // Também preserva estorno e metadados caso existam.
+        preservedByYM.set(ym, preserved);
+      }
+    }
+  }
+
+  // Limpar itens antigos e também destinos novos (caso existam de edições anteriores).
+  // Isso garante que não fiquem parcelas "fantasmas" no mesmo mês.
+  if (prevStartMonth || nextStartMonth) {
+    let batch = writeBatch(db);
+    let ops = 0;
+    const commit = async () => {
+      if (!ops) return;
+      await batch.commit();
+      batch = writeBatch(db);
+      ops = 0;
+    };
+
+    if (prevStartMonth) {
+      for (let n = 1; n <= prevParcelas; n++) {
+        const ym = addMonths(prevStartMonth, n - 1);
+        const itemId = `${purchase.id}-${n}`;
+        const itemRef = doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', itemId);
+        batch.delete(itemRef);
+        ops++;
+        if (ops >= 450) await commit();
+      }
+    }
+    if (nextStartMonth) {
+      for (let n = 1; n <= nextParcelas; n++) {
+        const ym = addMonths(nextStartMonth, n - 1);
+        const itemId = `${purchase.id}-${n}`;
+        const itemRef = doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', itemId);
+        batch.delete(itemRef);
+        ops++;
+        if (ops >= 450) await commit();
+      }
+    }
+    await commit();
+  }
+
   const payload: any = { 
     ...purchase,
     valorPago: purchase.valorPago ?? 0 // Garantir que valorPago seja sempre definido
@@ -1168,14 +1254,18 @@ export const saveCreditCardPurchase = async (userId: string, purchase: CompraCar
   
   // Materializar parcelas por competência em faturas mensais do cartão
   try {
-    await mirrorPurchaseToInvoices(userId, purchase);
+    await mirrorPurchaseToInvoices(userId, purchase, { preservedByN, preservedByYM });
   } catch {}
 };
 
-export const deleteCreditCardPurchase = async (userId: string, purchaseId: string, cardId?: string) => {
+export const deleteCreditCardPurchase = async (
+  userId: string,
+  purchaseId: string,
+  opts?: { cardId?: string; startMonth?: string; parcelas?: number }
+) => {
   // Para apagar itens mensais, precisamos saber cardId/startMonth/parcelas.
   // Se cardId não for informado, tentamos localizar a compra em algum cartão.
-  let resolvedCardId = cardId;
+  let resolvedCardId = opts?.cardId;
   let purchaseData: any | null = null;
 
   if (resolvedCardId) {
@@ -1199,8 +1289,8 @@ export const deleteCreditCardPurchase = async (userId: string, purchaseId: strin
   // Se não conseguiu localizar, pelo menos tentar apagar o cadastro (fallback)
   if (!resolvedCardId) return;
 
-  const startMonth: string | undefined = purchaseData?.startMonth;
-  const parcelas: number = Math.max(1, Number(purchaseData?.parcelas || 1));
+  const startMonth: string | undefined = purchaseData?.startMonth || opts?.startMonth;
+  const parcelas: number = Math.max(1, Number(purchaseData?.parcelas || opts?.parcelas || 1));
 
   const addMonths = (ym: string, add: number) => {
     const [y, m] = ym.split('-').map(Number);
@@ -1420,7 +1510,11 @@ export const markCreditCardInvoiceItemsRefunded = async (
 // Cartões - Faturas por mês a partir das compras parceladas
 // Estrutura: users/{uid}/creditCards/{cardId}/faturas/{YYYY-MM}/itens/{purchaseId}-{n}
 // =======================
-const mirrorPurchaseToInvoices = async (userId: string, purchase: CompraCartao) => {
+const mirrorPurchaseToInvoices = async (
+  userId: string,
+  purchase: CompraCartao,
+  preserved?: { preservedByN?: Map<number, any>; preservedByYM?: Map<string, any> }
+) => {
   try {
     const first = purchase.startMonth || (purchase.dataCompra ? `${new Date(purchase.dataCompra).getFullYear()}-${String(new Date(purchase.dataCompra).getMonth() + 1).padStart(2, '0')}` : undefined);
     if (!first) return;
@@ -1432,6 +1526,9 @@ const mirrorPurchaseToInvoices = async (userId: string, purchase: CompraCartao) 
     for (let n = 1; n <= parcelas; n++) {
       const ym = `${y}-${String(m).padStart(2, '0')}`;
       const id = `${purchase.id}-${n}`;
+      const preservedForMonth = preserved?.preservedByYM?.get(ym);
+      const preservedForN = preserved?.preservedByN?.get(n);
+      const preservedAny = preservedForMonth ?? preservedForN;
       const item = {
         id,
         purchaseId: purchase.id,
@@ -1444,7 +1541,14 @@ const mirrorPurchaseToInvoices = async (userId: string, purchase: CompraCartao) 
         dataCompra: purchase.dataCompra,
         valorTotal: purchase.valorTotal,
         valorParcela: valorParcela,
-        pago: n <= parcelasPagas,
+        pago: preservedAny?.pago ?? (n <= parcelasPagas),
+        pagamentoTransacaoId: preservedAny?.pagamentoTransacaoId ?? null,
+        pagamentoData: preservedAny?.pagamentoData ?? null,
+        pagamentoHora: preservedAny?.pagamentoHora ?? null,
+        estornoTransacaoId: preservedAny?.estornoTransacaoId ?? null,
+        estornoData: preservedAny?.estornoData ?? null,
+        estornoHora: preservedAny?.estornoHora ?? null,
+        updatedAt: Timestamp.fromDate(new Date()),
       } as any;
       await setDoc(doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', id), item);
       // avançar mês

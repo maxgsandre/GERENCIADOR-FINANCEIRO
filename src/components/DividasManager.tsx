@@ -99,7 +99,7 @@ export default function DividasManager() {
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
   const [isEditCardDialogOpen, setIsEditCardDialogOpen] = useState(false);
-  const [isEditPurchaseDialogOpen, setIsEditPurchaseDialogOpen] = useState(false);
+  // Edição/criação de compra será unificada em um único modal
   const [cardName, setCardName] = useState('');
   const [cardLimit, setCardLimit] = useState('');
   const [cardDueDay, setCardDueDay] = useState('15');
@@ -289,10 +289,10 @@ export default function DividasManager() {
     setIsSubmittingCreateCard(false);
   };
 
-  const [isSubmittingCreatePurchase, setIsSubmittingCreatePurchase] = useState(false);
-  const handleCreatePurchase = async (e: React.FormEvent) => {
+  const [isSubmittingPurchase, setIsSubmittingPurchase] = useState(false);
+  const handleUpsertPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmittingCreatePurchase) return;
+    if (isSubmittingPurchase) return;
     if (!selectedCardId || !purchaseDesc || !purchaseValorTotal || !purchaseValorParcela || !purchaseStartDate) return;
     const startMonth = purchaseStartDate.slice(0,7);
     const purchaseYM = (purchaseDate || '').slice(0, 7);
@@ -314,8 +314,12 @@ export default function DividasManager() {
     const parcelasPagas = purchaseEmAndamento ? Math.max(0, totalParcelas - restantes) : 0;
     const startMonthReal = startMonth;
     
+    const id =
+      editingPurchase?.id ||
+      ((crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString());
     const p: CompraCartao = {
-      id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(),
+      ...(editingPurchase || ({} as any)),
+      id,
       cardId: selectedCardId,
       descricao: purchaseDesc,
       valorTotal: parseFloat(purchaseValorTotal),
@@ -324,17 +328,24 @@ export default function DividasManager() {
       startMonth: startMonthReal,
       dataCompra: purchaseDate,
       parcelasPagas: parcelasPagas,
-      valorPago: 0, // Inicializar valorPago como 0
+      valorPago: parcelasPagas * parseFloat(purchaseValorParcela),
       startDay,
     } as any;
-    setIsSubmittingCreatePurchase(true);
+
+    setIsSubmittingPurchase(true);
     await saveCompraCartao(p);
+    setComprasCartao((prev: CompraCartao[]) => {
+      const exists = prev.some((x) => x.id === p.id);
+      if (exists) return prev.map((x) => (x.id === p.id ? p : x));
+      return [...prev, p];
+    });
 
 
     setIsPurchaseDialogOpen(false);
+    setEditingPurchase(null);
     setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); setPurchaseStartDate(`${selectedMonth}-05`);
     setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseDataUltimoPagamento('');
-    setIsSubmittingCreatePurchase(false);
+    setIsSubmittingPurchase(false);
   };
 
   const handleDeleteCard = async (cardId: string) => {
@@ -378,14 +389,20 @@ export default function DividasManager() {
     setPurchaseEmAndamento(purchase.parcelasPagas > 0);
     setPurchaseParcelasRestantes(String(Math.max(0, (purchase.parcelas || 1) - (purchase.parcelasPagas || 0))));
     setSelectedCardId(purchase.cardId);
-    setIsEditPurchaseDialogOpen(true);
+    setIsPurchaseDialogOpen(true);
   };
 
-  const handleDeletePurchase = async (purchaseId: string) => {
+  const handleDeletePurchase = async (
+    purchase: CompraCartao | { id: string; cardId?: string; startMonth?: string; parcelas?: number }
+  ) => {
     if (!confirm('Excluir esta compra? Esta ação não pode ser desfeita.')) return;
     try {
-      await (context as any).deleteCompraCartao(purchaseId);
-      setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
+      await (context as any).deleteCompraCartao(purchase.id, {
+        cardId: purchase.cardId,
+        startMonth: purchase.startMonth,
+        parcelas: purchase.parcelas,
+      });
+      setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchase.id));
     } catch (e) {
       alert('Não foi possível excluir a compra.');
     }
@@ -410,55 +427,7 @@ export default function DividasManager() {
     setIsSubmittingEditCard(false);
   };
 
-  const [isSubmittingEditPurchase, setIsSubmittingEditPurchase] = useState(false);
-  const handleSaveEditPurchase = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmittingEditPurchase) return;
-    if (!editingPurchase || !selectedCardId) return;
-    
-    const startMonth = purchaseStartDate.slice(0,7);
-    const purchaseYM = (purchaseDate || '').slice(0, 7);
-    if (purchaseYM && purchaseYM > startMonth) {
-      toast.error('Data da compra inválida', {
-        description: 'A data da compra não pode ser posterior ao mês em que começa a cobrar.',
-      });
-      return;
-    }
-    const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
-    const startDay = selectedCard?.diaVencimento || 5;
-    
-    const totalParcelas = parseInt(purchaseParcelas || '1');
-    const restantes = purchaseEmAndamento
-      ? Math.max(0, Math.min(totalParcelas, parseInt(purchaseParcelasRestantes || '0')))
-      : totalParcelas;
-    const parcelasPagas = purchaseEmAndamento ? Math.max(0, totalParcelas - restantes) : 0;
-    const startMonthReal = startMonth;
-    
-    const atualizado: CompraCartao = {
-      ...editingPurchase,
-      descricao: purchaseDesc,
-      valorTotal: parseFloat(purchaseValorTotal),
-      parcelas: totalParcelas,
-      valorParcela: parseFloat(purchaseValorParcela),
-      startMonth: startMonthReal,
-      dataCompra: purchaseDate,
-      parcelasPagas: parcelasPagas,
-      startDay,
-    } as any;
-    
-    try {
-      setIsSubmittingEditPurchase(true);
-      await saveCompraCartao(atualizado);
-      setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === atualizado.id ? atualizado : p));
-      setIsEditPurchaseDialogOpen(false);
-      setEditingPurchase(null);
-      setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela('');
-      setPurchaseEmAndamento(false); setPurchaseParcelasRestantes('');
-    } catch (e) {
-      alert('Não foi possível salvar a compra.');
-    }
-    setIsSubmittingEditPurchase(false);
-  };
+  // Salvamento de compra unificado em handleUpsertPurchase
 
   const handleEdit = (divida: Divida) => {
     try { scrollBeforeDialogRef.current = window.scrollY || 0; } catch {}
@@ -528,7 +497,11 @@ export default function DividasManager() {
       if (!compra) return;
       try {
         // As transações serão revertidas automaticamente pelo useEffect
-        await (context as any).deleteCompraCartao(purchaseId);
+        await (context as any).deleteCompraCartao(purchaseId, {
+          cardId: compra.cardId,
+          startMonth: compra.startMonth,
+          parcelas: compra.parcelas,
+        });
         setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
         
         // remover gastos fixos vinculados
@@ -2450,12 +2423,12 @@ export default function DividasManager() {
                   style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
                 >
                   <DialogHeader>
-                    <DialogTitle>Nova Compra no Cartão</DialogTitle>
+                    <DialogTitle>{editingPurchase ? 'Editar Compra' : 'Nova Compra no Cartão'}</DialogTitle>
                     <DialogDescription>
-                      Registre uma nova compra parcelada ou à vista no cartão selecionado.
+                      {editingPurchase ? 'Edite as informações da compra selecionada.' : 'Registre uma nova compra parcelada ou à vista no cartão selecionado.'}
                     </DialogDescription>
                   </DialogHeader>
-                  <form onSubmit={handleCreatePurchase} className="space-y-4">
+                  <form onSubmit={handleUpsertPurchase} className="space-y-4">
                     <div className="space-y-2">
                       <Label>Cartão</Label>
                       <select className="w-full border rounded h-9 px-2 bg-background" value={selectedCardId || ''} onChange={(e) => setSelectedCardId(e.target.value)} required>
@@ -2517,7 +2490,7 @@ export default function DividasManager() {
                             <Input
                               id="purchaseParcelasRestantes"
                               type="number"
-                              min="1"
+                              min="0"
                               max={purchaseParcelas || 999}
                               value={purchaseParcelasRestantes}
                               onChange={(e) => setPurchaseParcelasRestantes(e.target.value)}
@@ -2566,11 +2539,14 @@ export default function DividasManager() {
                     <DialogFooter>
                       <Button variant="outline" type="button" onClick={() => {
                         setIsPurchaseDialogOpen(false);
+                        setEditingPurchase(null);
                         setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); 
                         setPurchaseStartDate(`${selectedMonth}-05`); setPurchaseDate(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
                         setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseDataUltimoPagamento('');
                       }}>Cancelar</Button>
-                      <Button type="submit" disabled={isSubmittingCreatePurchase}>{isSubmittingCreatePurchase ? 'Adicionando...' : 'Adicionar'}</Button>
+                      <Button type="submit" disabled={isSubmittingPurchase}>
+                        {isSubmittingPurchase ? (editingPurchase ? 'Salvando...' : 'Adicionando...') : (editingPurchase ? 'Salvar' : 'Adicionar')}
+                      </Button>
                     </DialogFooter>
                   </form>
                 </DialogContent>
@@ -2726,8 +2702,8 @@ export default function DividasManager() {
                                     </td>
                                     <td className="py-3">
                                       <div className="flex items-center gap-1">
-                                        {compra && (
-                                          <>
+                                        <>
+                                          {compra && (
                                             <button
                                               title="Editar compra"
                                               onClick={() => openEditPurchase(compra)}
@@ -2735,15 +2711,24 @@ export default function DividasManager() {
                                             >
                                               <Edit className="h-4 w-4" />
                                             </button>
-                                            <button
-                                              title="Excluir compra"
-                                              onClick={() => handleDeletePurchase(compra.id)}
-                                              className="p-1 text-red-600 hover:text-red-700"
-                                            >
-                                              <Trash2 className="h-4 w-4" />
-                                            </button>
-                                          </>
-                                        )}
+                                          )}
+                                          <button
+                                            title="Excluir compra"
+                                            onClick={() =>
+                                              handleDeletePurchase(
+                                                compra || {
+                                                  id: it.purchaseId,
+                                                  cardId: (it as any).cardId || c.id,
+                                                  startMonth: (it as any).startMonth,
+                                                  parcelas: it.parcelasTotais,
+                                                }
+                                              )
+                                            }
+                                            className="p-1 text-red-600 hover:text-red-700"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        </>
                                       </div>
                                     </td>
                                   </tr>
@@ -2818,123 +2803,7 @@ export default function DividasManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Editar Compra */}
-      <Dialog open={isEditPurchaseDialogOpen} onOpenChange={setIsEditPurchaseDialogOpen}>
-        <DialogContent className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}>
-          <DialogHeader>
-            <DialogTitle>Editar Compra</DialogTitle>
-            <DialogDescription>
-              Edite as informações da compra selecionada.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSaveEditPurchase} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Descrição</Label>
-              <Input value={purchaseDesc} onChange={(e) => setPurchaseDesc(e.target.value)} required />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Valor Total</Label>
-                <Input 
-                  type="text" 
-                  value={purchaseValorTotal} 
-                  onChange={(e) => {
-                    setPurchaseValorTotal(e.target.value);
-                    const novaParcela = recomputeParcela(e.target.value, purchaseParcelas);
-                    if (novaParcela) setPurchaseValorParcela(novaParcela);
-                  }} 
-                  required 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Parcelas</Label>
-                <Input 
-                  type="number" 
-                  min="1" 
-                  value={purchaseParcelas} 
-                  onChange={(e) => {
-                    setPurchaseParcelas(e.target.value);
-                    const novaParcela = recomputeParcela(purchaseValorTotal, e.target.value);
-                    if (novaParcela) setPurchaseValorParcela(novaParcela);
-                  }} 
-                  required 
-                />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Valor da Parcela</Label>
-              <Input 
-                type="text" 
-                value={purchaseValorParcela} 
-                onChange={(e) => {
-                  setPurchaseValorParcela(e.target.value);
-                  const novoTotal = recomputeTotal(e.target.value, purchaseParcelas);
-                  if (novoTotal) setPurchaseValorTotal(novoTotal);
-                }} 
-                required 
-              />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Data da Compra</Label>
-                <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Primeira Competência</Label>
-                <Input type="date" value={purchaseStartDate} onChange={(e) => setPurchaseStartDate(e.target.value)} required />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <input 
-                  type="checkbox" 
-                  id="purchaseEmAndamento" 
-                  checked={purchaseEmAndamento} 
-                  onChange={(e) => setPurchaseEmAndamento(e.target.checked)} 
-                  className="rounded"
-                />
-                <Label htmlFor="purchaseEmAndamento">Compra já em andamento</Label>
-              </div>
-            </div>
-            
-            {purchaseEmAndamento && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Parcelas restantes</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max={purchaseParcelas || 999}
-                    value={purchaseParcelasRestantes}
-                    onChange={(e) => setPurchaseParcelasRestantes(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cobrar no sistema a partir</Label>
-                  <div className="h-9 px-3 flex items-center rounded border bg-background text-sm">
-                    {(() => {
-                      const total = Math.max(1, parseInt(purchaseParcelas || '1'));
-                      const rest = Math.max(0, Math.min(total, parseInt(purchaseParcelasRestantes || '0')));
-                      const pagas = Math.max(0, total - rest);
-                      const startYm = purchaseStartDate.slice(0, 7);
-                      return addMonthsYYYYMM(startYm, pagas);
-                    })()}
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditPurchaseDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit">Salvar</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Editar Compra: unificado no mesmo modal de "Nova Compra" */}
 
       {/* Progresso geral */}
       <Card>
