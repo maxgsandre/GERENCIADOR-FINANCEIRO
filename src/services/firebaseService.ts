@@ -162,7 +162,12 @@ export const subscribeToTransacoes = (userId: string, callback: (transacoes: Tra
   const emitir = () => {
     const all: Transacao[] = [];
     porPeriodo.forEach((arr) => all.push(...arr));
-    callback(all);
+    // Defensivo: mesmo id não deve existir em dois períodos; se existir, manter um só
+    const byId = new Map<string, Transacao>();
+    for (const t of all) {
+      byId.set(t.id, t);
+    }
+    callback(Array.from(byId.values()));
   };
   const now = new Date();
   const periods: string[] = [];
@@ -250,7 +255,13 @@ export const subscribeToGastosFixos = (userId: string, callback: (gastosFixos: G
   const emitir = () => {
     const all: GastoFixo[] = [];
     porPeriodo.forEach((arr) => all.push(...arr));
-    callback(all);
+    // Mesmo id pode existir em meses diferentes; chave id+período evita duplicata visual no merge
+    const byKey = new Map<string, GastoFixo>();
+    for (const g of all) {
+      const p = ((g as any).periodo as string | undefined) || '';
+      byKey.set(`${g.id}::${p}`, g);
+    }
+    callback(Array.from(byKey.values()));
   };
 
   const now = new Date();

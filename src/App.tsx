@@ -298,14 +298,14 @@ function AppContent() {
   const saveTransacao = async (transacao: Transacao) => {
     if (currentUser) {
       await firebaseService.saveTransacao(currentUser.uid, transacao);
-      // Atualizar estado local imediatamente para melhor UX e consistência
-      setTransacoes(prev => {
-        const exists = prev.some(t => t.id === transacao.id);
-        if (exists) {
-          return prev.map(t => t.id === transacao.id ? transacao : t);
-        }
-        return [...prev, transacao];
-      });
+      // Um único documento por id; evita duplicar no estado se o id aparecer em mais de um período no merge
+      const d = new Date(transacao.data + 'T00:00:00');
+      const periodo =
+        isNaN(d.getTime())
+          ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+          : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const merged = { ...transacao, periodo: (transacao as any).periodo || periodo } as Transacao;
+      setTransacoes((prev) => [...prev.filter((t) => t.id !== transacao.id), merged]);
     }
   };
 
@@ -326,8 +326,14 @@ function AppContent() {
   const deleteGastoFixo = async (gastoFixoId: string, periodo?: string) => {
     if (currentUser) {
       await firebaseService.deleteGastoFixo(currentUser.uid, gastoFixoId, periodo);
-      // Atualizar estado local imediatamente para melhor UX
-      setGastosFixos(prev => prev.filter(g => g.id !== gastoFixoId));
+      // Mesmo id pode existir em vários meses; remover só o par id+período quando periodo for informado
+      setGastosFixos((prev) =>
+        prev.filter((g) => {
+          if (g.id !== gastoFixoId) return true;
+          if (periodo) return ((g as any).periodo || '') !== periodo;
+          return false;
+        })
+      );
     }
   };
 
