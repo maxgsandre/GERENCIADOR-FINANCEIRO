@@ -17,6 +17,7 @@ import AuthWrapper from './components/Auth/AuthWrapper';
 import LoadingSpinner from './components/LoadingSpinner';
 import Logo from './components/Logo';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Toaster } from './components/ui/sonner';
 import * as firebaseService from './services/firebaseService';
 
 // Types para os dados financeiros
@@ -160,6 +161,7 @@ export interface FinanceiroContextType {
   selectedCaixaId: string | null;
   setSelectedCaixaId: React.Dispatch<React.SetStateAction<string | null>>;
   goToTab: (key: string) => void;
+  currentUser: any; // User do Firebase
   // Funções para salvar no Firebase
   saveCaixa: (caixa: Caixa) => Promise<void>;
   deleteCaixa: (caixaId: string) => Promise<void>;
@@ -178,7 +180,10 @@ export interface FinanceiroContextType {
   saveCartao: (card: CartaoCredito) => Promise<void>;
   deleteCartao: (cardId: string) => Promise<void>;
   saveCompraCartao: (purchase: CompraCartao) => Promise<void>;
-  deleteCompraCartao: (purchaseId: string) => Promise<void>;
+  deleteCompraCartao: (
+    purchaseId: string,
+    opts?: { cardId?: string; startMonth?: string; parcelas?: number }
+  ) => Promise<void>;
 }
 
 export const FinanceiroContext = React.createContext<FinanceiroContextType | null>(null);
@@ -293,14 +298,14 @@ function AppContent() {
   const saveTransacao = async (transacao: Transacao) => {
     if (currentUser) {
       await firebaseService.saveTransacao(currentUser.uid, transacao);
-      // Atualizar estado local imediatamente para melhor UX e consistência
-      setTransacoes(prev => {
-        const exists = prev.some(t => t.id === transacao.id);
-        if (exists) {
-          return prev.map(t => t.id === transacao.id ? transacao : t);
-        }
-        return [...prev, transacao];
-      });
+      // Um único documento por id; evita duplicar no estado se o id aparecer em mais de um período no merge
+      const d = new Date(transacao.data + 'T00:00:00');
+      const periodo =
+        isNaN(d.getTime())
+          ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+          : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const merged = { ...transacao, periodo: (transacao as any).periodo || periodo } as Transacao;
+      setTransacoes((prev) => [...prev.filter((t) => t.id !== transacao.id), merged]);
     }
   };
 
@@ -321,8 +326,14 @@ function AppContent() {
   const deleteGastoFixo = async (gastoFixoId: string, periodo?: string) => {
     if (currentUser) {
       await firebaseService.deleteGastoFixo(currentUser.uid, gastoFixoId, periodo);
-      // Atualizar estado local imediatamente para melhor UX
-      setGastosFixos(prev => prev.filter(g => g.id !== gastoFixoId));
+      // Mesmo id pode existir em vários meses; remover só o par id+período quando periodo for informado
+      setGastosFixos((prev) =>
+        prev.filter((g) => {
+          if (g.id !== gastoFixoId) return true;
+          if (periodo) return ((g as any).periodo || '') !== periodo;
+          return false;
+        })
+      );
     }
   };
 
@@ -436,9 +447,12 @@ function AppContent() {
     }
   };
 
-  const deleteCompraCartao = async (purchaseId: string) => {
+  const deleteCompraCartao = async (
+    purchaseId: string,
+    opts?: { cardId?: string; startMonth?: string; parcelas?: number }
+  ) => {
     if (currentUser) {
-      await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId);
+      await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId, opts);
       // Atualizar estado local imediatamente para melhor UX
       setComprasCartao(prev => prev.filter(p => p.id !== purchaseId));
     }
@@ -472,6 +486,7 @@ function AppContent() {
       } catch {}
       setIsSheetOpen(false);
     },
+    currentUser,
     saveCaixa,
     deleteCaixa,
     saveTransacao,
@@ -489,7 +504,7 @@ function AppContent() {
     saveCartao: async (card: CartaoCredito) => { if (currentUser) await (firebaseService as any).saveCreditCard(currentUser.uid, card); },
     deleteCartao: async (cardId: string) => { if (currentUser) await (firebaseService as any).deleteCreditCard(currentUser.uid, cardId); },
     saveCompraCartao: async (purchase: CompraCartao) => { if (currentUser) await (firebaseService as any).saveCreditCardPurchase(currentUser.uid, purchase); },
-    deleteCompraCartao: async (purchaseId: string) => { if (currentUser) await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId); },
+    deleteCompraCartao: async (purchaseId: string, opts?: any) => { if (currentUser) await (firebaseService as any).deleteCreditCardPurchase(currentUser.uid, purchaseId, opts); },
   };
 
   // Mostrar loading enquanto carrega
@@ -688,6 +703,7 @@ export default function App() {
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={true} storageKey="theme">
       <AuthProvider>
         <AppContent />
+        <Toaster />
       </AuthProvider>
     </ThemeProvider>
   );

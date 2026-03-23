@@ -9,10 +9,23 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
-import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign, Lock, Receipt, Copy } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, AlertCircle, Tag, CheckCircle, Circle, DollarSign, Lock, Receipt, Copy, Loader2 } from 'lucide-react';
 import { FinanceiroContext, GastoFixo, Divida, Pagamento, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
 import { useAuth } from '../contexts/AuthContext';
+
+/** Mesmo id pode existir em vários meses (replicação). Usar id + período em atualizações otimistas. */
+function periodoGasto(g: GastoFixo, fallbackMes: string) {
+  return ((g as any)?.periodo as string | undefined) || fallbackMes;
+}
+function isMesmoGastoFixoMes(
+  g: GastoFixo,
+  gastoId: string,
+  periodoAlvo: string,
+  fallbackMes: string
+) {
+  return g.id === gastoId && periodoGasto(g, fallbackMes) === periodoAlvo;
+}
 
 export default function GastosFixosManager() {
   const context = useContext(FinanceiroContext);
@@ -38,6 +51,8 @@ export default function GastosFixosManager() {
   const [isValorPagoOpen, setIsValorPagoOpen] = useState(false);
   const [valorPagoInput, setValorPagoInput] = useState('');
   const [valorPagamentoInput, setValorPagamentoInput] = useState('');
+  const [isSavingPagamento, setIsSavingPagamento] = useState(false);
+  const isSavingPagamentoRef = useRef<boolean>(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isFracionado, setIsFracionado] = useState(false);
   const [dataPagamento, setDataPagamento] = useState('');
@@ -119,8 +134,7 @@ export default function GastosFixosManager() {
 
     for (const gasto of gastosAutomaticos) {
       try {
-        await deleteGastoFixo(gasto.id);
-        setGastosFixos((prev: GastoFixo[]) => prev.filter(g => g.id !== gasto.id));
+        await deleteGastoFixo(gasto.id, (gasto as any).periodo);
       } catch (error) {
         console.error(`Erro ao remover gasto ${gasto.id}:`, error);
       }
@@ -193,8 +207,11 @@ export default function GastosFixosManager() {
       };
       
       await saveGastoFixo(gastoMigrado);
-      setGastosFixos((prev: GastoFixo[]) => 
-        prev.map(g => g.id === gasto.id ? gastoMigrado : g)
+      const periodoAlvo = (gasto as any).periodo || selectedMonth;
+      setGastosFixos((prev: GastoFixo[]) =>
+        prev.map((g) =>
+          isMesmoGastoFixoMes(g, gasto.id, periodoAlvo, selectedMonth) ? gastoMigrado : g
+        )
       );
     }
   };
@@ -251,16 +268,6 @@ export default function GastosFixosManager() {
     if (!(modoPagamento === 'pay' && caixaSelecionado && gastoSelecionado)) return false;
     return saldoRealDoMes(caixaSelecionado) < valorPagamentoNum;
   };
-
-  // Replicação idempotente de gastos fixos ao mudar de mês (usa meta no Firestore)
-  useEffect(() => {
-    (async () => {
-      try {
-        const svc = await import('../services/firebaseService');
-        (svc as any).replicateGastosIfNeeded && currentUser?.uid && await (svc as any).replicateGastosIfNeeded(currentUser.uid, selectedMonth);
-      } catch {}
-    })();
-  }, [selectedMonth, currentUser]);
 
   // Filtrar gastos fixos pelo mês selecionado
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
@@ -425,8 +432,11 @@ export default function GastosFixosManager() {
     };
 
       await saveGastoFixo(novoGasto);
-      setGastosFixos(prev => {
-        const index = prev.findIndex(g => g.id === novoGasto.id);
+      const periodoNovo = (novoGasto as any).periodo || selectedMonth;
+      setGastosFixos((prev) => {
+        const index = prev.findIndex((g) =>
+          isMesmoGastoFixoMes(g, novoGasto.id, periodoNovo, selectedMonth)
+        );
         if (index >= 0) {
           const clone = [...prev];
           clone[index] = novoGasto;
@@ -537,11 +547,10 @@ export default function GastosFixosManager() {
       const valorTotalPago = gasto.pagamentos.reduce((sum, p) => sum + p.valor, 0);
       const valorRestante = Math.max(0, gasto.valor - valorTotalPago);
       
-      // Se é fracionado e ainda há valor restante, sugerir o restante
-      if (gasto.fracionado && valorRestante > 0) {
+      // Sempre sugerir o restante, se houver; senão, o total
+      if (valorRestante > 0) {
         setValorPagoInput(valorRestante.toFixed(2).replace('.', ','));
       } else {
-        // Se não é fracionado ou já está completo, sugerir valor total
         setValorPagoInput(gasto.valor.toFixed(2).replace('.', ','));
       }
     } else {
@@ -594,7 +603,12 @@ export default function GastosFixosManager() {
 
       const gastoAtualizado = { ...gasto, valorPago: 0, pago: false, periodo: (gasto as any)?.periodo || selectedMonth } as any;
       await saveGastoFixo(gastoAtualizado);
-      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? gastoAtualizado : g));
+      const periodoAlvo = (gasto as any)?.periodo || selectedMonth;
+      setGastosFixos((prev: GastoFixo[]) =>
+        prev.map((g) =>
+          isMesmoGastoFixoMes(g, gastoId, periodoAlvo, selectedMonth) ? gastoAtualizado : g
+        )
+      );
     } catch (_error) {
       console.error('Erro ao reverter pagamento');
     }
@@ -622,8 +636,11 @@ export default function GastosFixosManager() {
     await saveGastoFixo(gastoAtualizado);
     
     // Atualizar estado global (seguindo o padrão do projeto)
+    const periodoAlvo = (editingGasto as any)?.periodo || selectedMonth;
     setGastosFixos((prev: GastoFixo[]) =>
-      prev.map(g => g.id === editingGasto.id ? gastoAtualizado : g)
+      prev.map((g) =>
+        isMesmoGastoFixoMes(g, editingGasto.id, periodoAlvo, selectedMonth) ? gastoAtualizado : g
+      )
     );
     
     // Atualizar o estado local do modal
@@ -631,20 +648,24 @@ export default function GastosFixosManager() {
   };
 
   const confirmarValorPago = async () => {
-    if (!gastoSelecionado || !caixaPagamento) return;
-    const valorPago = parseFloat(valorPagoInput.replace(',', '.')) || 0;
-    
-    if (valorPago <= 0) {
-      alert('Valor deve ser maior que zero.');
-      return;
-    }
-    
-    // Verificar saldo do caixa (usar saldo real do mês)
-    const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
-    if (caixa && saldoRealDoMes(caixa) < valorPago) {
-      alert('Saldo insuficiente no caixa selecionado.');
-      return;
-    }
+    if (isSavingPagamentoRef.current) return;
+    isSavingPagamentoRef.current = true;
+    setIsSavingPagamento(true);
+    try {
+      if (!gastoSelecionado || !caixaPagamento) return;
+      const valorPago = parseFloat(valorPagoInput.replace(',', '.')) || 0;
+      
+      if (valorPago <= 0) {
+        alert('Valor deve ser maior que zero.');
+        return;
+      }
+      
+      // Verificar saldo do caixa (usar saldo real do mês)
+      const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
+      if (caixa && saldoRealDoMes(caixa) < valorPago) {
+        alert('Saldo insuficiente no caixa selecionado.');
+        return;
+      }
     
     // Verificar se é um gasto consolidado (cartão ou esporádicos)
     // Gastos consolidados têm IDs como: cartao:cardId:mes ou esporadicos:mes
@@ -736,7 +757,14 @@ export default function GastosFixosManager() {
       }
       
       await saveGastoFixo(gastoAtualizado);
-      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoSelecionado.id ? gastoAtualizado : g));
+      const periodoAlvo = (gastoSelecionado as any)?.periodo || selectedMonth;
+      setGastosFixos((prev: GastoFixo[]) =>
+        prev.map((g) =>
+          isMesmoGastoFixoMes(g, gastoSelecionado.id, periodoAlvo, selectedMonth)
+            ? gastoAtualizado
+            : g
+        )
+      );
       
       // Atualizar saldo do caixa e criar transação automaticamente
       const caixaAtual = caixas?.find(c => c.id === caixaPagamento);
@@ -771,12 +799,16 @@ export default function GastosFixosManager() {
       }
     }
     
-    setIsValorPagoOpen(false);
-    setGastoSelecionado(null);
-    setValorPagoInput('');
-    setDataPagamento('');
-    setHoraPagamento('');
-    setDescricaoPagamento('');
+      setIsValorPagoOpen(false);
+      setGastoSelecionado(null);
+      setValorPagoInput('');
+      setDataPagamento('');
+      setHoraPagamento('');
+      setDescricaoPagamento('');
+    } finally {
+      isSavingPagamentoRef.current = false;
+      setIsSavingPagamento(false);
+    }
   };
 
   const togglePago = async (id: string) => {
@@ -831,7 +863,9 @@ export default function GastosFixosManager() {
       }
     }
     
-    const gasto = gastosFixos.find(g => g.id === id);
+    const gasto = gastosFixos.find((g) =>
+      g.id === id && (g.id.startsWith('cartao:') || g.id.startsWith('divida:') || periodoGasto(g, selectedMonth) === selectedMonth)
+    );
     if (!gasto) return;
     const isLinkedDivida = gasto.id.startsWith('divida:');
     const isLinkedCartao = gasto.id.startsWith('cartao:');
@@ -854,7 +888,10 @@ export default function GastosFixosManager() {
     }
     
     const atualizado = { ...gasto, pago: !gasto.pago, periodo: (gasto as any)?.periodo || selectedMonth } as any;
-    setGastosFixos(prev => prev.map(g => g.id === id ? atualizado : g));
+    const periodoAlvo = (gasto as any)?.periodo || selectedMonth;
+    setGastosFixos((prev) =>
+      prev.map((g) => (isMesmoGastoFixoMes(g, id, periodoAlvo, selectedMonth) ? atualizado : g))
+    );
     await saveGastoFixo(atualizado);
   };
 
@@ -889,159 +926,175 @@ export default function GastosFixosManager() {
 
 
   const confirmarPagamentoVinculado = async () => {
-    if (!gastoSelecionado || !caixaPagamento) return;
-    const gasto = gastoSelecionado;
-    const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
-    
-    // Se for um gasto consolidado de cartão, marcar todas as parcelas
-    if (gasto.id.startsWith('cartao:') && gasto.id.includes(selectedMonth)) {
-      const parts = gasto.id.split(':');
-      const cardId = parts[1];
+    if (isSavingPagamentoRef.current) return;
+    isSavingPagamentoRef.current = true;
+    setIsSavingPagamento(true);
+    try {
+      if (!gastoSelecionado || !caixaPagamento) return;
+      const gasto = gastoSelecionado;
+      const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
       
-      // Encontrar todas as parcelas deste cartão no mês selecionado
-      const parcelasDoCartao = gastosFixos.filter(g => 
-        g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
-      );
-      
-      // Marcar todas as parcelas como pagas
-      for (const parcela of parcelasDoCartao) {
-        const parcelaPaga = { ...parcela, pago: true, valorPago: valorPagamento, periodo: (parcela as any)?.periodo || selectedMonth } as any;
-        await (saveGastoFixo && saveGastoFixo(parcelaPaga));
-        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaPaga : g));
+      // Se for um gasto consolidado de cartão, marcar todas as parcelas
+      if (gasto.id.startsWith('cartao:') && gasto.id.includes(selectedMonth)) {
+        const parts = gasto.id.split(':');
+        const cardId = parts[1];
+        
+        // Encontrar todas as parcelas deste cartão no mês selecionado
+        const parcelasDoCartao = gastosFixos.filter(g => 
+          g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
+        );
+        
+        // Marcar todas as parcelas como pagas
+        for (const parcela of parcelasDoCartao) {
+          const parcelaPaga = { ...parcela, pago: true, valorPago: valorPagamento, periodo: (parcela as any)?.periodo || selectedMonth } as any;
+          await (saveGastoFixo && saveGastoFixo(parcelaPaga));
+          setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaPaga : g));
+        }
+        
+        // Sincronizar progresso das compras de cartão
+        await atualizarProgressoComprasCartao(cardId);
+      } else {
+        // Marcar gasto como pago (comportamento normal)
+        const gastoPago = { ...gasto, pago: true, valorPago: valorPagamento, periodo: (gasto as any)?.periodo || selectedMonth } as any;
+        await (saveGastoFixo && saveGastoFixo(gastoPago));
+        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoPago : g));
       }
-      
-      // Sincronizar progresso das compras de cartão
-      await atualizarProgressoComprasCartao(cardId);
-    } else {
-      // Marcar gasto como pago (comportamento normal)
-      const gastoPago = { ...gasto, pago: true, valorPago: valorPagamento, periodo: (gasto as any)?.periodo || selectedMonth } as any;
-      await (saveGastoFixo && saveGastoFixo(gastoPago));
-      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoPago : g));
-    }
 
-    // Extrair dividaId e YYYY-MM do id do gasto: divida:{id}:{YYYY-MM}
-    const parts = gasto.id.split(':');
-    if (parts.length >= 3) {
-      const prefix = parts[0];
-      if (prefix === 'divida') {
+      // Extrair dividaId e YYYY-MM do id do gasto: divida:{id}:{YYYY-MM}
+      const parts = gasto.id.split(':');
+      if (parts.length >= 3) {
+        const prefix = parts[0];
+        if (prefix === 'divida') {
+          const dividaId = parts[1];
+          const ym = parts[2];
+          const d = dividas.find((x: Divida) => x.id === dividaId);
+          if (d) {
+            const [yy, mm] = ym.split('-').map(Number);
+            const [sy, sm] = d.dataVencimento.split('-').slice(0,2).map(Number);
+            const idx = ymToIndex(yy, mm) - ymToIndex(sy, sm);
+            const novoValorPago = d.valorPago + valorPagamento;
+            const novasParcelasPagas = d.tipo === 'parcelada' ? Math.max(d.parcelasPagas, Math.min(d.parcelas, idx + 1)) : (novoValorPago >= d.valorTotal ? 1 : d.parcelasPagas);
+            const atualizada: Divida = { ...d, valorPago: novoValorPago, parcelasPagas: novasParcelasPagas };
+            await (saveDivida && saveDivida(atualizada));
+            setDividas((prev: Divida[]) => prev.map(x => x.id === d.id ? atualizada : x));
+          }
+        }
+        if (prefix === 'cartao') {
+          // parts: cartao:{cardId}:{purchaseId}:{YYYY-MM}
+          const purchaseId = parts[2];
+          const purchases = (context as any).comprasCartao as any[];
+          const savePurchase = (context as any).saveCompraCartao as (p: any) => Promise<void>;
+          const purchase = purchases?.find(p => p.id === purchaseId);
+          if (purchase) {
+            const atualizada = { ...purchase, parcelasPagas: Math.min(purchase.parcelas, (purchase.parcelasPagas || 0) + 1) };
+            await (savePurchase && savePurchase(atualizada));
+            (context as any).setComprasCartao((prev: any[]) => prev.map(p => p.id === atualizada.id ? atualizada : p));
+          }
+        }
+      }
+
+      // Atualizar saldo do caixa (bloqueio de negativo) e lançar saída
+      try {
+        const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (caixa) {
+          const novoSaldo = caixa.saldo - valorPagamento;
+          if (novoSaldo < 0) { alert('Saldo insuficiente no caixa selecionado.'); return; }
+          await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
+        }
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'saida',
+          valor: valorPagamento,
+          descricao: `Gasto fixo pago: ${gasto.descricao}`,
+          categoria: 'Dívidas',
+          data: new Date().toISOString().slice(0,10),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+      } catch {}
+
+      setIsPagamentoOpen(false);
+      setGastoSelecionado(null);
+      setValorPagamentoInput('');
+    } finally {
+      isSavingPagamentoRef.current = false;
+      setIsSavingPagamento(false);
+    }
+  };
+
+  const confirmarEstornoVinculado = async () => {
+    if (isSavingPagamentoRef.current) return;
+    isSavingPagamentoRef.current = true;
+    setIsSavingPagamento(true);
+    try {
+      if (!gastoSelecionado || !caixaPagamento) return;
+      const gasto = gastoSelecionado;
+      
+      // Se for um gasto consolidado de cartão, desmarcar todas as parcelas
+      if (gasto.id.startsWith('cartao:') && gasto.id.includes(selectedMonth)) {
+        const parts = gasto.id.split(':');
+        const cardId = parts[1];
+        
+        // Encontrar todas as parcelas deste cartão no mês selecionado
+        const parcelasDoCartao = gastosFixos.filter(g => 
+          g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
+        );
+        
+        // Desmarcar todas as parcelas e sincronizar com compras de cartão
+        for (const parcela of parcelasDoCartao) {
+          const parcelaNaoPaga = { ...parcela, pago: false, valorPago: 0, periodo: (parcela as any)?.periodo || selectedMonth } as any;
+          await (saveGastoFixo && saveGastoFixo(parcelaNaoPaga));
+          setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaNaoPaga : g));
+        }
+        
+        // Sincronizar progresso das compras de cartão
+        await atualizarProgressoComprasCartao(cardId);
+      } else {
+        // Marcar gasto como não pago (comportamento normal)
+        const gastoNaoPago = { ...gasto, pago: false, periodo: (gasto as any)?.periodo || selectedMonth } as any;
+        await (saveGastoFixo && saveGastoFixo(gastoNaoPago));
+        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoNaoPago : g));
+      }
+
+      // Atualizar dívida (subtrair valor e recalcular parcelasPagas)
+      const parts = gasto.id.split(':');
+      if (parts.length >= 3) {
         const dividaId = parts[1];
-        const ym = parts[2];
         const d = dividas.find((x: Divida) => x.id === dividaId);
         if (d) {
-          const [yy, mm] = ym.split('-').map(Number);
-          const [sy, sm] = d.dataVencimento.split('-').slice(0,2).map(Number);
-          const idx = ymToIndex(yy, mm) - ymToIndex(sy, sm);
-          const novoValorPago = d.valorPago + valorPagamento;
-          const novasParcelasPagas = d.tipo === 'parcelada' ? Math.max(d.parcelasPagas, Math.min(d.parcelas, idx + 1)) : (novoValorPago >= d.valorTotal ? 1 : d.parcelasPagas);
-          const atualizada: Divida = { ...d, valorPago: novoValorPago, parcelasPagas: novasParcelasPagas };
+          const novoValorPago = Math.max(0, d.valorPago - gasto.valor);
+          const novasParcelasPagas = d.tipo === 'parcelada' ? Math.floor(novoValorPago / d.valorParcela) : (novoValorPago >= d.valorTotal ? 1 : 0);
+          const atualizada: Divida = { ...d, valorPago: novoValorPago, parcelasPagas: Math.min(novasParcelasPagas, d.parcelas) };
           await (saveDivida && saveDivida(atualizada));
           setDividas((prev: Divida[]) => prev.map(x => x.id === d.id ? atualizada : x));
         }
       }
-      if (prefix === 'cartao') {
-        // parts: cartao:{cardId}:{purchaseId}:{YYYY-MM}
-        const purchaseId = parts[2];
-        const purchases = (context as any).comprasCartao as any[];
-        const savePurchase = (context as any).saveCompraCartao as (p: any) => Promise<void>;
-        const purchase = purchases?.find(p => p.id === purchaseId);
-        if (purchase) {
-          const atualizada = { ...purchase, parcelasPagas: Math.min(purchase.parcelas, (purchase.parcelasPagas || 0) + 1) };
-          await (savePurchase && savePurchase(atualizada));
-          (context as any).setComprasCartao((prev: any[]) => prev.map(p => p.id === atualizada.id ? atualizada : p));
+
+      // Atualizar saldo do caixa e lançar entrada de estorno
+      try {
+        const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
+        if (caixa) {
+          const novoSaldo = caixa.saldo + gasto.valor;
+          await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
         }
-      }
+        await (saveTransacao && saveTransacao({
+          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          caixaId: caixaPagamento,
+          tipo: 'entrada',
+          valor: gasto.valor,
+          descricao: `Estorno gasto fixo: ${gasto.descricao}`,
+          categoria: 'Dívidas',
+          data: new Date().toISOString().slice(0,10),
+          hora: new Date().toTimeString().slice(0,5)
+        }));
+      } catch {}
+
+      setIsPagamentoOpen(false);
+      setGastoSelecionado(null);
+    } finally {
+      isSavingPagamentoRef.current = false;
+      setIsSavingPagamento(false);
     }
-
-    // Atualizar saldo do caixa (bloqueio de negativo) e lançar saída
-    try {
-      const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
-      if (caixa) {
-        const novoSaldo = caixa.saldo - valorPagamento;
-        if (novoSaldo < 0) { alert('Saldo insuficiente no caixa selecionado.'); return; }
-        await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
-      }
-      await (saveTransacao && saveTransacao({
-        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
-        caixaId: caixaPagamento,
-        tipo: 'saida',
-        valor: valorPagamento,
-        descricao: `Gasto fixo pago: ${gasto.descricao}`,
-        categoria: 'Dívidas',
-        data: new Date().toISOString().slice(0,10),
-        hora: new Date().toTimeString().slice(0,5)
-      }));
-    } catch {}
-
-    setIsPagamentoOpen(false);
-    setGastoSelecionado(null);
-    setValorPagamentoInput('');
-  };
-
-  const confirmarEstornoVinculado = async () => {
-    if (!gastoSelecionado || !caixaPagamento) return;
-    const gasto = gastoSelecionado;
-    
-    // Se for um gasto consolidado de cartão, desmarcar todas as parcelas
-    if (gasto.id.startsWith('cartao:') && gasto.id.includes(selectedMonth)) {
-      const parts = gasto.id.split(':');
-      const cardId = parts[1];
-      
-      // Encontrar todas as parcelas deste cartão no mês selecionado
-      const parcelasDoCartao = gastosFixos.filter(g => 
-        g.id.startsWith(`cartao:${cardId}:`) && g.id.endsWith(selectedMonth)
-      );
-      
-      // Desmarcar todas as parcelas e sincronizar com compras de cartão
-      for (const parcela of parcelasDoCartao) {
-        const parcelaNaoPaga = { ...parcela, pago: false, valorPago: 0, periodo: (parcela as any)?.periodo || selectedMonth } as any;
-        await (saveGastoFixo && saveGastoFixo(parcelaNaoPaga));
-        setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === parcela.id ? parcelaNaoPaga : g));
-      }
-      
-      // Sincronizar progresso das compras de cartão
-      await atualizarProgressoComprasCartao(cardId);
-    } else {
-      // Marcar gasto como não pago (comportamento normal)
-      const gastoNaoPago = { ...gasto, pago: false, periodo: (gasto as any)?.periodo || selectedMonth } as any;
-      await (saveGastoFixo && saveGastoFixo(gastoNaoPago));
-      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gasto.id ? gastoNaoPago : g));
-    }
-
-    // Atualizar dívida (subtrair valor e recalcular parcelasPagas)
-    const parts = gasto.id.split(':');
-    if (parts.length >= 3) {
-      const dividaId = parts[1];
-      const d = dividas.find((x: Divida) => x.id === dividaId);
-      if (d) {
-        const novoValorPago = Math.max(0, d.valorPago - gasto.valor);
-        const novasParcelasPagas = d.tipo === 'parcelada' ? Math.floor(novoValorPago / d.valorParcela) : (novoValorPago >= d.valorTotal ? 1 : 0);
-        const atualizada: Divida = { ...d, valorPago: novoValorPago, parcelasPagas: Math.min(novasParcelasPagas, d.parcelas) };
-        await (saveDivida && saveDivida(atualizada));
-        setDividas((prev: Divida[]) => prev.map(x => x.id === d.id ? atualizada : x));
-      }
-    }
-
-    // Atualizar saldo do caixa e lançar entrada de estorno
-    try {
-      const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
-      if (caixa) {
-        const novoSaldo = caixa.saldo + gasto.valor;
-        await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
-      }
-      await (saveTransacao && saveTransacao({
-        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
-        caixaId: caixaPagamento,
-        tipo: 'entrada',
-        valor: gasto.valor,
-        descricao: `Estorno gasto fixo: ${gasto.descricao}`,
-        categoria: 'Dívidas',
-        data: new Date().toISOString().slice(0,10),
-        hora: new Date().toTimeString().slice(0,5)
-      }));
-    } catch {}
-
-    setIsPagamentoOpen(false);
-    setGastoSelecionado(null);
   };
 
   // Calcular totais (gastos fixos são sempre visíveis)
@@ -1120,13 +1173,39 @@ export default function GastosFixosManager() {
             {isSaldoInsuficiente() && (
               <p className="text-sm text-red-600">Saldo insuficiente. Selecione outro caixa ou ajuste o valor.</p>
             )}
-          </div>
+        </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)}>Cancelar</Button>
+            <Button 
+              variant="outline" 
+              onClick={() => { if (isSavingPagamento || isSavingPagamentoRef.current) return; setIsPagamentoOpen(false); }} 
+              disabled={isSavingPagamento || isSavingPagamentoRef.current}
+            >
+              Cancelar
+            </Button>
             {modoPagamento === 'pay' ? (
-              <Button onClick={confirmarPagamentoVinculado} disabled={!caixaPagamento || isSaldoInsuficiente()}>Confirmar pagamento</Button>
+              <Button 
+                onClick={confirmarPagamentoVinculado} 
+                disabled={!caixaPagamento || isSaldoInsuficiente() || isSavingPagamento || isSavingPagamentoRef.current}
+              >
+                {(isSavingPagamento || isSavingPagamentoRef.current) ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Carregando...
+                  </>
+                ) : 'Confirmar pagamento'}
+              </Button>
             ) : (
-              <Button onClick={confirmarEstornoVinculado} disabled={!caixaPagamento}>Confirmar estorno</Button>
+              <Button 
+                onClick={confirmarEstornoVinculado} 
+                disabled={!caixaPagamento || isSavingPagamento || isSavingPagamentoRef.current}
+              >
+                {(isSavingPagamento || isSavingPagamentoRef.current) ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Carregando...
+                  </>
+                ) : 'Confirmar estorno'}
+              </Button>
             )}
           </DialogFooter>
         </DialogContent>
@@ -1223,13 +1302,27 @@ export default function GastosFixosManager() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setIsValorPagoOpen(false);
-              setDataPagamento('');
-              setHoraPagamento('');
-              setDescricaoPagamento('');
-            }}>Cancelar</Button>
-            <Button onClick={confirmarValorPago}>Confirmar</Button>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                if (isSavingPagamento || isSavingPagamentoRef.current) return;
+                setIsValorPagoOpen(false);
+                setDataPagamento('');
+                setHoraPagamento('');
+                setDescricaoPagamento('');
+              }}
+              disabled={isSavingPagamento || isSavingPagamentoRef.current}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={confirmarValorPago} disabled={isSavingPagamento || isSavingPagamentoRef.current}>
+              {(isSavingPagamento || isSavingPagamentoRef.current) ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Carregando...
+                </>
+              ) : 'Confirmar'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

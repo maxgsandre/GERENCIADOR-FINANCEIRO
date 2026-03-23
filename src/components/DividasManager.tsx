@@ -8,9 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign, Wallet } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign, Wallet, Loader2 } from 'lucide-react';
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
+import { subscribeToCreditCardInvoiceItems, markCreditCardInvoiceItemsPaid, markCreditCardInvoiceItemsRefunded, CreditCardInvoiceItem } from '../services/firebaseService';
+import { toast } from 'sonner';
 
 type DividaView = Divida & { dataVencimentoExibida?: string };
 
@@ -22,7 +24,10 @@ export default function DividasManager() {
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
-  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveCaixa, transacoes, saveTransacao, deleteTransacao, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao, categorias = [] } = context as any;
+  const { dividas, setDividas, saveDivida, deleteDivida, caixas, saveCaixa, transacoes, saveTransacao, deleteTransacao, cartoes = [], setCartoes, comprasCartao = [], setComprasCartao, saveCartao, saveCompraCartao, categorias = [], currentUser } = context as any;
+
+  // Fonte mensal para cartões (igual dívidas): itens da fatura do mês selecionado
+  const [invoiceItemsByCard, setInvoiceItemsByCard] = useState<Record<string, CreditCardInvoiceItem[]>>({});
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const scrollBeforeDialogRef = useRef<number>(0);
@@ -58,6 +63,26 @@ export default function DividasManager() {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     return `${y}-${m}`; // YYYY-MM
   });
+
+  // Assinar itens de fatura (por cartão) do mês selecionado
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsubs: Array<() => void> = [];
+    const cardIds = (cartoes as CartaoCredito[]).map((c) => c.id);
+    cardIds.forEach((cardId) => {
+      const unsub = subscribeToCreditCardInvoiceItems(currentUser.uid, cardId, selectedMonth, (items) => {
+        setInvoiceItemsByCard((prev) => ({ ...prev, [cardId]: items }));
+      });
+      unsubs.push(unsub);
+    });
+    // limpar cartões removidos
+    setInvoiceItemsByCard((prev) => {
+      const next: Record<string, CreditCardInvoiceItem[]> = {};
+      for (const id of cardIds) next[id] = prev[id] || [];
+      return next;
+    });
+    return () => { unsubs.forEach((u) => { try { u(); } catch {} }); };
+  }, [currentUser?.uid, selectedMonth, cartoes]);
   const [formData, setFormData] = useState({
     descricao: '',
     valorTotal: '',
@@ -74,7 +99,7 @@ export default function DividasManager() {
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
   const [isEditCardDialogOpen, setIsEditCardDialogOpen] = useState(false);
-  const [isEditPurchaseDialogOpen, setIsEditPurchaseDialogOpen] = useState(false);
+  // Edição/criação de compra será unificada em um único modal
   const [cardName, setCardName] = useState('');
   const [cardLimit, setCardLimit] = useState('');
   const [cardDueDay, setCardDueDay] = useState('15');
@@ -87,12 +112,20 @@ export default function DividasManager() {
   const [purchaseValorParcela, setPurchaseValorParcela] = useState('');
   const [purchaseStartDate, setPurchaseStartDate] = useState(() => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
+  const [purchaseDataUltimoPagamento, setPurchaseDataUltimoPagamento] = useState('');
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   
   // Estados para dívida em andamento na compra
   const [purchaseEmAndamento, setPurchaseEmAndamento] = useState(false);
-  const [purchaseParcelaAtual, setPurchaseParcelaAtual] = useState('');
-  const [purchaseDataUltimoPagamento, setPurchaseDataUltimoPagamento] = useState('');
+  const [purchaseParcelasRestantes, setPurchaseParcelasRestantes] = useState('');
+  
+  const addMonthsYYYYMM = (ym: string, add: number) => {
+    const [y, m] = ym.split('-').map(Number);
+    const idx = ymToIndex(y, m) + add;
+    const ny = Math.floor(idx / 12);
+    const nm = (idx % 12) + 1;
+    return `${ny}-${String(nm).padStart(2, '0')}`;
+  };
 
   // Calcula automaticamente o valor da parcela quando total/parcelas mudarem.
   const recomputeParcela = (totalStr: string, parcelasStr: string) => {
@@ -256,39 +289,63 @@ export default function DividasManager() {
     setIsSubmittingCreateCard(false);
   };
 
-  const [isSubmittingCreatePurchase, setIsSubmittingCreatePurchase] = useState(false);
-  const handleCreatePurchase = async (e: React.FormEvent) => {
+  const [isSubmittingPurchase, setIsSubmittingPurchase] = useState(false);
+  const handleUpsertPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmittingCreatePurchase) return;
+    if (isSubmittingPurchase) return;
     if (!selectedCardId || !purchaseDesc || !purchaseValorTotal || !purchaseValorParcela || !purchaseStartDate) return;
     const startMonth = purchaseStartDate.slice(0,7);
+    const purchaseYM = (purchaseDate || '').slice(0, 7);
+    if (purchaseYM && purchaseYM > startMonth) {
+      toast.error('Data da compra inválida', {
+        description: 'A data da compra não pode ser posterior ao mês em que começa a cobrar.',
+      });
+      return;
+    }
     const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
     const startDay = selectedCard?.diaVencimento || 5;
     
-    // Calcular parcelas pagas se for dívida em andamento
-    const parcelasPagas = purchaseEmAndamento ? Math.max(0, parseInt(purchaseParcelaAtual) - 1) : 0;
+    // Se estiver em andamento, o usuário informa apenas "parcelas restantes".
+    // O mês "a cobrar a partir" é derivado: startMonth + parcelasPagas.
+    const totalParcelas = parseInt(purchaseParcelas || '1');
+    const restantes = purchaseEmAndamento
+      ? Math.max(0, Math.min(totalParcelas, parseInt(purchaseParcelasRestantes || '0')))
+      : totalParcelas;
+    const parcelasPagas = purchaseEmAndamento ? Math.max(0, totalParcelas - restantes) : 0;
+    const startMonthReal = startMonth;
     
+    const id =
+      editingPurchase?.id ||
+      ((crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString());
     const p: CompraCartao = {
-      id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : Date.now().toString(),
+      ...(editingPurchase || ({} as any)),
+      id,
       cardId: selectedCardId,
       descricao: purchaseDesc,
       valorTotal: parseFloat(purchaseValorTotal),
       parcelas: parseInt(purchaseParcelas || '1'),
       valorParcela: parseFloat(purchaseValorParcela),
-      startMonth,
+      startMonth: startMonthReal,
       dataCompra: purchaseDate,
       parcelasPagas: parcelasPagas,
-      valorPago: 0, // Inicializar valorPago como 0
+      valorPago: parcelasPagas * parseFloat(purchaseValorParcela),
       startDay,
     } as any;
-    setIsSubmittingCreatePurchase(true);
+
+    setIsSubmittingPurchase(true);
     await saveCompraCartao(p);
+    setComprasCartao((prev: CompraCartao[]) => {
+      const exists = prev.some((x) => x.id === p.id);
+      if (exists) return prev.map((x) => (x.id === p.id ? p : x));
+      return [...prev, p];
+    });
 
 
     setIsPurchaseDialogOpen(false);
+    setEditingPurchase(null);
     setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); setPurchaseStartDate(`${selectedMonth}-05`);
-    setPurchaseEmAndamento(false); setPurchaseParcelaAtual(''); setPurchaseDataUltimoPagamento('');
-    setIsSubmittingCreatePurchase(false);
+    setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseDataUltimoPagamento('');
+    setIsSubmittingPurchase(false);
   };
 
   const handleDeleteCard = async (cardId: string) => {
@@ -330,16 +387,22 @@ export default function DividasManager() {
     setPurchaseStartDate(purchase.startMonth + '-05');
     setPurchaseDate(new Date(purchase.dataCompra).toISOString().slice(0,10));
     setPurchaseEmAndamento(purchase.parcelasPagas > 0);
-    setPurchaseParcelaAtual(String(purchase.parcelasPagas + 1));
+    setPurchaseParcelasRestantes(String(Math.max(0, (purchase.parcelas || 1) - (purchase.parcelasPagas || 0))));
     setSelectedCardId(purchase.cardId);
-    setIsEditPurchaseDialogOpen(true);
+    setIsPurchaseDialogOpen(true);
   };
 
-  const handleDeletePurchase = async (purchaseId: string) => {
+  const handleDeletePurchase = async (
+    purchase: CompraCartao | { id: string; cardId?: string; startMonth?: string; parcelas?: number }
+  ) => {
     if (!confirm('Excluir esta compra? Esta ação não pode ser desfeita.')) return;
     try {
-      await (context as any).deleteCompraCartao(purchaseId);
-      setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
+      await (context as any).deleteCompraCartao(purchase.id, {
+        cardId: purchase.cardId,
+        startMonth: purchase.startMonth,
+        parcelas: purchase.parcelas,
+      });
+      setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchase.id));
     } catch (e) {
       alert('Não foi possível excluir a compra.');
     }
@@ -364,43 +427,7 @@ export default function DividasManager() {
     setIsSubmittingEditCard(false);
   };
 
-  const [isSubmittingEditPurchase, setIsSubmittingEditPurchase] = useState(false);
-  const handleSaveEditPurchase = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmittingEditPurchase) return;
-    if (!editingPurchase || !selectedCardId) return;
-    
-    const startMonth = purchaseStartDate.slice(0,7);
-    const selectedCard = (cartoes as CartaoCredito[]).find(c => c.id === selectedCardId);
-    const startDay = selectedCard?.diaVencimento || 5;
-    
-    const parcelasPagas = purchaseEmAndamento ? Math.max(0, parseInt(purchaseParcelaAtual) - 1) : 0;
-    
-    const atualizado: CompraCartao = {
-      ...editingPurchase,
-      descricao: purchaseDesc,
-      valorTotal: parseFloat(purchaseValorTotal),
-      parcelas: parseInt(purchaseParcelas || '1'),
-      valorParcela: parseFloat(purchaseValorParcela),
-      startMonth,
-      dataCompra: purchaseDate,
-      parcelasPagas: parcelasPagas,
-      startDay,
-    } as any;
-    
-    try {
-      setIsSubmittingEditPurchase(true);
-      await saveCompraCartao(atualizado);
-      setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === atualizado.id ? atualizado : p));
-      setIsEditPurchaseDialogOpen(false);
-      setEditingPurchase(null);
-      setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela('');
-      setPurchaseEmAndamento(false); setPurchaseParcelaAtual('');
-    } catch (e) {
-      alert('Não foi possível salvar a compra.');
-    }
-    setIsSubmittingEditPurchase(false);
-  };
+  // Salvamento de compra unificado em handleUpsertPurchase
 
   const handleEdit = (divida: Divida) => {
     try { scrollBeforeDialogRef.current = window.scrollY || 0; } catch {}
@@ -470,7 +497,11 @@ export default function DividasManager() {
       if (!compra) return;
       try {
         // As transações serão revertidas automaticamente pelo useEffect
-        await (context as any).deleteCompraCartao(purchaseId);
+        await (context as any).deleteCompraCartao(purchaseId, {
+          cardId: compra.cardId,
+          startMonth: compra.startMonth,
+          parcelas: compra.parcelas,
+        });
         setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
         
         // remover gastos fixos vinculados
@@ -545,21 +576,22 @@ export default function DividasManager() {
   };
 
   const handlePagamentoCartao = (cartao: CartaoCredito) => {
+    const itensMes = (invoiceItemsByCard[cartao.id] || []);
+    const totalMes = itensMes.filter((i) => !i.pago).reduce((s, i) => s + (i.valor || 0), 0);
+    setDataPagamento(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
+    setHoraPagamento(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }));
     // Criar uma dívida temporária para o cartão
     const dividaTemporaria: Divida = {
       id: `card:${cartao.id}`,
       descricao: `Fatura ${cartao.nome}`,
-      valorTotal: cardInvoiceTotalForSelectedMonth(cartao.id),
+      valorTotal: totalMes,
       valorPago: 0,
       parcelas: 1,
       dataVencimento: `${selectedYM.y}-${String(selectedYM.m).padStart(2, '0')}-${String(cartao.diaVencimento || 5).padStart(2, '0')}`,
       tipo: 'total' as const,
       categoria: 'Cartão de Crédito',
-      emAndamento: false,
-      parcelaAtual: '',
-      dataUltimoPagamento: '',
       pago: false
-    };
+    } as any;
     
     setDividaSelecionada(dividaTemporaria);
     setCompraSelecionada(null);
@@ -567,8 +599,7 @@ export default function DividasManager() {
     setModoPagamento('pay');
     
     // Sugerir valor da fatura do mês
-    const valorFatura = cardInvoiceTotalForSelectedMonth(cartao.id);
-    setValorPagamentoInput(String(valorFatura.toFixed(2)).replace('.', ','));
+    setValorPagamentoInput(String(totalMes.toFixed(2)).replace('.', ','));
     
     // Scroll para o topo se mobile
     try {
@@ -674,7 +705,9 @@ export default function DividasManager() {
         return; 
       }
 
-      if (dividaSelecionada) {
+      // Pagamento de fatura de cartão (id temporário card:...) não existe em `dividas` do Firestore.
+      // Não pode cair no fluxo de saveDivida — o tratamento é o bloco específico mais abaixo.
+      if (dividaSelecionada && !dividaSelecionada.id.startsWith('card:')) {
         // Atualizar dívida
         const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
         if (!dividaAtual) {
@@ -796,40 +829,48 @@ export default function DividasManager() {
         }
       }
 
-      // Pagamento de cartão (dívida temporária)
+      // Pagamento de cartão (dívida temporária) - modelo mensal (igual dívidas)
       if (dividaSelecionada && dividaSelecionada.id.startsWith('card:')) {
         const cardId = dividaSelecionada.id.replace('card:', '');
-        
-        // Encontrar TODAS as compras do cartão
-        const todasComprasDoCartao = (comprasCartao as CompraCartao[])
-          .filter(p => p.cardId === cardId);
-        
-        // Atualizar todas as compras do cartão: valorPago = valorTotal
-        for (const compra of todasComprasDoCartao) {
-          const totalParcelas = compra.parcelas || 1;
-          
-          // Atualizar compra com valorPago = valorTotal e parcelasPagas = totalParcelas
-          const compraAtualizada = {
-            ...compra,
-            valorPago: compra.valorTotal,
-            parcelasPagas: totalParcelas
-          } as CompraCartao;
-          
-          await saveCompraCartao(compraAtualizada);
-          setComprasCartao((prev: CompraCartao[]) => prev.map(p => p.id === compraAtualizada.id ? compraAtualizada : p));
+        const itensMes = (invoiceItemsByCard[cardId] || []).filter((i) => !i.pago);
+
+        if (!itensMes.length) {
+          // nada a pagar
+          isSavingRef.current = false;
+          setIsSaving(false);
+          return;
         }
-        
-        // Criar transação
+
+        const dataTransacao = dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+        const horaTransacao = horaPagamento || new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
+        // Criar transação (ID conhecido para linkar nos itens)
+        const transacaoId =
+          (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+            ? (crypto as any).randomUUID()
+            : Date.now().toString();
+
         await (saveTransacao && saveTransacao({
-          id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+          id: transacaoId,
           caixaId: caixaPagamento,
           tipo: 'saida',
           valor: valorPagamento,
           descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
           categoria: 'Cartão de Crédito',
-          data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-          hora: new Date().toTimeString().slice(0,5)
+          data: dataTransacao,
+          hora: horaTransacao
         }));
+
+        // Marcar itens do mês como pagos e linkar à transação
+        if (currentUser?.uid) {
+          await markCreditCardInvoiceItemsPaid(
+            currentUser.uid,
+            cardId,
+            selectedMonth,
+            itensMes.map((i) => i.id),
+            { transacaoId, data: dataTransacao, hora: horaTransacao }
+          );
+        }
 
         // Atualizar saldo do caixa
         const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
@@ -899,6 +940,61 @@ export default function DividasManager() {
       }
 
       if (dividaSelecionada) {
+        // Estorno de fatura do cartão (modelo mensal)
+        if (dividaSelecionada.id.startsWith('card:')) {
+          const cardId = dividaSelecionada.id.replace('card:', '');
+          const itensMes = (invoiceItemsByCard[cardId] || []).filter((i) => i.pago);
+
+          if (!itensMes.length) {
+            isSavingRef.current = false;
+            setIsSaving(false);
+            return;
+          }
+
+          const dataTransacao = dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+          const horaTransacao = horaPagamento || new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          const transacaoId =
+            (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+              ? (crypto as any).randomUUID()
+              : Date.now().toString();
+
+          await (saveTransacao && saveTransacao({
+            id: transacaoId,
+            caixaId: caixaPagamento,
+            tipo: 'entrada',
+            valor: valorPagamento,
+            descricao: `Estorno fatura: ${dividaSelecionada.descricao}`,
+            categoria: 'Cartão de Crédito',
+            data: dataTransacao,
+            hora: horaTransacao
+          }));
+
+          if (currentUser?.uid) {
+            await markCreditCardInvoiceItemsRefunded(
+              currentUser.uid,
+              cardId,
+              selectedMonth,
+              itensMes.map((i) => i.id),
+              { transacaoId, data: dataTransacao, hora: horaTransacao }
+            );
+          }
+
+          const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
+          if (cx) {
+            await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo + valorPagamento }));
+          }
+
+          // não continuar fluxo de dívida normal
+          setIsPagamentoOpen(false);
+          setDividaSelecionada(null);
+          setCompraSelecionada(null);
+          setValorPagamentoInput('');
+          setDataPagamento('');
+          setHoraPagamento('');
+          isSavingRef.current = false;
+          setIsSaving(false);
+          return;
+        }
         // Atualizar dívida (reverter pagamento)
         const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
         if (!dividaAtual) {
@@ -996,58 +1092,69 @@ export default function DividasManager() {
   };
 
   const processarPagamento = async (valorPagamento: number) => {
-    if (!dividaSelecionada && !compraSelecionada) return;
-    if (!caixaPagamento) { 
-      alert('Selecione um caixa.'); 
-      return; 
-    }
-    // Bloqueio de saldo negativo
-    const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
-    if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
+    // Evitar duplo clique
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    setIsSaving(true);
+    try {
+      if (!dividaSelecionada && !compraSelecionada) return;
+      if (!caixaPagamento) { 
+        alert('Selecione um caixa.'); 
+        return; 
+      }
+      // Bloqueio de saldo negativo
+      const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
+      if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
 
     if (dividaSelecionada) {
       // Verificar se é pagamento de cartão (dívida temporária)
       if (dividaSelecionada.id.startsWith('card:')) {
         const cardId = dividaSelecionada.id.replace('card:', '');
-        
-        // Criar transação para pagamento da fatura
-        try {
-          await (saveTransacao && saveTransacao({
-            id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
-            caixaId: caixaPagamento,
-            tipo: 'saida',
-            valor: valorPagamento,
-            descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
-            categoria: 'Cartão de Crédito',
-            data: dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-            hora: horaPagamento || new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
-          }));
+        const itensMes = (invoiceItemsByCard[cardId] || []).filter((i) => !i.pago);
 
-          // Debitar o caixa
+        if (!itensMes.length) {
+          alert('Não há parcelas pendentes neste mês para este cartão.');
+          return;
+        }
+
+        const dataTransacao =
+          dataPagamento ||
+          new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+        const horaTransacao =
+          horaPagamento ||
+          new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
+        const transacaoId =
+          (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+            ? (crypto as any).randomUUID()
+            : Date.now().toString();
+
+        try {
+          await (saveTransacao &&
+            saveTransacao({
+              id: transacaoId,
+              caixaId: caixaPagamento,
+              tipo: 'saida',
+              valor: valorPagamento,
+              descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
+              categoria: 'Cartão de Crédito',
+              data: dataTransacao,
+              hora: horaTransacao,
+            }));
+
+          if (currentUser?.uid) {
+            await markCreditCardInvoiceItemsPaid(
+              currentUser.uid,
+              cardId,
+              selectedMonth,
+              itensMes.map((i) => i.id),
+              { transacaoId, data: dataTransacao, hora: horaTransacao }
+            );
+          }
+
           const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
           if (cx) {
             await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
-          }
-
-          // Atualizar parcelas pagas das compras do cartão para o mês atual
-          const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
-          
-          for (const compra of comprasDoCartao) {
-            const [sy, sm] = compra.startMonth.split('-').map(Number);
-            const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-            
-            // Se a compra tem parcela neste mês, avançar +1 parcela
-            if (idx >= 0 && idx < compra.parcelas) {
-              const parcelasAtuais = compra.parcelasPagas || 0;
-              const novasParcelasPagas = parcelasAtuais + 1;
-              
-              const compraAtualizada = { ...compra, parcelasPagas: novasParcelasPagas };
-              
-              await saveCompraCartao(compraAtualizada);
-              setComprasCartao((prev: CompraCartao[]) => 
-                prev.map(p => p.id === compraAtualizada.id ? compraAtualizada : p)
-              );
-            }
           }
         } catch (_error) {
           console.error('Erro ao processar pagamento do cartão');
@@ -1134,6 +1241,11 @@ export default function DividasManager() {
     setCompraSelecionada(null);
     setDataPagamento('');
     setHoraPagamento('');
+    setValorPagamentoInput('');
+  } finally {
+    isSavingRef.current = false;
+    setIsSaving(false);
+  }
   };
 
   // Helpers de competência mensal
@@ -1150,34 +1262,8 @@ export default function DividasManager() {
   const selectedYM = useMemo(() => parseYYYYMM(selectedMonth), [selectedMonth]);
 
   // Monitorar exclusão de transações de pagamento de fatura
-  useEffect(() => {
-    const transacoesFatura = (transacoes || []).filter(t => 
-      t.descricao.includes('Pagamento fatura:') && t.categoria === 'Cartão de Crédito'
-    );
-    
-    // Se não há transações de fatura, reverter apenas compras que foram afetadas pelo pagamento da fatura
-    if (transacoesFatura.length === 0) {
-      const comprasParaReverter = (comprasCartao as CompraCartao[]).filter(compra => {
-        const [sy, sm] = compra.startMonth.split('-').map(Number);
-        const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-        // Só reverter se a compra tem parcela neste mês E não está marcada como "em andamento"
-        return idx >= 0 && idx < compra.parcelas && (compra.parcelasPagas || 0) > 0 && !compra.emAndamento;
-      });
-      
-      comprasParaReverter.forEach(async (compra) => {
-        const parcelasAtuais = compra.parcelasPagas || 0;
-        const novasParcelasPagas = Math.max(0, parcelasAtuais - 1);
-        
-        if (novasParcelasPagas !== parcelasAtuais) {
-          const compraAtualizada = { ...compra, parcelasPagas: novasParcelasPagas };
-          await saveCompraCartao(compraAtualizada);
-          setComprasCartao((prev: CompraCartao[]) => 
-            prev.map(p => p.id === compraAtualizada.id ? compraAtualizada : p)
-          );
-        }
-      });
-    }
-  }, [transacoes, selectedYM]);
+  // OBS: fluxo antigo atualizava `comprasCartao` (doc único) e precisava reverter.
+  // No modelo mensal (faturas/itens), o estorno deve acontecer marcando os itens do mês como não pagos.
 
   const getMonthlyDue = (d: Divida): number => {
     if (d.tipo === 'parcelada') {
@@ -1226,65 +1312,14 @@ export default function DividasManager() {
   };
 
   const getStatusCartao = (cardId: string) => {
-    const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
-    if (comprasDoCartao.length === 0) {
-      return { status: 'Sem compras', cor: 'text-muted-foreground' };
-    }
-    const comprasDoMes = comprasDoCartao.filter(compra => {
-      const [sy, sm] = compra.startMonth.split('-').map(Number);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-      return idx >= 0 && idx < compra.parcelas;
-    });
-    if (comprasDoMes.length === 0) {
+    const itens = (invoiceItemsByCard[cardId] || []);
+    if (itens.length === 0) {
       return { status: 'Sem parcelas este mês', cor: 'text-muted-foreground' };
     }
     
-    // Verificar se todas as compras do mês estão pagas baseado no valorPago
-    const todasPagas = comprasDoMes.every(compra => {
-      const [sy, sm] = compra.startMonth.split('-').map(Number);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-      const valorPago = (compra.valorPago || 0);
-      const parcelasPagas = compra.parcelasPagas || 0;
-      
-      // Se valorPago >= valorTotal, está totalmente pago
-      if (valorPago >= compra.valorTotal) {
-        return true;
-      }
-      
-      // Se parcelasPagas >= idx + 1, significa que a parcela do mês foi paga
-      // (idx é 0-based, então a parcela do mês é idx + 1)
-      if (parcelasPagas >= idx + 1) {
-        return true;
-      }
-      
-      // Verificar se o valorPago cobre pelo menos o valor da parcela do mês
-      // Calcular o valor total das parcelas até a parcela do mês (inclusive)
-      let valorEsperadoAteMes = 0;
-      for (let i = 0; i <= idx; i++) {
-        valorEsperadoAteMes += purchaseInstallmentValue(compra, i);
-      }
-      
-      // Se o valorPago é maior ou igual ao valor esperado até a parcela do mês
-      return valorPago >= valorEsperadoAteMes;
-    });
-    
-    if (todasPagas) {
-      return { status: '✓ Pago', cor: 'text-green-600' };
-    }
-    
-    // Verificar também se existe transação de pagamento (fallback)
-    const cartao = (cartoes || []).find((c: any) => c.id === cardId);
-    const nomeCartao = cartao?.nome || '';
-    const transacoesFatura = (transacoes || []).filter(t => 
-      t.descricao.includes(`Fatura ${nomeCartao}`) ||
-      t.descricao.includes(`Pagamento fatura: ${nomeCartao}`) ||
-      t.descricao.includes(`Pagamento fatura: Fatura ${nomeCartao}`)
-    );
-    const mesAtual = `${selectedYM.y}-${String(selectedYM.m).padStart(2, '0')}`;
-    const transacaoFaturaMes = transacoesFatura.find(t => 
-      t.data.startsWith(mesAtual)
-    );
-    if (transacaoFaturaMes) {
+    // Pago se TODOS os itens do mês estiverem marcados como pagos (modelo mensal)
+    const pendentes = itens.filter((i) => !i.pago);
+    if (pendentes.length === 0) {
       return { status: '✓ Pago', cor: 'text-green-600' };
     }
     
@@ -1717,132 +1752,6 @@ export default function DividasManager() {
 
   return (
     <div className="space-y-6">
-      {/* Modal de pagamento */}
-      <Dialog open={isPagamentoOpen} onOpenChange={setIsPagamentoOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{modoPagamento === 'pay' ? 'Pagar dívida' : 'Estornar dívida'}</DialogTitle>
-            <DialogDescription>
-              {dividaSelecionada?.descricao || compraSelecionada?.descricao}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="valorPagamento">Valor do pagamento</Label>
-              <Input
-                id="valorPagamento"
-                type="text"
-                value={valorPagamentoInput}
-                onChange={(e) => setValorPagamentoInput(e.target.value)}
-                placeholder="0,00"
-              />
-              <p className="text-sm text-muted-foreground">
-                Sugestão (valor da parcela do mês): R$ {(() => {
-                  if (dividaSelecionada) {
-                    const valor = getMonthlyDue(dividaSelecionada);
-                    return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-                  }
-                  if (compraSelecionada) {
-                    const [sy, sm] = compraSelecionada.startMonth.split('-').map(Number);
-                    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-                    const valor = purchaseInstallmentValue(compraSelecionada, Math.max(0, Math.min((compraSelecionada.parcelas || 1) - 1, idx)));
-                    return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-                  }
-                  return '0,00';
-                })()}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="caixaPagamento">Caixa para débito</Label>
-              <Select value={caixaPagamento || ''} onValueChange={setCaixaPagamento}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o caixa" />
-                </SelectTrigger>
-                <SelectContent>
-                  {caixas?.map((caixa: any) => {
-                    // Saldo real do mês selecionado (igual ao usado em Transações/Dashboard)
-                    const ym = selectedMonth;
-                    const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
-                    const parseYM = (s: string) => { const [yy, mm] = s.split('-').map(Number); return { y: yy, m: mm }; };
-                    const nextYM = (y: number, m: number) => ({ y: m === 12 ? y + 1 : y, m: m === 12 ? 1 : m + 1 });
-                    const { y: ys, m: ms } = parseYM(ym);
-                    const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
-                      return (transacoes as any[])
-                        .filter((t: any) => t.caixaId === caixaId)
-                        .filter((t: any) => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
-                        .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
-                    };
-                    const init = (caixa as any).initialByMonth as Record<string, number> | undefined;
-                    let initial = 0;
-                    if (init && Object.prototype.hasOwnProperty.call(init, ym)) initial = (init as any)[ym] ?? 0; else if (init) {
-                      let bestKey: string | null = null;
-                      Object.keys(init).forEach(k => { const { y, m } = parseYM(k); if (ymToIndex(y, m) <= ymToIndex(ys, ms)) { if (bestKey === null) bestKey = k; else { const { y: by, m: bm } = parseYM(bestKey); if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k; } } });
-                      if (bestKey) {
-                        initial = (init as any)[bestKey] ?? 0;
-                        let cy = parseYM(bestKey).y, cm = parseYM(bestKey).m;
-                        while (!(cy === ys && cm === ms)) { initial += monthlyTotalFor(caixa.id, cy, cm); const n = nextYM(cy, cm); cy = n.y; cm = n.m; }
-                      }
-                    }
-                    const saldoMes = initial + monthlyTotalFor(caixa.id, ys, ms);
-                    return (
-                      <SelectItem key={caixa.id} value={caixa.id}>
-                        {caixa.nome} - R$ {saldoMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {caixaPagamento && (() => {
-                const caixa = caixas?.find((c: any) => c.id === caixaPagamento);
-                // Recalcular saldo real do mês para validação
-                const ym = selectedMonth; const [ys, ms] = ym.split('-').map(Number);
-                const monthlyTotalFor = (caixaId: string, y: number, m: number) => (transacoes as any[])
-                  .filter((t: any) => t.caixaId === caixaId)
-                  .filter((t: any) => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
-                  .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
-                let initial = 0; const init = (caixa as any)?.initialByMonth;
-                if (init && Object.prototype.hasOwnProperty.call(init, ym)) initial = init[ym] ?? 0;
-                const saldoMes = caixa ? (initial + monthlyTotalFor(caixa.id, ys, ms)) : 0;
-                const valorPago = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
-                return caixa && valorPago > saldoMes ? (
-                  <p className="text-sm text-red-600">Saldo insuficiente no caixa selecionado</p>
-                ) : null;
-              })()}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)} disabled={isSaving}>Cancelar</Button>
-            {modoPagamento === 'pay' ? (
-              <Button 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!isSavingRef.current && !isSaving) {
-                    confirmarPagamento(e);
-                  }
-                }} 
-                disabled={!caixaPagamento || isSaving}
-              >
-                {isSaving ? 'Salvando...' : 'Confirmar pagamento'}
-              </Button>
-            ) : (
-              <Button 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!isSavingRef.current && !isSaving) {
-                    confirmarEstorno(e);
-                  }
-                }} 
-                disabled={!caixaPagamento || isSaving}
-              >
-                {isSaving ? 'Salvando...' : 'Confirmar estorno'}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={isDialogOpen} onOpenChange={(o) => { setIsDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 60); } catch {} } }}>
           <DialogTrigger asChild>
             <Button onClick={resetForm} className="hidden">
@@ -2067,6 +1976,7 @@ export default function DividasManager() {
           
           <form onSubmit={(e) => {
             e.preventDefault();
+            if (isSavingRef.current || isSaving) return;
             const valor = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
             if (valor > 0) {
               processarPagamento(valor);
@@ -2180,11 +2090,21 @@ export default function DividasManager() {
             )}
             
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setIsPagamentoOpen(false); setDataPagamento(''); setHoraPagamento(''); }}>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => { if (isSavingRef.current || isSaving) return; setIsPagamentoOpen(false); setDataPagamento(''); setHoraPagamento(''); }} 
+                disabled={isSaving || isSavingRef.current}
+              >
                 Cancelar
               </Button>
-              <Button type="submit">
-                Confirmar Pagamento
+              <Button type="submit" disabled={isSaving || isSavingRef.current}>
+                {(isSaving || isSavingRef.current) ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Carregando...
+                  </>
+                ) : 'Confirmar Pagamento'}
               </Button>
             </DialogFooter>
           </form>
@@ -2375,12 +2295,12 @@ export default function DividasManager() {
                   style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
                 >
                   <DialogHeader>
-                    <DialogTitle>Nova Compra no Cartão</DialogTitle>
+                    <DialogTitle>{editingPurchase ? 'Editar Compra' : 'Nova Compra no Cartão'}</DialogTitle>
                     <DialogDescription>
-                      Registre uma nova compra parcelada ou à vista no cartão selecionado.
+                      {editingPurchase ? 'Edite as informações da compra selecionada.' : 'Registre uma nova compra parcelada ou à vista no cartão selecionado.'}
                     </DialogDescription>
                   </DialogHeader>
-                  <form onSubmit={handleCreatePurchase} className="space-y-4">
+                  <form onSubmit={handleUpsertPurchase} className="space-y-4">
                     <div className="space-y-2">
                       <Label>Cartão</Label>
                       <select className="w-full border rounded h-9 px-2 bg-background" value={selectedCardId || ''} onChange={(e) => setSelectedCardId(e.target.value)} required>
@@ -2438,38 +2358,51 @@ export default function DividasManager() {
                       <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label htmlFor="purchaseParcelaAtual">Parcela Atual</Label>
+                            <Label htmlFor="purchaseParcelasRestantes">Parcelas restantes</Label>
                             <Input
-                              id="purchaseParcelaAtual"
+                              id="purchaseParcelasRestantes"
                               type="number"
-                              min="1"
+                              min="0"
                               max={purchaseParcelas || 999}
-                              value={purchaseParcelaAtual}
-                              onChange={(e) => setPurchaseParcelaAtual(e.target.value)}
-                              placeholder="Ex: 17"
+                              value={purchaseParcelasRestantes}
+                              onChange={(e) => setPurchaseParcelasRestantes(e.target.value)}
+                              placeholder="Ex: 3"
                               required={purchaseEmAndamento}
                             />
                           </div>
                           
                           <div className="space-y-2">
-                            <Label htmlFor="purchaseDataUltimoPagamento">Data do Último Pagamento</Label>
-                            <Input
-                              id="purchaseDataUltimoPagamento"
-                              type="date"
-                              value={purchaseDataUltimoPagamento}
-                              onChange={(e) => setPurchaseDataUltimoPagamento(e.target.value)}
-                            />
+                            <Label>Cobrar no sistema a partir</Label>
+                            <div className="h-9 px-3 flex items-center rounded border bg-background text-sm">
+                              {(() => {
+                                const total = Math.max(1, parseInt(purchaseParcelas || '1'));
+                                const rest = Math.max(0, Math.min(total, parseInt(purchaseParcelasRestantes || '0')));
+                                const pagas = Math.max(0, total - rest);
+                                const startYm = purchaseStartDate.slice(0, 7);
+                                return addMonthsYYYYMM(startYm, pagas);
+                              })()}
+                            </div>
                           </div>
                         </div>
 
                         {/* Resumo calculado */}
-                        {purchaseParcelaAtual && purchaseValorParcela && (
+                        {purchaseParcelasRestantes && purchaseValorParcela && purchaseParcelas && (
                           <div className="p-3 dark:bg-blue-900/20 rounded-lg dark:border dark:border-blue-800">
                             <h4 className="text-sm font-medium mb-2">Resumo Calculado:</h4>
                             <div className="text-sm space-y-1">
-                              <p>Parcelas pagas: {Math.max(0, parseInt(purchaseParcelaAtual) - 1)}</p>
-                              <p>Valor já pago: R$ {((parseInt(purchaseParcelaAtual) - 1) * parseFloat(purchaseValorParcela || '0')).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                              <p>Parcelas restantes: {parseInt(purchaseParcelas || '0') - Math.max(0, parseInt(purchaseParcelaAtual) - 1)}</p>
+                              {(() => {
+                                const total = Math.max(1, parseInt(purchaseParcelas || '1'));
+                                const rest = Math.max(0, Math.min(total, parseInt(purchaseParcelasRestantes || '0')));
+                                const pagas = Math.max(0, total - rest);
+                                const vp = parseFloat(purchaseValorParcela || '0');
+                                return (
+                                  <>
+                                    <p>Parcelas pagas: {pagas}</p>
+                                    <p>Valor já pago (estimado): R$ {(pagas * vp).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    <p>Parcelas restantes: {rest}</p>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         )}
@@ -2478,11 +2411,14 @@ export default function DividasManager() {
                     <DialogFooter>
                       <Button variant="outline" type="button" onClick={() => {
                         setIsPurchaseDialogOpen(false);
+                        setEditingPurchase(null);
                         setPurchaseDesc(''); setPurchaseValorTotal(''); setPurchaseParcelas('1'); setPurchaseValorParcela(''); 
                         setPurchaseStartDate(`${selectedMonth}-05`); setPurchaseDate(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
-                        setPurchaseEmAndamento(false); setPurchaseParcelaAtual(''); setPurchaseDataUltimoPagamento('');
+                        setPurchaseEmAndamento(false); setPurchaseParcelasRestantes(''); setPurchaseDataUltimoPagamento('');
                       }}>Cancelar</Button>
-                      <Button type="submit" disabled={isSubmittingCreatePurchase}>{isSubmittingCreatePurchase ? 'Adicionando...' : 'Adicionar'}</Button>
+                      <Button type="submit" disabled={isSubmittingPurchase}>
+                        {isSubmittingPurchase ? (editingPurchase ? 'Salvando...' : 'Adicionando...') : (editingPurchase ? 'Salvar' : 'Adicionar')}
+                      </Button>
                     </DialogFooter>
                   </form>
                 </DialogContent>
@@ -2492,17 +2428,13 @@ export default function DividasManager() {
         <CardContent>
           <div className="space-y-2">
             {cartoes.map((c: CartaoCredito) => {
-              // Calcular total do mês baseado nas compras reais do cartão
-              const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === c.id);
-              const totalMes = comprasDoCartao.reduce((s, compra) => {
-                const [sy, sm] = compra.startMonth.split('-').map(Number);
-                const [cy, cm] = selectedMonth.split('-').map(Number);
-                const idx = ymToIndex(cy, cm) - ymToIndex(sy, sm);
-                if (idx >= 0 && idx < compra.parcelas) {
-                  return s + purchaseInstallmentValue(compra, idx);
-                }
-                return s;
-              }, 0);
+              // Mês selecionado (competência)
+              const [cy, cm] = selectedMonth.split('-').map(Number);
+
+              // Modelo mensal (igual dívidas): itens da fatura do mês selecionado
+              const itensDoMes = (invoiceItemsByCard[c.id] || []);
+              const totalMes = itensDoMes.reduce((s, it) => s + (it.valor || 0), 0);
+              const totalPendente = itensDoMes.filter((it) => !it.pago).reduce((s, it) => s + (it.valor || 0), 0);
               const statusCartao = getStatusCartao(c.id);
               return (
                 <div key={c.id} className="border rounded p-3">
@@ -2514,7 +2446,12 @@ export default function DividasManager() {
                         <span className="font-medium">{c.nome}</span>
                       </div>
                       <div className="flex items-center gap-3 text-sm whitespace-nowrap">
-                        <span>Fatura do mês: <span className="font-medium">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></span>
+                        <span>
+                          Fatura do mês:{' '}
+                          <span className="font-medium">
+                            R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </span>
                         <span className={`${statusCartao.cor} font-medium`}>{statusCartao.status}</span>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
@@ -2567,7 +2504,7 @@ export default function DividasManager() {
                   </button>
                   {expandedCardId === c.id && (
                     <div className="mt-3 space-y-2">
-                      {comprasDoCartao.length === 0 ? (
+                      {itensDoMes.length === 0 ? (
                         <div className="text-muted-foreground text-sm text-center py-4">
                           <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-50" />
                           <p>Sem compras registradas</p>
@@ -2588,74 +2525,87 @@ export default function DividasManager() {
                             </tr>
                           </thead>
                           <tbody>
-                            {comprasDoCartao.map((p) => {
-                              const parcelasPagas = p.parcelasPagas || 0;
-                              const totalParcelas = p.parcelas || 1;
-                              const valorPago = parcelasPagas * p.valorParcela;
-                              const valorRestante = p.valorTotal - valorPago;
-                              const progresso = (valorPago / p.valorTotal) * 100;
-                              
-                              return (
-                                <tr key={p.id} className="border-b hover:bg-muted/50">
-                                  <td className="py-3 font-medium">{p.descricao}</td>
-                                  <td className="py-3">
-                                    <Badge variant={totalParcelas === 1 ? 'secondary' : 'default'}>
-                                      {totalParcelas === 1 ? 'Valor total' : `${parcelasPagas}/${totalParcelas} parcelas`}
-                                    </Badge>
-                                    {totalParcelas > 1 && (
-                                      <div className="text-xs text-muted-foreground mt-1">
-                                        R$ {p.valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} cada
+                            {itensDoMes
+                              .slice()
+                              .sort((a, b) => (a.parcela || 0) - (b.parcela || 0))
+                              .map((it) => {
+                                const compra = (comprasCartao as CompraCartao[]).find((p) => p.id === it.purchaseId);
+                                const parcelasTotais = it.parcelasTotais || compra?.parcelas || 1;
+                                const valorTotal = (it as any).valorTotal ?? compra?.valorTotal ?? (it.valor || 0);
+                                const progresso = parcelasTotais > 0 ? ((Math.max(1, it.parcela || 1) - 1) / parcelasTotais) * 100 : 0;
+                                const restante = Math.max(0, (valorTotal || 0) - ((it.parcela || 1) - 1) * ((it as any).valorParcela ?? compra?.valorParcela ?? 0));
+
+                                return (
+                                  <tr key={it.id} className="border-b hover:bg-muted/50">
+                                    <td className="py-3 font-medium">{it.descricao}</td>
+                                    <td className="py-3">
+                                      <Badge variant={parcelasTotais === 1 ? 'secondary' : 'default'}>
+                                        {parcelasTotais === 1 ? 'Valor total' : `${it.parcela}/${parcelasTotais} parcelas`}
+                                      </Badge>
+                                    </td>
+                                    <td className="py-3">
+                                      <div className="flex items-center">
+                                        <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
+                                        {(() => {
+                                          const dc = (it as any).dataCompra || compra?.dataCompra;
+                                          if (!dc) return '-';
+                                          try { return new Date(dc).toLocaleDateString('pt-BR'); } catch { return dc; }
+                                        })()}
                                       </div>
-                                    )}
-                                  </td>
-                                  <td className="py-3">
-                                    <div className="flex items-center">
-                                      <Calendar className="h-4 w-4 mr-1 text-muted-foreground" />
-                                      {new Date(p.dataCompra).toLocaleDateString('pt-BR')}
-                                    </div>
-                                  </td>
-                                  <td className="py-3">
-                                    <div className="space-y-1 w-24">
-                                      <Progress value={progresso} className="h-2" />
-                                      <span className="text-xs text-muted-foreground">
-                                        {progresso.toFixed(1)}%
+                                    </td>
+                                    <td className="py-3">
+                                      <div className="space-y-1 w-24">
+                                        <Progress value={progresso} className="h-2" />
+                                        <span className="text-xs text-muted-foreground">
+                                          {progresso.toFixed(1)}%
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 font-medium">
+                                      R$ {(it.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </td>
+                                    <td className="py-3 font-medium">
+                                      R$ {(valorTotal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </td>
+                                    <td className="py-3">
+                                      <span className={`font-medium ${it.pago ? 'text-green-600' : 'text-red-600'}`}>
+                                        R$ {restante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                       </span>
-                                    </div>
-                                  </td>
-                                  <td className="py-3 font-medium">
-                                    R$ {p.valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                  </td>
-                                  <td className="py-3 font-medium">
-                                    R$ {p.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                  </td>
-                                  <td className="py-3">
-                                    <span className={`font-medium ${
-                                      valorRestante === 0 ? 'text-green-600' : 'text-red-600'
-                                    }`}>
-                                      R$ {valorRestante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                    </span>
-                                  </td>
-                                  <td className="py-3">
-                                    <div className="flex items-center gap-1">
-                                      <button 
-                                        title="Editar compra" 
-                                        onClick={() => openEditPurchase(p)} 
-                                        className="p-1 text-muted-foreground hover:text-foreground"
-                                      >
-                                        <Edit className="h-4 w-4" />
-                                      </button>
-                                      <button 
-                                        title="Excluir compra" 
-                                        onClick={() => handleDeletePurchase(p.id)} 
-                                        className="p-1 text-red-600 hover:text-red-700"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                                    </td>
+                                    <td className="py-3">
+                                      <div className="flex items-center gap-1">
+                                        <>
+                                          {compra && (
+                                            <button
+                                              title="Editar compra"
+                                              onClick={() => openEditPurchase(compra)}
+                                              className="p-1 text-muted-foreground hover:text-foreground"
+                                            >
+                                              <Edit className="h-4 w-4" />
+                                            </button>
+                                          )}
+                                          <button
+                                            title="Excluir compra"
+                                            onClick={() =>
+                                              handleDeletePurchase(
+                                                compra || {
+                                                  id: it.purchaseId,
+                                                  cardId: (it as any).cardId || c.id,
+                                                  startMonth: (it as any).startMonth,
+                                                  parcelas: it.parcelasTotais,
+                                                }
+                                              )
+                                            }
+                                            className="p-1 text-red-600 hover:text-red-700"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        </>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                           </tbody>
                         </table>
                       </div>
@@ -2663,76 +2613,30 @@ export default function DividasManager() {
                     </div>
                   )}
 
-                  {/* Visualização em cards para mobile */}
+                  {/* Visualização em cards para mobile (modelo mensal) */}
                   <div className="md:hidden space-y-3">
-                    {comprasDoCartao.map((p) => {
-                      const parcelasPagas = p.parcelasPagas || 0;
-                      const totalParcelas = p.parcelas || 1;
-                      const valorPago = parcelasPagas * p.valorParcela;
-                      const valorRestante = p.valorTotal - valorPago;
-                      const progresso = (valorPago / p.valorTotal) * 100;
-                      
-                      return (
-                        <div key={p.id} className="border rounded-lg p-4 bg-card">
-                          {/* Título e valor total */}
+                    {itensDoMes
+                      .sort((a, b) => (a.parcela || 0) - (b.parcela || 0))
+                      .map((it) => (
+                        <div key={it.id} className="border rounded-lg p-4 bg-card">
                           <div className="flex justify-between items-start mb-2">
-                            <h3 className="text-lg font-bold">{p.descricao}</h3>
-                            <span className="text-lg font-bold">R$ {p.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                          
-                          {/* Parcela do mês */}
-                          <div className="text-right mb-2">
-                            <span className="text-sm text-red-600">Mês: R$ {p.valorParcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                          
-                          {/* Badge de parcelas */}
-                          <div className="mb-2">
-                            <Badge variant={totalParcelas === 1 ? 'secondary' : 'default'} className="text-xs">
-                              {totalParcelas === 1 ? 'Valor total' : `${parcelasPagas}/${totalParcelas} parcelas`}
-                            </Badge>
-                          </div>
-                          
-                          {/* Data de compra */}
-                          <div className="flex items-center mb-3 text-sm text-muted-foreground">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            {new Date(p.dataCompra).toLocaleDateString('pt-BR')}
-                          </div>
-                          
-                          {/* Progresso e restante */}
-                          <div className="flex justify-between items-center mb-3">
-                            <span className="text-sm">{progresso.toFixed(1)}% pago</span>
-                            <span className={`text-sm font-medium ${valorRestante === 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              Falta: R$ {valorRestante.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            <h3 className="text-lg font-bold">{it.descricao}</h3>
+                            <span className="text-lg font-bold">
+                              R$ {(it.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
-                          
-                          {/* Barra de progresso */}
-                          <div className="mb-4">
-                            <Progress value={progresso} className="h-2" />
+                          <div className="mb-2">
+                            <Badge variant={it.parcelasTotais === 1 ? 'secondary' : 'default'} className="text-xs">
+                              {it.parcelasTotais === 1 ? 'Valor total' : `${it.parcela}/${it.parcelasTotais} parcelas`}
+                            </Badge>
                           </div>
-                          
-                          {/* Ações */}
                           <div className="flex justify-between items-center">
-                            <div className="flex items-center gap-1">
-                              <button 
-                                title="Editar compra" 
-                                onClick={() => openEditPurchase(p)} 
-                                className="p-2 text-muted-foreground hover:text-foreground"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </button>
-                              <button 
-                                title="Excluir compra" 
-                                onClick={() => handleDeletePurchase(p.id)} 
-                                className="p-2 text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
+                            <span className={`text-sm font-medium ${it.pago ? 'text-green-600' : 'text-red-600'}`}>
+                              {it.pago ? '✓ Pago' : '⏳ Pendente'}
+                            </span>
                           </div>
                         </div>
-                      );
-                    })}
+                      ))}
                   </div>
                 </div>
               );
@@ -2771,109 +2675,7 @@ export default function DividasManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Editar Compra */}
-      <Dialog open={isEditPurchaseDialogOpen} onOpenChange={setIsEditPurchaseDialogOpen}>
-        <DialogContent className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}>
-          <DialogHeader>
-            <DialogTitle>Editar Compra</DialogTitle>
-            <DialogDescription>
-              Edite as informações da compra selecionada.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSaveEditPurchase} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Descrição</Label>
-              <Input value={purchaseDesc} onChange={(e) => setPurchaseDesc(e.target.value)} required />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Valor Total</Label>
-                <Input 
-                  type="text" 
-                  value={purchaseValorTotal} 
-                  onChange={(e) => {
-                    setPurchaseValorTotal(e.target.value);
-                    const novaParcela = recomputeParcela(e.target.value, purchaseParcelas);
-                    if (novaParcela) setPurchaseValorParcela(novaParcela);
-                  }} 
-                  required 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Parcelas</Label>
-                <Input 
-                  type="number" 
-                  min="1" 
-                  value={purchaseParcelas} 
-                  onChange={(e) => {
-                    setPurchaseParcelas(e.target.value);
-                    const novaParcela = recomputeParcela(purchaseValorTotal, e.target.value);
-                    if (novaParcela) setPurchaseValorParcela(novaParcela);
-                  }} 
-                  required 
-                />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Valor da Parcela</Label>
-              <Input 
-                type="text" 
-                value={purchaseValorParcela} 
-                onChange={(e) => {
-                  setPurchaseValorParcela(e.target.value);
-                  const novoTotal = recomputeTotal(e.target.value, purchaseParcelas);
-                  if (novoTotal) setPurchaseValorTotal(novoTotal);
-                }} 
-                required 
-              />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Data da Compra</Label>
-                <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Primeira Competência</Label>
-                <Input type="date" value={purchaseStartDate} onChange={(e) => setPurchaseStartDate(e.target.value)} required />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <input 
-                  type="checkbox" 
-                  id="purchaseEmAndamento" 
-                  checked={purchaseEmAndamento} 
-                  onChange={(e) => setPurchaseEmAndamento(e.target.checked)} 
-                  className="rounded"
-                />
-                <Label htmlFor="purchaseEmAndamento">Compra já em andamento</Label>
-              </div>
-            </div>
-            
-            {purchaseEmAndamento && (
-              <div className="space-y-2">
-                <Label>Parcela Atual</Label>
-                <Input 
-                  type="number" 
-                  min="1" 
-                  max={purchaseParcelas} 
-                  value={purchaseParcelaAtual} 
-                  onChange={(e) => setPurchaseParcelaAtual(e.target.value)} 
-                />
-              </div>
-            )}
-            
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditPurchaseDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit">Salvar</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Editar Compra: unificado no mesmo modal de "Nova Compra" */}
 
       {/* Progresso geral */}
       <Card>

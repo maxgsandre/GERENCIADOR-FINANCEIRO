@@ -62,6 +62,7 @@
             "dev": "vite",
             "build": "vite build",
             "prepare": "husky",
-            "lint:commit": "commitlint --edit"
+            "lint:commit": "commitlint --edit",
+            "seed:cartoes": "tsx scripts/seed-cartoes.ts"
       }
 }

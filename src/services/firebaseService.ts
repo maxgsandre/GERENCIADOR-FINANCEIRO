@@ -10,7 +10,8 @@ import {
   query,
   where,
   orderBy,
-  Timestamp
+  Timestamp,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { User } from 'firebase/auth';
@@ -161,7 +162,12 @@ export const subscribeToTransacoes = (userId: string, callback: (transacoes: Tra
   const emitir = () => {
     const all: Transacao[] = [];
     porPeriodo.forEach((arr) => all.push(...arr));
-    callback(all);
+    // Defensivo: mesmo id não deve existir em dois períodos; se existir, manter um só
+    const byId = new Map<string, Transacao>();
+    for (const t of all) {
+      byId.set(t.id, t);
+    }
+    callback(Array.from(byId.values()));
   };
   const now = new Date();
   const periods: string[] = [];
@@ -249,7 +255,13 @@ export const subscribeToGastosFixos = (userId: string, callback: (gastosFixos: G
   const emitir = () => {
     const all: GastoFixo[] = [];
     porPeriodo.forEach((arr) => all.push(...arr));
-    callback(all);
+    // Mesmo id pode existir em meses diferentes; chave id+período evita duplicata visual no merge
+    const byKey = new Map<string, GastoFixo>();
+    for (const g of all) {
+      const p = ((g as any).periodo as string | undefined) || '';
+      byKey.set(`${g.id}::${p}`, g);
+    }
+    callback(Array.from(byKey.values()));
   };
 
   const now = new Date();
@@ -849,7 +861,7 @@ export const subscribeToReceitasPrevistas = (userId: string, callback: (receitas
       if (data && data.descricao) {
         // Extrair ID real da receita se o docId inclui período (formato antigo intermediário)
         let receitaId = docId;
-        let periodoDoId = null;
+        let periodoDoId: string | null = null;
         
         // Se o ID começa com período (YYYY-MM-...), extrair
         if (/^\d{4}-\d{2}-/.test(docId)) {
@@ -954,6 +966,74 @@ export const moveReceitasBetweenPeriods = async (
   } catch (e) {
     console.error('Erro ao mover receitas entre períodos');
     throw e;
+  }
+};
+
+// Duplicar receitas de um período para outro (sem pagamentos)
+export const duplicateReceitasFromPeriod = async (userId: string, fromPeriod: string, toPeriod: string) => {
+  try {
+    const fromCol = collection(db, 'users', userId, 'receitasPrevistas', fromPeriod, 'receitas');
+    const fromSnap = await getDocs(fromCol);
+    
+    if (fromSnap.empty) {
+      throw new Error(`Nenhuma receita encontrada no período ${fromPeriod}`);
+    }
+    
+    const jobs: Promise<void>[] = [];
+    
+    fromSnap.forEach((d) => {
+      const data = d.data() as ReceitaPrevista;
+      if (data && data.descricao && data.valor != null) {
+        // Calcular nova data de vencimento para o mês destino
+        const [toYear, toMonth] = toPeriod.split('-').map(Number);
+        
+        let newDataVencimento = data.dataVencimento;
+        if (data.dataVencimento) {
+          try {
+            const dataVenc = new Date(data.dataVencimento + 'T00:00:00');
+            if (!isNaN(dataVenc.getTime())) {
+              const diaVenc = dataVenc.getDate();
+              const newDate = new Date(toYear, toMonth - 1, Math.min(diaVenc, new Date(toYear, toMonth, 0).getDate()));
+              newDataVencimento = newDate.toISOString().split('T')[0];
+            }
+          } catch {}
+        }
+        
+        // Gerar novo ID único para a receita duplicada
+        const novoId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
+          ? (crypto as any).randomUUID() 
+          : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Criar nova receita com todos os dados originais, exceto id, periodo, recebido e dataVencimento
+        const novaReceita: ReceitaPrevista = {
+          ...data,
+          id: novoId, // NOVO ID
+          periodo: toPeriod, // NOVO PERÍODO
+          dataVencimento: newDataVencimento || data.dataVencimento, // Data atualizada
+          recebido: false, // Sempre false
+          diaVencimento: data.diaVencimento || (newDataVencimento ? new Date(newDataVencimento + 'T00:00:00').getDate() : data.diaVencimento),
+        };
+        
+        // Limpar campos relacionados a recebimento
+        if ((novaReceita as any).caixaId) {
+          delete (novaReceita as any).caixaId;
+        }
+        
+        // Limpar campos undefined
+        Object.keys(novaReceita).forEach((k) => { if ((novaReceita as any)[k] === undefined) delete (novaReceita as any)[k]; });
+        
+        // Salvar com o novo ID no período destino
+        jobs.push(setDoc(doc(db, 'users', userId, 'receitasPrevistas', toPeriod, 'receitas', novoId), novaReceita));
+      }
+    });
+    
+    if (jobs.length === 0) {
+      throw new Error('Nenhuma receita válida encontrada para duplicar');
+    }
+    
+    await Promise.all(jobs);
+  } catch (error: any) {
+    throw new Error(`Erro ao duplicar receitas: ${error?.message || 'Erro desconhecido'}`);
   }
 };
 
@@ -1090,6 +1170,92 @@ const migratePurchaseToCard = async (userId: string, purchase: CompraCartao) => 
 export const saveCreditCardPurchase = async (userId: string, purchase: CompraCartao) => {
   if (!purchase.cardId) throw new Error('Compra deve estar vinculada a um cartão');
   
+  // Ao editar uma compra, precisamos evitar duplicatas nas faturas mensais.
+  // Estratégia: ler a compra anterior (se existir), coletar status de pagamento por parcela,
+  // e por competência (YYYY-MM), deletar itens antigos (e também os novos destinos) e então recriar
+  // itens no novo cronograma preservando pagamentos quando possível.
+  const prevRef = doc(db, 'users', userId, 'creditCards', purchase.cardId, 'compras', purchase.id);
+  const prevSnap = await getDoc(prevRef).catch(() => null as any);
+  const prevData = prevSnap?.exists?.() ? (prevSnap.data() as any) : null;
+
+  const addMonths = (ym: string, add: number) => {
+    const [y, m] = ym.split('-').map(Number);
+    const idx = y * 12 + (m - 1) + add;
+    const ny = Math.floor(idx / 12);
+    const nm = (idx % 12) + 1;
+    return `${ny}-${String(nm).padStart(2, '0')}`;
+  };
+
+  const prevStartMonth: string | undefined = prevData?.startMonth;
+  const prevParcelas: number = Math.max(1, Number(prevData?.parcelas || 1));
+  const nextStartMonth: string | undefined = purchase.startMonth;
+  const nextParcelas: number = Math.max(1, Number(purchase.parcelas || 1));
+
+  // Preservar status/transações por parcela (n) quando já existir item materializado.
+  const preservedByN = new Map<number, any>();
+  // Preservar status/transações por competência (YYYY-MM). Isso é o mais fiel quando existe
+  // pagamento de fatura por mês (transação), mesmo após ajustar startMonth/parcelas.
+  const preservedByYM = new Map<string, any>();
+  if (prevStartMonth) {
+    for (let n = 1; n <= prevParcelas; n++) {
+      const ym = addMonths(prevStartMonth, n - 1);
+      const itemId = `${purchase.id}-${n}`;
+      const itemRef = doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', itemId);
+      const itemSnap = await getDoc(itemRef).catch(() => null as any);
+      if (itemSnap?.exists?.()) {
+        const d = itemSnap.data() as any;
+        const preserved = {
+          pago: d.pago ?? false,
+          pagamentoTransacaoId: d.pagamentoTransacaoId ?? null,
+          pagamentoData: d.pagamentoData ?? null,
+          pagamentoHora: d.pagamentoHora ?? null,
+          estornoTransacaoId: d.estornoTransacaoId ?? null,
+          estornoData: d.estornoData ?? null,
+          estornoHora: d.estornoHora ?? null,
+        };
+        preservedByN.set(n, preserved);
+        // Por competência: se este mês estava pago, manter a marcação quando recriar.
+        // Também preserva estorno e metadados caso existam.
+        preservedByYM.set(ym, preserved);
+      }
+    }
+  }
+
+  // Limpar itens antigos e também destinos novos (caso existam de edições anteriores).
+  // Isso garante que não fiquem parcelas "fantasmas" no mesmo mês.
+  if (prevStartMonth || nextStartMonth) {
+    let batch = writeBatch(db);
+    let ops = 0;
+    const commit = async () => {
+      if (!ops) return;
+      await batch.commit();
+      batch = writeBatch(db);
+      ops = 0;
+    };
+
+    if (prevStartMonth) {
+      for (let n = 1; n <= prevParcelas; n++) {
+        const ym = addMonths(prevStartMonth, n - 1);
+        const itemId = `${purchase.id}-${n}`;
+        const itemRef = doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', itemId);
+        batch.delete(itemRef);
+        ops++;
+        if (ops >= 450) await commit();
+      }
+    }
+    if (nextStartMonth) {
+      for (let n = 1; n <= nextParcelas; n++) {
+        const ym = addMonths(nextStartMonth, n - 1);
+        const itemId = `${purchase.id}-${n}`;
+        const itemRef = doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', itemId);
+        batch.delete(itemRef);
+        ops++;
+        if (ops >= 450) await commit();
+      }
+    }
+    await commit();
+  }
+
   const payload: any = { 
     ...purchase,
     valorPago: purchase.valorPago ?? 0 // Garantir que valorPago seja sempre definido
@@ -1099,42 +1265,94 @@ export const saveCreditCardPurchase = async (userId: string, purchase: CompraCar
   
   // Materializar parcelas por competência em faturas mensais do cartão
   try {
-    await mirrorPurchaseToInvoices(userId, purchase);
+    await mirrorPurchaseToInvoices(userId, purchase, { preservedByN, preservedByYM });
   } catch {}
 };
 
-export const deleteCreditCardPurchase = async (userId: string, purchaseId: string, cardId?: string) => {
-  if (cardId) {
-    // Deletar direto se souber o cardId
-    await deleteDoc(doc(db, 'users', userId, 'creditCards', cardId, 'compras', purchaseId));
-    // Limpar itens de fatura relacionados
+export const deleteCreditCardPurchase = async (
+  userId: string,
+  purchaseId: string,
+  opts?: { cardId?: string; startMonth?: string; parcelas?: number }
+) => {
+  // Para apagar itens mensais, precisamos saber cardId/startMonth/parcelas.
+  // Se cardId não for informado, tentamos localizar a compra em algum cartão.
+  let resolvedCardId = opts?.cardId;
+  let purchaseData: any | null = null;
+
+  if (resolvedCardId) {
+    const ref = doc(db, 'users', userId, 'creditCards', resolvedCardId, 'compras', purchaseId);
+    const snap = await getDoc(ref).catch(() => null as any);
+    if (snap && snap.exists?.()) purchaseData = snap.data();
+  } else {
+    const cardsSnap = await getDocs(collection(db, 'users', userId, 'creditCards')).catch(() => null as any);
+    const cardDocs = cardsSnap?.docs || [];
+    for (const c of cardDocs) {
+      const ref = doc(db, 'users', userId, 'creditCards', c.id, 'compras', purchaseId);
+      const snap = await getDoc(ref).catch(() => null as any);
+      if (snap && snap.exists?.()) {
+        resolvedCardId = c.id;
+        purchaseData = snap.data();
+        break;
+      }
+    }
+  }
+
+  // Se não conseguiu localizar, pelo menos tentar apagar o cadastro (fallback)
+  if (!resolvedCardId) return;
+
+  const startMonth: string | undefined = purchaseData?.startMonth || opts?.startMonth;
+  const parcelas: number = Math.max(1, Number(purchaseData?.parcelas || opts?.parcelas || 1));
+
+  const addMonths = (ym: string, add: number) => {
+    const [y, m] = ym.split('-').map(Number);
+    const idx = y * 12 + (m - 1) + add;
+    const ny = Math.floor(idx / 12);
+    const nm = (idx % 12) + 1;
+    return `${ny}-${String(nm).padStart(2, '0')}`;
+  };
+
+  // Deletar compra + todos os itens de fatura que pertencem a ela, em todos os meses
+  let batch = writeBatch(db);
+  let ops = 0;
+  const commit = async () => {
+    if (!ops) return;
+    await batch.commit();
+    batch = writeBatch(db);
+    ops = 0;
+  };
+
+  // 1) Itens mensais (se souber startMonth)
+  if (startMonth) {
+    for (let n = 1; n <= parcelas; n++) {
+      const ym = addMonths(startMonth, n - 1);
+      const itemId = `${purchaseId}-${n}`;
+      const itemRef = doc(db, 'users', userId, 'creditCards', resolvedCardId, 'faturas', ym, 'itens', itemId);
+      batch.delete(itemRef);
+      ops++;
+      if (ops >= 450) await commit();
+    }
+  } else {
+    // Fallback: limpa apenas janela de 24 meses (compatibilidade)
     const now = new Date();
-    const tasks: Promise<void>[] = [];
     for (let i = -12; i <= 12; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const q = query(collection(db, 'users', userId, 'creditCards', cardId, 'faturas', ym, 'itens'));
-      getDocs(q).then((snap) => {
-        snap.forEach((docSnap) => {
-          const data = docSnap.data() as any;
-          if (data.purchaseId === purchaseId || docSnap.id.startsWith(`${purchaseId}-`)) {
-            tasks.push(deleteDoc(docSnap.ref).catch(() => undefined));
-          }
-        });
-      }).catch(() => {});
+      for (let n = 1; n <= parcelas; n++) {
+        const itemId = `${purchaseId}-${n}`;
+        const itemRef = doc(db, 'users', userId, 'creditCards', resolvedCardId, 'faturas', ym, 'itens', itemId);
+        batch.delete(itemRef);
+        ops++;
+        if (ops >= 450) await commit();
+      }
     }
-    if (tasks.length) await Promise.all(tasks);
-    return;
   }
-  
-  // Sem cardId: buscar em todos os cartões
-  const cardsCol = collection(db, 'users', userId, 'creditCards');
-  const cardsSnap = await getDocs(cardsCol);
-  const tasks: Promise<void>[] = [];
-  cardsSnap.forEach((cardDoc) => {
-    tasks.push(deleteDoc(doc(db, 'users', userId, 'creditCards', cardDoc.id, 'compras', purchaseId)).catch(() => undefined));
-  });
-  await Promise.all(tasks);
+
+  // 2) Cadastro base
+  const compraRef = doc(db, 'users', userId, 'creditCards', resolvedCardId, 'compras', purchaseId);
+  batch.delete(compraRef);
+  ops++;
+
+  await commit();
 };
 
 export const subscribeToCreditCardPurchases = (userId: string, callback: (purchases: CompraCartao[]) => void) => {
@@ -1219,28 +1437,129 @@ export const subscribeToCreditCardPurchases = (userId: string, callback: (purcha
 };
 
 // =======================
+// Cartões - Itens de fatura por mês (fonte mensal, igual dívidas)
+// Estrutura: users/{uid}/creditCards/{cardId}/faturas/{YYYY-MM}/itens/{purchaseId}-{n}
+// =======================
+export type CreditCardInvoiceItem = {
+  id: string;
+  purchaseId: string;
+  cardId?: string;
+  descricao: string;
+  valor: number;
+  parcela: number;
+  parcelasTotais: number;
+  startMonth?: string;
+  pago?: boolean;
+  pagamentoTransacaoId?: string;
+  pagamentoData?: string; // YYYY-MM-DD
+  pagamentoHora?: string; // HH:mm
+  estornoTransacaoId?: string;
+  estornoData?: string; // YYYY-MM-DD
+  estornoHora?: string; // HH:mm
+};
+
+export const subscribeToCreditCardInvoiceItems = (
+  userId: string,
+  cardId: string,
+  periodo: string,
+  callback: (items: CreditCardInvoiceItem[]) => void
+) => {
+  const q = query(collection(db, 'users', userId, 'creditCards', cardId, 'faturas', periodo, 'itens'));
+  return onSnapshot(q, (snap) => {
+    const arr: CreditCardInvoiceItem[] = [];
+    snap.forEach((d) => arr.push({ id: d.id, ...(d.data() as any) } as CreditCardInvoiceItem));
+    callback(arr);
+  });
+};
+
+export const markCreditCardInvoiceItemsPaid = async (
+  userId: string,
+  cardId: string,
+  periodo: string,
+  itemIds: string[],
+  opts: { transacaoId: string; data: string; hora?: string }
+) => {
+  const batch = writeBatch(db);
+  for (const itemId of itemIds) {
+    const ref = doc(db, 'users', userId, 'creditCards', cardId, 'faturas', periodo, 'itens', itemId);
+    batch.update(ref, {
+      pago: true,
+      pagamentoTransacaoId: opts.transacaoId,
+      pagamentoData: opts.data,
+      pagamentoHora: opts.hora ?? null,
+      estornoTransacaoId: null,
+      estornoData: null,
+      estornoHora: null,
+      updatedAt: Timestamp.fromDate(new Date()),
+    } as any);
+  }
+  await batch.commit();
+};
+
+export const markCreditCardInvoiceItemsRefunded = async (
+  userId: string,
+  cardId: string,
+  periodo: string,
+  itemIds: string[],
+  opts: { transacaoId: string; data: string; hora?: string }
+) => {
+  const batch = writeBatch(db);
+  for (const itemId of itemIds) {
+    const ref = doc(db, 'users', userId, 'creditCards', cardId, 'faturas', periodo, 'itens', itemId);
+    batch.update(ref, {
+      pago: false,
+      estornoTransacaoId: opts.transacaoId,
+      estornoData: opts.data,
+      estornoHora: opts.hora ?? null,
+      updatedAt: Timestamp.fromDate(new Date()),
+    } as any);
+  }
+  await batch.commit();
+};
+
+// =======================
 // Cartões - Faturas por mês a partir das compras parceladas
 // Estrutura: users/{uid}/creditCards/{cardId}/faturas/{YYYY-MM}/itens/{purchaseId}-{n}
 // =======================
-const mirrorPurchaseToInvoices = async (userId: string, purchase: CompraCartao) => {
+const mirrorPurchaseToInvoices = async (
+  userId: string,
+  purchase: CompraCartao,
+  preserved?: { preservedByN?: Map<number, any>; preservedByYM?: Map<string, any> }
+) => {
   try {
     const first = purchase.startMonth || (purchase.dataCompra ? `${new Date(purchase.dataCompra).getFullYear()}-${String(new Date(purchase.dataCompra).getMonth() + 1).padStart(2, '0')}` : undefined);
     if (!first) return;
     const parcelas = Math.max(1, purchase.parcelas || 1);
     const valorParcela = purchase.valorParcela || (purchase.valorTotal / parcelas);
+    const parcelasPagas = Math.max(0, Math.min(parcelas, purchase.parcelasPagas || 0));
     const [y0, m0] = first.split('-').map(Number);
     let y = y0, m = m0;
     for (let n = 1; n <= parcelas; n++) {
       const ym = `${y}-${String(m).padStart(2, '0')}`;
       const id = `${purchase.id}-${n}`;
+      const preservedForMonth = preserved?.preservedByYM?.get(ym);
+      const preservedForN = preserved?.preservedByN?.get(n);
+      const preservedAny = preservedForMonth ?? preservedForN;
       const item = {
         id,
         purchaseId: purchase.id,
+        cardId: purchase.cardId,
         descricao: purchase.descricao,
         valor: valorParcela,
         parcela: n,
         parcelasTotais: parcelas,
         startMonth: first,
+        dataCompra: purchase.dataCompra,
+        valorTotal: purchase.valorTotal,
+        valorParcela: valorParcela,
+        pago: preservedAny?.pago ?? (n <= parcelasPagas),
+        pagamentoTransacaoId: preservedAny?.pagamentoTransacaoId ?? null,
+        pagamentoData: preservedAny?.pagamentoData ?? null,
+        pagamentoHora: preservedAny?.pagamentoHora ?? null,
+        estornoTransacaoId: preservedAny?.estornoTransacaoId ?? null,
+        estornoData: preservedAny?.estornoData ?? null,
+        estornoHora: preservedAny?.estornoHora ?? null,
+        updatedAt: Timestamp.fromDate(new Date()),
       } as any;
       await setDoc(doc(db, 'users', userId, 'creditCards', purchase.cardId, 'faturas', ym, 'itens', id), item);
       // avançar mês
@@ -1507,6 +1826,44 @@ export const importUserData = async (
 ): Promise<void> => {
   const substituir = options?.substituirExistentes ?? false;
 
+  // Mapa de cartões por id (para casar a descrição das transações com o card correto)
+  const cartoesById = new Map<string, CartaoCredito>();
+  for (const c of backup.cartoes || []) {
+    if (c?.id) cartoesById.set(c.id, c);
+  }
+
+  // Mapear transações de pagamento de fatura por (cardId, periodo YYYY-MM)
+  // Isso permite reconstruir "pago" por competência (não fixo em todo mês).
+  const paymentByCardIdPeriodo = new Map<string, Transacao>();
+  const hasAnyPaymentByCardId = new Set<string>();
+  for (const tx of backup.transacoes || []) {
+    if (!tx) continue;
+    if (tx.categoria !== 'Cartão de Crédito') continue;
+    if (tx.tipo !== 'saida') continue;
+    if (!tx.descricao) continue;
+
+    // Esperado: "Pagamento fatura: Fatura <nome>"
+    const m = tx.descricao.match(/^Pagamento fatura:\s*Fatura\s*(.+)$/i);
+    if (!m) continue;
+    const cardNome = m[1]?.trim();
+    if (!cardNome) continue;
+
+    // Descobrir cardId pelo nome
+    const matched = Array.from(cartoesById.values()).find((c) => (c.nome || '').trim() === cardNome);
+    if (!matched?.id) continue;
+
+    const periodo =
+      (tx as any).periodo ||
+      (tx.data
+        ? `${new Date(tx.data + 'T00:00:00').getFullYear()}-${String(new Date(tx.data + 'T00:00:00').getMonth() + 1).padStart(2, '0')}`
+        : undefined);
+    if (!periodo) continue;
+
+    const key = `${matched.id}|${periodo}`;
+    paymentByCardIdPeriodo.set(key, tx);
+    hasAnyPaymentByCardId.add(matched.id);
+  }
+
   // 1. Importar Caixas
   for (const caixa of backup.caixas) {
     await setDoc(doc(db, 'users', userId, 'caixas', caixa.id), caixa);
@@ -1631,29 +1988,78 @@ export const importUserData = async (
       delete payload.id;
       Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
       await setDoc(doc(db, 'users', userId, 'creditCards', compra.cardId, 'compras', compra.id), payload);
-      
-      // Reconstruir faturas (mirrorPurchaseToInvoices)
+
+      // Reconstruir faturas no modelo mensal (por competência), usando transações de pagamento
+      // Quando existir ao menos 1 pagamento do card no backup, marcamos "pago" apenas
+      // para os meses que tiveram transação de pagamento de fatura.
+      // Caso não tenha transações para o card, usamos fallback baseado em parcelasPagas.
       try {
+        const first =
+          compra.startMonth ||
+          (compra.dataCompra
+            ? `${new Date(compra.dataCompra).getFullYear()}-${String(new Date(compra.dataCompra).getMonth() + 1).padStart(2, '0')}`
+            : undefined);
+        if (!first) continue;
+
         const parcelas = Math.max(1, compra.parcelas || 1);
-        const valorParcela = compra.valorParcela || (compra.valorTotal / parcelas);
-        const first = compra.startMonth || (compra.dataCompra ? `${new Date(compra.dataCompra).getFullYear()}-${String(new Date(compra.dataCompra).getMonth() + 1).padStart(2, '0')}` : undefined);
-        if (first) {
-          const [y0, m0] = first.split('-').map(Number);
-          let y = y0, m = m0;
-          for (let n = 1; n <= parcelas; n++) {
-            const ym = `${y}-${String(m).padStart(2, '0')}`;
-            const id = `${compra.id}-${n}`;
-            const item = {
-              id,
-              purchaseId: compra.id,
-              descricao: compra.descricao,
-              valor: valorParcela,
-              parcela: n,
-              parcelasTotais: parcelas,
-              startMonth: first,
-            } as any;
-            await setDoc(doc(db, 'users', userId, 'creditCards', compra.cardId, 'faturas', ym, 'itens', id), item);
-            m += 1; if (m > 12) { m = 1; y += 1; }
+        const valorParcela =
+          compra.valorParcela || (compra.valorTotal / parcelas);
+        const parcelasPagasFinal =
+          Math.max(0, Math.min(parcelas, compra.parcelasPagas || 0));
+
+        const [y0, m0] = first.split('-').map(Number);
+        let y = y0,
+          m = m0;
+
+        for (let n = 1; n <= parcelas; n++) {
+          const ym = `${y}-${String(m).padStart(2, '0')}`;
+          const itemId = `${compra.id}-${n}`;
+
+          const txPagamento = paymentByCardIdPeriodo.get(`${compra.cardId}|${ym}`);
+          const usingTx = hasAnyPaymentByCardId.has(compra.cardId);
+
+          const pago =
+            usingTx ? Boolean(txPagamento) : n <= parcelasPagasFinal;
+
+          const item: any = {
+            id: itemId,
+            purchaseId: compra.id,
+            cardId: compra.cardId,
+            descricao: compra.descricao,
+            valor: valorParcela,
+            parcela: n,
+            parcelasTotais: parcelas,
+            startMonth: first,
+            dataCompra: compra.dataCompra,
+            valorTotal: compra.valorTotal,
+            valorParcela: valorParcela,
+            pago,
+            pagamentoTransacaoId: txPagamento?.id ?? null,
+            pagamentoData: txPagamento?.data ?? null,
+            pagamentoHora: txPagamento?.hora ?? null,
+            updatedAt: Timestamp.fromDate(new Date()),
+          };
+
+          await setDoc(
+            doc(
+              db,
+              'users',
+              userId,
+              'creditCards',
+              compra.cardId,
+              'faturas',
+              ym,
+              'itens',
+              itemId
+            ),
+            item,
+            { merge: true }
+          );
+
+          m += 1;
+          if (m > 12) {
+            m = 1;
+            y += 1;
           }
         }
       } catch {}
