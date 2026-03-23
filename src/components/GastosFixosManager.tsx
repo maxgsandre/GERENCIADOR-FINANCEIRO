@@ -14,6 +14,19 @@ import { FinanceiroContext, GastoFixo, Divida, Pagamento, Transacao } from '../A
 import CategoriasManager from './CategoriasManager';
 import { useAuth } from '../contexts/AuthContext';
 
+/** Mesmo id pode existir em vários meses (replicação). Usar id + período em atualizações otimistas. */
+function periodoGasto(g: GastoFixo, fallbackMes: string) {
+  return ((g as any)?.periodo as string | undefined) || fallbackMes;
+}
+function isMesmoGastoFixoMes(
+  g: GastoFixo,
+  gastoId: string,
+  periodoAlvo: string,
+  fallbackMes: string
+) {
+  return g.id === gastoId && periodoGasto(g, fallbackMes) === periodoAlvo;
+}
+
 export default function GastosFixosManager() {
   const context = useContext(FinanceiroContext);
   const { currentUser } = useAuth();
@@ -121,8 +134,7 @@ export default function GastosFixosManager() {
 
     for (const gasto of gastosAutomaticos) {
       try {
-        await deleteGastoFixo(gasto.id);
-        setGastosFixos((prev: GastoFixo[]) => prev.filter(g => g.id !== gasto.id));
+        await deleteGastoFixo(gasto.id, (gasto as any).periodo);
       } catch (error) {
         console.error(`Erro ao remover gasto ${gasto.id}:`, error);
       }
@@ -195,8 +207,11 @@ export default function GastosFixosManager() {
       };
       
       await saveGastoFixo(gastoMigrado);
-      setGastosFixos((prev: GastoFixo[]) => 
-        prev.map(g => g.id === gasto.id ? gastoMigrado : g)
+      const periodoAlvo = (gasto as any).periodo || selectedMonth;
+      setGastosFixos((prev: GastoFixo[]) =>
+        prev.map((g) =>
+          isMesmoGastoFixoMes(g, gasto.id, periodoAlvo, selectedMonth) ? gastoMigrado : g
+        )
       );
     }
   };
@@ -417,8 +432,11 @@ export default function GastosFixosManager() {
     };
 
       await saveGastoFixo(novoGasto);
-      setGastosFixos(prev => {
-        const index = prev.findIndex(g => g.id === novoGasto.id);
+      const periodoNovo = (novoGasto as any).periodo || selectedMonth;
+      setGastosFixos((prev) => {
+        const index = prev.findIndex((g) =>
+          isMesmoGastoFixoMes(g, novoGasto.id, periodoNovo, selectedMonth)
+        );
         if (index >= 0) {
           const clone = [...prev];
           clone[index] = novoGasto;
@@ -585,7 +603,12 @@ export default function GastosFixosManager() {
 
       const gastoAtualizado = { ...gasto, valorPago: 0, pago: false, periodo: (gasto as any)?.periodo || selectedMonth } as any;
       await saveGastoFixo(gastoAtualizado);
-      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoId ? gastoAtualizado : g));
+      const periodoAlvo = (gasto as any)?.periodo || selectedMonth;
+      setGastosFixos((prev: GastoFixo[]) =>
+        prev.map((g) =>
+          isMesmoGastoFixoMes(g, gastoId, periodoAlvo, selectedMonth) ? gastoAtualizado : g
+        )
+      );
     } catch (_error) {
       console.error('Erro ao reverter pagamento');
     }
@@ -613,8 +636,11 @@ export default function GastosFixosManager() {
     await saveGastoFixo(gastoAtualizado);
     
     // Atualizar estado global (seguindo o padrão do projeto)
+    const periodoAlvo = (editingGasto as any)?.periodo || selectedMonth;
     setGastosFixos((prev: GastoFixo[]) =>
-      prev.map(g => g.id === editingGasto.id ? gastoAtualizado : g)
+      prev.map((g) =>
+        isMesmoGastoFixoMes(g, editingGasto.id, periodoAlvo, selectedMonth) ? gastoAtualizado : g
+      )
     );
     
     // Atualizar o estado local do modal
@@ -731,7 +757,14 @@ export default function GastosFixosManager() {
       }
       
       await saveGastoFixo(gastoAtualizado);
-      setGastosFixos((prev: GastoFixo[]) => prev.map(g => g.id === gastoSelecionado.id ? gastoAtualizado : g));
+      const periodoAlvo = (gastoSelecionado as any)?.periodo || selectedMonth;
+      setGastosFixos((prev: GastoFixo[]) =>
+        prev.map((g) =>
+          isMesmoGastoFixoMes(g, gastoSelecionado.id, periodoAlvo, selectedMonth)
+            ? gastoAtualizado
+            : g
+        )
+      );
       
       // Atualizar saldo do caixa e criar transação automaticamente
       const caixaAtual = caixas?.find(c => c.id === caixaPagamento);
@@ -830,7 +863,9 @@ export default function GastosFixosManager() {
       }
     }
     
-    const gasto = gastosFixos.find(g => g.id === id);
+    const gasto = gastosFixos.find((g) =>
+      g.id === id && (g.id.startsWith('cartao:') || g.id.startsWith('divida:') || periodoGasto(g, selectedMonth) === selectedMonth)
+    );
     if (!gasto) return;
     const isLinkedDivida = gasto.id.startsWith('divida:');
     const isLinkedCartao = gasto.id.startsWith('cartao:');
@@ -853,7 +888,10 @@ export default function GastosFixosManager() {
     }
     
     const atualizado = { ...gasto, pago: !gasto.pago, periodo: (gasto as any)?.periodo || selectedMonth } as any;
-    setGastosFixos(prev => prev.map(g => g.id === id ? atualizado : g));
+    const periodoAlvo = (gasto as any)?.periodo || selectedMonth;
+    setGastosFixos((prev) =>
+      prev.map((g) => (isMesmoGastoFixoMes(g, id, periodoAlvo, selectedMonth) ? atualizado : g))
+    );
     await saveGastoFixo(atualizado);
   };
 
