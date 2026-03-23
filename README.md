@@ -221,6 +221,12 @@ graph TD
    VITE_FIREBASE_APP_ID=seu_app_id
    ```
 
+### 🔒 **Segurança (repositório público)**
+
+- **Não commite** `.env.local` nem pastas de build (`build/`): o bundle inclui as variáveis `VITE_*` e expõe a API key no GitHub.
+- Use apenas **`.env.example`** (sem valores reais) no repositório; credenciais ficam em `.env.local` (ignorado pelo Git) ou nas variáveis do **Vercel/Netlify**.
+- No **Google Cloud Console**, restrinja a API key (HTTP referrers, APIs usadas) e **rotacione** a chave se ela já tiver sido publicada.
+
 ### 🚀 **Deploy**
 
 **Vercel (Recomendado)**
