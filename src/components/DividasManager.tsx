@@ -578,6 +578,8 @@ export default function DividasManager() {
   const handlePagamentoCartao = (cartao: CartaoCredito) => {
     const itensMes = (invoiceItemsByCard[cartao.id] || []);
     const totalMes = itensMes.filter((i) => !i.pago).reduce((s, i) => s + (i.valor || 0), 0);
+    setDataPagamento(new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
+    setHoraPagamento(new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }));
     // Criar uma dívida temporária para o cartão
     const dividaTemporaria: Divida = {
       id: `card:${cartao.id}`,
@@ -703,7 +705,9 @@ export default function DividasManager() {
         return; 
       }
 
-      if (dividaSelecionada) {
+      // Pagamento de fatura de cartão (id temporário card:...) não existe em `dividas` do Firestore.
+      // Não pode cair no fluxo de saveDivida — o tratamento é o bloco específico mais abaixo.
+      if (dividaSelecionada && !dividaSelecionada.id.startsWith('card:')) {
         // Atualizar dívida
         const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
         if (!dividaAtual) {
@@ -1106,45 +1110,51 @@ export default function DividasManager() {
       // Verificar se é pagamento de cartão (dívida temporária)
       if (dividaSelecionada.id.startsWith('card:')) {
         const cardId = dividaSelecionada.id.replace('card:', '');
-        
-        // Criar transação para pagamento da fatura
-        try {
-          await (saveTransacao && saveTransacao({
-            id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
-            caixaId: caixaPagamento,
-            tipo: 'saida',
-            valor: valorPagamento,
-            descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
-            categoria: 'Cartão de Crédito',
-            data: dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-            hora: horaPagamento || new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
-          }));
+        const itensMes = (invoiceItemsByCard[cardId] || []).filter((i) => !i.pago);
 
-          // Debitar o caixa
+        if (!itensMes.length) {
+          alert('Não há parcelas pendentes neste mês para este cartão.');
+          return;
+        }
+
+        const dataTransacao =
+          dataPagamento ||
+          new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+        const horaTransacao =
+          horaPagamento ||
+          new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
+        const transacaoId =
+          (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+            ? (crypto as any).randomUUID()
+            : Date.now().toString();
+
+        try {
+          await (saveTransacao &&
+            saveTransacao({
+              id: transacaoId,
+              caixaId: caixaPagamento,
+              tipo: 'saida',
+              valor: valorPagamento,
+              descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
+              categoria: 'Cartão de Crédito',
+              data: dataTransacao,
+              hora: horaTransacao,
+            }));
+
+          if (currentUser?.uid) {
+            await markCreditCardInvoiceItemsPaid(
+              currentUser.uid,
+              cardId,
+              selectedMonth,
+              itensMes.map((i) => i.id),
+              { transacaoId, data: dataTransacao, hora: horaTransacao }
+            );
+          }
+
           const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
           if (cx) {
             await (saveCaixa && (saveCaixa as any)({ ...cx, saldo: cx.saldo - valorPagamento }));
-          }
-
-          // Atualizar parcelas pagas das compras do cartão para o mês atual
-          const comprasDoCartao = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
-          
-          for (const compra of comprasDoCartao) {
-            const [sy, sm] = compra.startMonth.split('-').map(Number);
-            const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-            
-            // Se a compra tem parcela neste mês, avançar +1 parcela
-            if (idx >= 0 && idx < compra.parcelas) {
-              const parcelasAtuais = compra.parcelasPagas || 0;
-              const novasParcelasPagas = parcelasAtuais + 1;
-              
-              const compraAtualizada = { ...compra, parcelasPagas: novasParcelasPagas };
-              
-              await saveCompraCartao(compraAtualizada);
-              setComprasCartao((prev: CompraCartao[]) => 
-                prev.map(p => p.id === compraAtualizada.id ? compraAtualizada : p)
-              );
-            }
           }
         } catch (_error) {
           console.error('Erro ao processar pagamento do cartão');
@@ -1742,144 +1752,6 @@ export default function DividasManager() {
 
   return (
     <div className="space-y-6">
-      {/* Modal de pagamento */}
-      <Dialog open={isPagamentoOpen} onOpenChange={setIsPagamentoOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{modoPagamento === 'pay' ? 'Pagar dívida' : 'Estornar dívida'}</DialogTitle>
-            <DialogDescription>
-              {dividaSelecionada?.descricao || compraSelecionada?.descricao}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="valorPagamento">Valor do pagamento</Label>
-              <Input
-                id="valorPagamento"
-                type="text"
-                value={valorPagamentoInput}
-                onChange={(e) => setValorPagamentoInput(e.target.value)}
-                placeholder="0,00"
-              />
-              <p className="text-sm text-muted-foreground">
-                Sugestão (valor da parcela do mês): R$ {(() => {
-                  if (dividaSelecionada) {
-                    const valor = getMonthlyDue(dividaSelecionada);
-                    return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-                  }
-                  if (compraSelecionada) {
-                    const [sy, sm] = compraSelecionada.startMonth.split('-').map(Number);
-                    const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(sy, sm);
-                    const valor = purchaseInstallmentValue(compraSelecionada, Math.max(0, Math.min((compraSelecionada.parcelas || 1) - 1, idx)));
-                    return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-                  }
-                  return '0,00';
-                })()}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="caixaPagamento">Caixa para débito</Label>
-              <Select value={caixaPagamento || ''} onValueChange={setCaixaPagamento}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o caixa" />
-                </SelectTrigger>
-                <SelectContent>
-                  {caixas?.map((caixa: any) => {
-                    // Saldo real do mês selecionado (igual ao usado em Transações/Dashboard)
-                    const ym = selectedMonth;
-                    const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
-                    const parseYM = (s: string) => { const [yy, mm] = s.split('-').map(Number); return { y: yy, m: mm }; };
-                    const nextYM = (y: number, m: number) => ({ y: m === 12 ? y + 1 : y, m: m === 12 ? 1 : m + 1 });
-                    const { y: ys, m: ms } = parseYM(ym);
-                    const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
-                      return (transacoes as any[])
-                        .filter((t: any) => t.caixaId === caixaId)
-                        .filter((t: any) => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
-                        .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
-                    };
-                    const init = (caixa as any).initialByMonth as Record<string, number> | undefined;
-                    let initial = 0;
-                    if (init && Object.prototype.hasOwnProperty.call(init, ym)) initial = (init as any)[ym] ?? 0; else if (init) {
-                      let bestKey: string | null = null;
-                      Object.keys(init).forEach(k => { const { y, m } = parseYM(k); if (ymToIndex(y, m) <= ymToIndex(ys, ms)) { if (bestKey === null) bestKey = k; else { const { y: by, m: bm } = parseYM(bestKey); if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k; } } });
-                      if (bestKey) {
-                        initial = (init as any)[bestKey] ?? 0;
-                        let cy = parseYM(bestKey).y, cm = parseYM(bestKey).m;
-                        while (!(cy === ys && cm === ms)) { initial += monthlyTotalFor(caixa.id, cy, cm); const n = nextYM(cy, cm); cy = n.y; cm = n.m; }
-                      }
-                    }
-                    const saldoMes = initial + monthlyTotalFor(caixa.id, ys, ms);
-                    return (
-                      <SelectItem key={caixa.id} value={caixa.id}>
-                        {caixa.nome} - R$ {saldoMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {caixaPagamento && (() => {
-                const caixa = caixas?.find((c: any) => c.id === caixaPagamento);
-                // Recalcular saldo real do mês para validação
-                const ym = selectedMonth; const [ys, ms] = ym.split('-').map(Number);
-                const monthlyTotalFor = (caixaId: string, y: number, m: number) => (transacoes as any[])
-                  .filter((t: any) => t.caixaId === caixaId)
-                  .filter((t: any) => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
-                  .reduce((s: number, t: any) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
-                let initial = 0; const init = (caixa as any)?.initialByMonth;
-                if (init && Object.prototype.hasOwnProperty.call(init, ym)) initial = init[ym] ?? 0;
-                const saldoMes = caixa ? (initial + monthlyTotalFor(caixa.id, ys, ms)) : 0;
-                const valorPago = parseFloat(valorPagamentoInput.replace(',', '.')) || 0;
-                return caixa && valorPago > saldoMes ? (
-                  <p className="text-sm text-red-600">Saldo insuficiente no caixa selecionado</p>
-                ) : null;
-              })()}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPagamentoOpen(false)} disabled={isSaving || isSavingRef.current}>Cancelar</Button>
-            {modoPagamento === 'pay' ? (
-              <Button 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (isSavingRef.current || isSaving) return;
-                  if (!isSavingRef.current && !isSaving) {
-                    confirmarPagamento(e);
-                  }
-                }} 
-                disabled={!caixaPagamento || isSaving || isSavingRef.current}
-              >
-                {(isSaving || isSavingRef.current) ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Carregando...
-                  </>
-                ) : 'Confirmar pagamento'}
-              </Button>
-            ) : (
-              <Button 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (isSavingRef.current || isSaving) return;
-                  if (!isSavingRef.current && !isSaving) {
-                    confirmarEstorno(e);
-                  }
-                }} 
-                disabled={!caixaPagamento || isSaving || isSavingRef.current}
-              >
-                {(isSaving || isSavingRef.current) ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Carregando...
-                  </>
-                ) : 'Confirmar estorno'}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={isDialogOpen} onOpenChange={(o) => { setIsDialogOpen(o); if (!o) { try { setTimeout(() => window.scrollTo(0, scrollBeforeDialogRef.current || 0), 60); } catch {} } }}>
           <DialogTrigger asChild>
             <Button onClick={resetForm} className="hidden">
