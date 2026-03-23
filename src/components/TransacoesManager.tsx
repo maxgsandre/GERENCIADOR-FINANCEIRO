@@ -228,10 +228,32 @@ export default function TransacoesManager() {
 
   // Função para reversão instantânea de dívidas
   const reverterDividaInstantaneamente = async (transacao: Transacao) => {
-    const nomeDivida = transacao.descricao.replace('Pagamento dívida: ', '').replace('Pagamento cartão: ', '');
+    const nomeDivida = transacao.descricao.replace('Pagamento dívida: ', '').replace('Pagamento cartão: ', '').trim();
     
-    // Procurar dívida normal correspondente
-    const dividaEncontrada = dividas.find(d => d.descricao === nomeDivida);
+    const periodoTransacao =
+      (transacao as any).periodo ||
+      (transacao.data
+        ? `${new Date(transacao.data + 'T00:00:00').getFullYear()}-${String(new Date(transacao.data + 'T00:00:00').getMonth() + 1).padStart(2, '0')}`
+        : undefined);
+
+    const mesmaDescricao = (d: any) => (d.descricao || '').trim() === nomeDivida;
+    const candidatas = (dividas || []).filter(mesmaDescricao);
+
+    // Parcelada: várias linhas com o mesmo nome (uma por mês). Precisamos da parcela do MÊS DA TRANSAÇÃO.
+    // find() só pela descrição pegava a primeira (ex.: março) e saveDivida apagava fev/jan/…
+    let dividaEncontrada: any = undefined;
+    if (candidatas.length > 0) {
+      if (periodoTransacao) {
+        dividaEncontrada = candidatas.find((d) => (d as any).periodo === periodoTransacao);
+      }
+      if (!dividaEncontrada && candidatas.length === 1) {
+        dividaEncontrada = candidatas[0];
+      }
+      if (!dividaEncontrada) {
+        dividaEncontrada = candidatas[0];
+      }
+    }
+
     if (dividaEncontrada) {
       
       const novoValorPago = Math.max(0, (dividaEncontrada.valorPago || 0) - transacao.valor);
@@ -242,14 +264,27 @@ export default function TransacoesManager() {
           novasParcelasPagas = 0;
         }
       } else {
-        novasParcelasPagas = Math.floor(novoValorPago / dividaEncontrada.valorParcela);
+        const vp = dividaEncontrada.valorParcela || 1;
+        if (transacao.valor >= vp - 0.01) {
+          novasParcelasPagas = Math.max(0, novasParcelasPagas - 1);
+        } else {
+          novasParcelasPagas = Math.floor(novoValorPago / vp);
+        }
       }
 
-      const dividaAtualizada = {
+      const parceladaVarias =
+        dividaEncontrada.tipo === 'parcelada' &&
+        (dividaEncontrada.parcelas || 0) > 1 &&
+        !!(dividaEncontrada as any).periodo;
+
+      const dividaAtualizada: any = {
         ...dividaEncontrada,
         valorPago: novoValorPago,
         parcelasPagas: Math.min(novasParcelasPagas, dividaEncontrada.parcelas),
       };
+      if (parceladaVarias) {
+        dividaAtualizada.atualizarSomenteEsteMes = true;
+      }
       
       await saveDivida(dividaAtualizada);
       setDividas(prev => prev.map(d => d.id === dividaAtualizada.id ? dividaAtualizada : d));

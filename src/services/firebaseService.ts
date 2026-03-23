@@ -451,6 +451,27 @@ const migrateDividaToSubcollection = async (userId: string, divida: Divida) => {
 export const saveDivida = async (userId: string, divida: Divida) => {
   const dataVenc = new Date(divida.dataVencimento + 'T00:00:00');
   if (isNaN(dataVenc.getTime())) throw new Error('Data de vencimento inválida');
+
+  // Atualizar só UMA parcela (ex.: reverter pagamento ao excluir transação).
+  // Sem isso, o fluxo parcelado apaga todas as parcelas e recria a partir da competência
+  // do objeto passado — se vier a parcela do mês errado, some fevereiro e meses anteriores.
+  if (
+    (divida as any).atualizarSomenteEsteMes === true &&
+    divida.tipo === 'parcelada' &&
+    (divida as any).parcelas &&
+    (divida as any).parcelas > 1 &&
+    (divida as any).periodo
+  ) {
+    const periodo = (divida as any).periodo as string;
+    const payload: any = { ...divida };
+    delete payload.atualizarSomenteEsteMes;
+    delete payload.id;
+    Object.keys(payload).forEach((k) => {
+      if (payload[k] === undefined) delete payload[k];
+    });
+    await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', divida.id), payload);
+    return;
+  }
   
   // Determinar competência inicial: usar a escolhida pelo usuário ou calcular pela data de vencimento
   let competenciaInicial = (divida as any).competenciaInicial;
@@ -682,9 +703,13 @@ export const subscribeToDividas = (userId: string, callback: (dividas: Divida[])
     callback(all);
   };
   
+  // Janela ampla: empréstimos longos (ex.: 48x) com datas futuras ou PC com ano errado
+  // ficavam fora do intervalo ±12 meses e sumiam da lista mesmo com dados no Firestore.
   const now = new Date();
   const periods: string[] = [];
-  for (let i = -12; i <= 12; i++) {
+  const MESES_ANTES = 36;
+  const MESES_DEPOIS = 36;
+  for (let i = -MESES_ANTES; i <= MESES_DEPOIS; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
     periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   }
@@ -717,7 +742,7 @@ export const subscribeToDividas = (userId: string, callback: (dividas: Divida[])
       porPeriodo.set(p, arr);
       emitir();
     }, (error) => {
-      // Erro silencioso - período pode não existir ainda
+      console.warn('[Firestore] dividas período', p, error?.code || error?.message || error);
     });
     unsubscribers.push(unsub);
   });
