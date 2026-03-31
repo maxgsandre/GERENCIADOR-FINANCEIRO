@@ -162,7 +162,7 @@ export default function DividasManager() {
     
     try {
       // Ajusta parcela automaticamente se for parcelada e não informada
-      let valorParcelaNum = formData.tipo === 'parcelada'
+      const valorParcelaNum = formData.tipo === 'parcelada'
         ? (formData.valorParcela ? parseFloat(formData.valorParcela) : parseFloat(recomputeParcela(formData.valorTotal, formData.parcelas) || '0'))
         : parseFloat(formData.valorTotal);
 

@@ -121,6 +121,49 @@ export default function GastosFixosManager() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  const gastoDialogContentStyle: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+    padding: 0,
+    overflow: 'hidden',
+    maxHeight: isMobile ? 'calc(100dvh - 1rem)' : 'calc(100dvh - 2rem)',
+  };
+
+  const gastoDialogHeaderStyle: React.CSSProperties = {
+    flexShrink: 0,
+    padding: '1.5rem 1.5rem 0',
+  };
+
+  const gastoDialogFormStyle: React.CSSProperties = {
+    display: 'flex',
+    flex: 1,
+    flexDirection: 'column',
+    minHeight: 0,
+  };
+
+  const gastoDialogBodyStyle: React.CSSProperties = {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+    WebkitOverflowScrolling: 'touch',
+    padding: '1rem 1.5rem',
+  };
+
+  const pagamentosHistoryStyle: React.CSSProperties = {
+    maxHeight: isMobile ? '32dvh' : '40dvh',
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+    WebkitOverflowScrolling: 'touch',
+  };
+
+  const gastoDialogFooterStyle: React.CSSProperties = {
+    flexShrink: 0,
+    padding: '1rem 1.5rem',
+    paddingBottom: isMobile ? 'max(1rem, env(safe-area-inset-bottom))' : '1rem',
+  };
   
   
   // Função para limpar gastos fixos criados automaticamente por dívidas
@@ -1334,11 +1377,8 @@ export default function GastosFixosManager() {
               Novo Gasto Fixo
             </Button>
           </DialogTrigger>
-          <DialogContent 
-            className={isMobile ? "max-h-[90vh] overflow-y-auto overscroll-contain" : ""}
-            style={isMobile ? { maxHeight: '90vh', overflowY: 'scroll' } : {}}
-          >
-            <DialogHeader>
+          <DialogContent className="sm:max-w-lg" style={gastoDialogContentStyle}>
+            <DialogHeader style={gastoDialogHeaderStyle}>
               <DialogTitle>
                 {editingGasto ? 'Editar Gasto Fixo' : 'Novo Gasto Fixo'}
               </DialogTitle>
@@ -1349,7 +1389,8 @@ export default function GastosFixosManager() {
               </DialogDescription>
             </DialogHeader>
             
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} style={gastoDialogFormStyle}>
+              <div className="space-y-4" style={gastoDialogBodyStyle}>
               <div className="space-y-2">
                 <Label htmlFor="descricao">Descrição</Label>
                 <Input
@@ -1496,7 +1537,10 @@ export default function GastosFixosManager() {
                   <Separator />
                   <div>
                     <h4 className="font-medium mb-2">Histórico de Pagamentos</h4>
-                    <div className="space-y-2 max-h-32 overflow-y-auto bg-gray-50 dark:bg-gray-800 rounded p-3">
+                    <div
+                      className="space-y-2 rounded bg-gray-50 p-3 pr-2 dark:bg-gray-800"
+                      style={pagamentosHistoryStyle}
+                    >
                       {[...editingGasto.pagamentos].sort((a, b) => {
                         // Ordenar por data (mais antigo primeiro), depois por hora se disponível
                         const dataA = new Date(a.data + 'T00:00:00');
@@ -1549,7 +1593,9 @@ export default function GastosFixosManager() {
                 </div>
               )}
               
-              <DialogFooter>
+              </div>
+
+              <DialogFooter className="border-t bg-background" style={gastoDialogFooterStyle}>
                 <Button type="button" variant="outline" onClick={resetForm} disabled={isSaving}>
                   Cancelar
                 </Button>
