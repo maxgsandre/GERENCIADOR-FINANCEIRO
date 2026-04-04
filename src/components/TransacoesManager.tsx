@@ -94,6 +94,18 @@ export default function TransacoesManager() {
   const [filtroDe, setFiltroDe] = useState('');
   const [filtroAte, setFiltroAte] = useState('');
   const [filtroDescricao, setFiltroDescricao] = useState('');
+  const getDataAtual = () =>
+    new Date()
+      .toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+      .split('/')
+      .reverse()
+      .join('-');
+  const getHoraAtual = () =>
+    new Date().toLocaleTimeString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
 
   // Preencher automaticamente o período do mês atual APENAS quando vazio
   useEffect(() => {
@@ -112,15 +124,25 @@ export default function TransacoesManager() {
   }, [filtroDe, filtroAte]);
   const [novaCategoria, setNovaCategoria] = useState('');
   const [adicionarDivida, setAdicionarDivida] = useState(false);
+  const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
+  const [isTransferSubmitting, setIsTransferSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     caixaId: '',
     tipo: 'entrada' as 'entrada' | 'saida',
     valor: '',
     descricao: '',
     categoria: '',
-    data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-    hora: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+    data: getDataAtual(),
+    hora: getHoraAtual(),
     incluirNoDashboard: true,
+  });
+  const [transferFormData, setTransferFormData] = useState({
+    caixaOrigemId: '',
+    caixaDestinoId: '',
+    valor: '',
+    descricao: '',
+    data: getDataAtual(),
+    hora: getHoraAtual(),
   });
 
   // Quando o tipo for 'saida', marcar automaticamente "Adicionar à lista de dívidas"
@@ -132,13 +154,40 @@ export default function TransacoesManager() {
     }
   }, [formData.tipo]);
 
+  const gerarId = () =>
+    (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
+      ? (crypto as any).randomUUID()
+      : Date.now().toString();
+
+  const getSaldoRealParaData = (caixa: any, data: string) => {
+    const dataTransacao = new Date(data + 'T00:00:00');
+    const anoTransacao = dataTransacao.getFullYear();
+    const mesTransacao = dataTransacao.getMonth() + 1;
+    const ymTransacao = `${anoTransacao}-${String(mesTransacao).padStart(2, '0')}`;
+    const valorInicial = computeInitialForMonth(caixa, ymTransacao);
+    const totalMes = monthlyTotalFor(caixa.id, anoTransacao, mesTransacao);
+    return valorInicial + totalMes;
+  };
+
+  const resetTransferForm = () => {
+    setTransferFormData({
+      caixaOrigemId: '',
+      caixaDestinoId: '',
+      valor: '',
+      descricao: '',
+      data: getDataAtual(),
+      hora: getHoraAtual(),
+    });
+    setIsTransferDialogOpen(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
     if (!formData.caixaId || !formData.valor || !formData.descricao) return;
     setIsSubmitting(true);
     const novaTransacao: Transacao = {
-      id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+      id: gerarId(),
       caixaId: formData.caixaId,
       tipo: formData.tipo,
       valor: parseFloat(formData.valor.replace(',', '.')),
@@ -168,6 +217,7 @@ export default function TransacoesManager() {
         
       if (novoSaldo < 0) {
         alert('Saldo insuficiente no caixa selecionado. A operação foi bloqueada.');
+        setIsSubmitting(false);
         return;
       }
       
@@ -180,7 +230,7 @@ export default function TransacoesManager() {
     // Se marcado para adicionar à lista de dívidas e for uma saída
     if (adicionarDivida && formData.tipo === 'saida') {
       const novaDivida = {
-        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : Date.now().toString(),
+        id: gerarId(),
         descricao: formData.descricao,
         valorTotal: parseFloat(formData.valor.replace(',', '.')),
         valorPago: parseFloat(formData.valor.replace(',', '.')), // Já foi pago via transação
@@ -200,6 +250,84 @@ export default function TransacoesManager() {
     setIsSubmitting(false);
   };
 
+  const handleTransferSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isTransferSubmitting) return;
+    if (!transferFormData.caixaOrigemId || !transferFormData.caixaDestinoId || !transferFormData.valor) return;
+
+    if (transferFormData.caixaOrigemId === transferFormData.caixaDestinoId) {
+      alert('Selecione caixas diferentes para a transferência.');
+      return;
+    }
+
+    const valorTransferencia = parseFloat(transferFormData.valor.replace(',', '.'));
+    if (isNaN(valorTransferencia) || valorTransferencia <= 0) {
+      alert('Informe um valor válido para a transferência.');
+      return;
+    }
+
+    const caixaOrigem = caixas.find((caixa) => caixa.id === transferFormData.caixaOrigemId);
+    const caixaDestino = caixas.find((caixa) => caixa.id === transferFormData.caixaDestinoId);
+
+    if (!caixaOrigem || !caixaDestino) {
+      alert('Selecione o caixa de origem e o de destino.');
+      return;
+    }
+
+    const saldoOrigem = getSaldoRealParaData(caixaOrigem, transferFormData.data);
+    if ((saldoOrigem - valorTransferencia) < 0) {
+      alert('Saldo insuficiente no caixa de origem para concluir a transferência.');
+      return;
+    }
+
+    setIsTransferSubmitting(true);
+
+    try {
+      const saldoDestino = getSaldoRealParaData(caixaDestino, transferFormData.data);
+      const transferenciaId = gerarId();
+      const descricaoBase = transferFormData.descricao.trim() || 'Transferência entre caixas';
+      const categoriaTransferencia = 'Transferência entre caixas';
+
+      const transacaoSaida: Transacao = {
+        id: gerarId(),
+        caixaId: caixaOrigem.id,
+        tipo: 'saida',
+        valor: valorTransferencia,
+        descricao: `${descricaoBase} para ${caixaDestino.nome}`,
+        categoria: categoriaTransferencia,
+        data: transferFormData.data,
+        hora: transferFormData.hora,
+        ignorarDashboard: true,
+        transferenciaId,
+        caixaTransferenciaId: caixaDestino.id,
+        transferenciaDirecao: 'origem',
+      };
+
+      const transacaoEntrada: Transacao = {
+        id: gerarId(),
+        caixaId: caixaDestino.id,
+        tipo: 'entrada',
+        valor: valorTransferencia,
+        descricao: `${descricaoBase} de ${caixaOrigem.nome}`,
+        categoria: categoriaTransferencia,
+        data: transferFormData.data,
+        hora: transferFormData.hora,
+        ignorarDashboard: true,
+        transferenciaId,
+        caixaTransferenciaId: caixaOrigem.id,
+        transferenciaDirecao: 'destino',
+      };
+
+      await saveCaixa({ ...caixaOrigem, saldo: saldoOrigem - valorTransferencia });
+      await saveCaixa({ ...caixaDestino, saldo: saldoDestino + valorTransferencia });
+      await saveTransacao(transacaoSaida);
+      await saveTransacao(transacaoEntrada);
+      resetTransferForm();
+    } finally {
+      setIsTransferSubmitting(false);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       caixaId: '',
@@ -207,8 +335,8 @@ export default function TransacoesManager() {
       valor: '',
       descricao: '',
       categoria: '',
-      data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-      hora: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
+      data: getDataAtual(),
+      hora: getHoraAtual(),
       incluirNoDashboard: true,
     });
     setAdicionarDivida(false);
@@ -224,6 +352,52 @@ export default function TransacoesManager() {
       setNovaCategoria('');
       setIsCategoriaDialogOpen(false);
     }
+  };
+
+  const isTransferencia = (transacao: Transacao) => Boolean(transacao.transferenciaId);
+  const getTransacoesRelacionadasTransferencia = (transacao: Transacao) => {
+    if (!transacao.transferenciaId) return [transacao];
+    const relacionadas = transacoes.filter((item) => item.transferenciaId === transacao.transferenciaId);
+    return relacionadas.length > 0 ? relacionadas : [transacao];
+  };
+
+  const openTransferDialog = () => {
+    setTransferFormData({
+      caixaOrigemId: selectedCaixaId ?? '',
+      caixaDestinoId: '',
+      valor: '',
+      descricao: '',
+      data: getDataAtual(),
+      hora: getHoraAtual(),
+    });
+    setIsTransferDialogOpen(true);
+  };
+
+  const renderTipoBadge = (transacao: Transacao, className = '') => {
+    const badgeClassName = ['flex items-center', className].filter(Boolean).join(' ');
+
+    if (isTransferencia(transacao)) {
+      return (
+        <Badge variant="outline" className={badgeClassName}>
+          <ArrowLeftRight className="h-3 w-3 mr-1" />
+          Transferência
+        </Badge>
+      );
+    }
+
+    return (
+      <Badge
+        variant={transacao.tipo === 'entrada' ? 'default' : 'destructive'}
+        className={badgeClassName}
+      >
+        {transacao.tipo === 'entrada' ? (
+          <ArrowUp className="h-3 w-3 mr-1" />
+        ) : (
+          <ArrowDown className="h-3 w-3 mr-1" />
+        )}
+        {transacao.tipo === 'entrada' ? 'Entrada' : 'Saída'}
+      </Badge>
+    );
   };
 
   // Função para reversão instantânea de dívidas
@@ -320,29 +494,41 @@ export default function TransacoesManager() {
   };
 
   const handleDelete = async (transacao: Transacao) => {
-    if (!confirm('Tem certeza que deseja excluir esta transação?')) {
+    const mensagemConfirmacao = isTransferencia(transacao)
+      ? 'Tem certeza que deseja excluir esta transferência? A saída e a entrada vinculadas serão removidas.'
+      : 'Tem certeza que deseja excluir esta transação?';
+
+    if (!confirm(mensagemConfirmacao)) {
       return;
     }
     
     const isPagamentoDivida = transacao.descricao.includes('Pagamento dívida:') || transacao.descricao.includes('Pagamento cartão:');
-    
-    const caixaAtual = caixas.find(c => c.id === transacao.caixaId);
-    if (caixaAtual) {
-          const novoSaldo = transacao.tipo === 'entrada' 
-        ? caixaAtual.saldo - transacao.valor
-        : caixaAtual.saldo + transacao.valor;
-      await saveCaixa({ ...caixaAtual, saldo: novoSaldo });
-    }
-    
+    const transacoesParaExcluir = getTransacoesRelacionadasTransferencia(transacao);
+
     try {
-      await deleteTransacao(transacao.id);
+      for (const transacaoRelacionada of transacoesParaExcluir) {
+        const caixaAtual = caixas.find((caixa) => caixa.id === transacaoRelacionada.caixaId);
+
+        if (caixaAtual) {
+          const saldoAtualizado =
+            transacaoRelacionada.tipo === 'entrada'
+              ? caixaAtual.saldo - transacaoRelacionada.valor
+              : caixaAtual.saldo + transacaoRelacionada.valor;
+
+          await saveCaixa({ ...caixaAtual, saldo: saldoAtualizado });
+        }
+      }
+
+      await Promise.all(
+        transacoesParaExcluir.map((transacaoRelacionada) => deleteTransacao(transacaoRelacionada.id))
+      );
       
-      if (isPagamentoDivida) {
+      if (!isTransferencia(transacao) && isPagamentoDivida) {
         await reverterDividaInstantaneamente(transacao);
       }
       
       // Se a transação criou uma dívida automaticamente, apagar a dívida também
-      if (transacao.tipo === 'saida') {
+      if (!isTransferencia(transacao) && transacao.tipo === 'saida') {
         const dividaVinculada = dividas.find(d => 
           d.criadaViaTransacao && 
           d.descricao === transacao.descricao && 
@@ -360,6 +546,11 @@ export default function TransacoesManager() {
   };
 
   const openEdit = (transacao: Transacao) => {
+    if (isTransferencia(transacao)) {
+      alert('Transferências entre caixas não podem ser editadas individualmente. Exclua a transferência e crie outra.');
+      return;
+    }
+
     setEditingTransacao(transacao);
     setFormData({
       caixaId: transacao.caixaId,
@@ -438,6 +629,7 @@ export default function TransacoesManager() {
         
       if (saldoAplicado < 0) {
         alert('Saldo insuficiente no caixa selecionado após a edição. A operação foi bloqueada.');
+        setIsSubmitting(false);
         return;
       }
       
@@ -733,6 +925,138 @@ export default function TransacoesManager() {
           </DialogContent>
         </Dialog>
 
+      <Dialog
+        open={isTransferDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setIsTransferDialogOpen(true);
+            return;
+          }
+
+          resetTransferForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nova Transferência</DialogTitle>
+            <DialogDescription>
+              Crie automaticamente uma saída no caixa de origem e uma entrada no caixa de destino.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleTransferSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="caixa-origem">Caixa de Origem</Label>
+                <Select
+                  value={transferFormData.caixaOrigemId}
+                  onValueChange={(value) =>
+                    setTransferFormData((prev) => ({ ...prev, caixaOrigemId: value }))
+                  }
+                >
+                  <SelectTrigger id="caixa-origem">
+                    <SelectValue placeholder="Selecione a caixa de origem" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {caixas.map((caixa) => (
+                      <SelectItem key={caixa.id} value={caixa.id}>
+                        {caixa.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="caixa-destino">Caixa de Destino</Label>
+                <Select
+                  value={transferFormData.caixaDestinoId}
+                  onValueChange={(value) =>
+                    setTransferFormData((prev) => ({ ...prev, caixaDestinoId: value }))
+                  }
+                >
+                  <SelectTrigger id="caixa-destino">
+                    <SelectValue placeholder="Selecione a caixa de destino" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {caixas.map((caixa) => (
+                      <SelectItem key={caixa.id} value={caixa.id}>
+                        {caixa.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="descricao-transferencia">Descrição</Label>
+              <Input
+                id="descricao-transferencia"
+                value={transferFormData.descricao}
+                onChange={(e) =>
+                  setTransferFormData((prev) => ({ ...prev, descricao: e.target.value }))
+                }
+                placeholder="Ex: Reserva do mês, reforço do caixa..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="valor-transferencia">Valor</Label>
+              <Input
+                id="valor-transferencia"
+                type="number"
+                step="0.01"
+                min="0"
+                value={transferFormData.valor}
+                onChange={(e) =>
+                  setTransferFormData((prev) => ({ ...prev, valor: e.target.value }))
+                }
+                placeholder="0.00"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="data-transferencia">Data</Label>
+                <Input
+                  id="data-transferencia"
+                  type="date"
+                  value={transferFormData.data}
+                  onChange={(e) =>
+                    setTransferFormData((prev) => ({ ...prev, data: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hora-transferencia">Hora</Label>
+                <Input
+                  id="hora-transferencia"
+                  type="time"
+                  value={transferFormData.hora}
+                  onChange={(e) =>
+                    setTransferFormData((prev) => ({ ...prev, hora: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={resetTransferForm}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isTransferSubmitting}>
+                {isTransferSubmitting ? 'Transferindo...' : 'Transferir'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Cabeçalho compacto */}
       <div className="flex flex-col gap-3 pb-2 border-b">
         <div className="flex items-center justify-between gap-3">
@@ -746,6 +1070,10 @@ export default function TransacoesManager() {
           
           {/* Controles - Desktop/Tablet */}
           <div className="hidden md:flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={openTransferDialog}>
+              <ArrowLeftRight className="h-4 w-4 mr-2" />
+              Transferência
+            </Button>
             <Button 
               size="sm"
               onClick={() => {
@@ -760,7 +1088,11 @@ export default function TransacoesManager() {
         </div>
         
         {/* Controles - Mobile */}
-        <div className="flex md:hidden items-center gap-2">
+        <div className="flex md:hidden items-center gap-2 flex-wrap">
+          <Button variant="outline" onClick={openTransferDialog}>
+            <ArrowLeftRight className="h-4 w-4 mr-2" />
+            Transferência
+          </Button>
           <Button 
             onClick={() => {
               resetForm();
@@ -937,17 +1269,7 @@ export default function TransacoesManager() {
                   
                   <div className="flex justify-between items-center">
                     <div className="flex items-center space-x-2">
-                      <Badge 
-                        variant={transacao.tipo === 'entrada' ? 'default' : 'destructive'}
-                        className="flex items-center"
-                      >
-                        {transacao.tipo === 'entrada' ? (
-                          <ArrowUp className="h-3 w-3 mr-1" />
-                        ) : (
-                          <ArrowDown className="h-3 w-3 mr-1" />
-                        )}
-                        {transacao.tipo === 'entrada' ? 'Entrada' : 'Saída'}
-                      </Badge>
+                      {renderTipoBadge(transacao)}
                       <span className="text-sm text-muted-foreground">
                         {new Date(transacao.data + 'T00:00:00').toLocaleDateString('pt-BR')} às {transacao.hora}
                       </span>
@@ -996,17 +1318,7 @@ export default function TransacoesManager() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge 
-                          variant={transacao.tipo === 'entrada' ? 'default' : 'destructive'}
-                          className="flex items-center w-fit"
-                        >
-                          {transacao.tipo === 'entrada' ? (
-                            <ArrowUp className="h-3 w-3 mr-1" />
-                          ) : (
-                            <ArrowDown className="h-3 w-3 mr-1" />
-                          )}
-                          {transacao.tipo === 'entrada' ? 'Entrada' : 'Saída'}
-                        </Badge>
+                        {renderTipoBadge(transacao, 'w-fit')}
                       </TableCell>
                       <TableCell>{transacao.descricao}</TableCell>
                       <TableCell>{transacao.categoria}</TableCell>
