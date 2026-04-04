@@ -3,8 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, LabelList } from 'recharts';
 import { FinanceiroContext } from '../App';
-import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, DollarSign, ArrowUpCircle, ArrowDownCircle, Target, LayoutDashboard } from 'lucide-react';
-import { calculateMonthlyTotals, parseYYYYMMDDtoYM, parseYYYYMM } from '../utils/monthlyCalculations';
+import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, ArrowUpCircle, Target, LayoutDashboard } from 'lucide-react';
+import { getMonthlyDue, mapPurchasesAsDividas, parseYYYYMMDDtoYM, parseYYYYMM } from '../utils/monthlyCalculations';
 
 // Função auxiliar para calcular índice de mês
 const ymToIndex = (year: number, month1to12: number) => year * 12 + (month1to12 - 1);
@@ -199,31 +199,6 @@ export default function Dashboard() {
     return false;
   });
 
-  // Incluir compras de cartão como dívidas (usando mesma lógica do DividasManager)
-  const comprasCartaoAsDividas = (comprasCartao as any[]).map((c) => {
-    const card = (cartoes as any[]).find(x => x.id === c.cardId);
-    const dueDay = (card?.diaVencimento ?? c.startDay ?? 5);
-    
-    // Usar apenas os dados da compra (não há mais gastos fixos automáticos)
-    const parcelasPagasAtualizadas = c.parcelasPagas || 0;
-    const valorPagoEstimado = Math.min(c.parcelas, parcelasPagasAtualizadas) * c.valorParcela + (parcelasPagasAtualizadas === c.parcelas ? (Math.round(c.valorTotal * 100) - Math.round(c.valorParcela * 100) * c.parcelas) / 100 : 0);
-    
-    // Ajustar data de vencimento para o mês selecionado
-    const dataVencimentoAjustada = `${anoSelecionado}-${String(mesSelecionado).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
-    
-    return {
-      id: `purchase:${c.id}`,
-      descricao: `Cartão ${(cartoes as any[]).find(x => x.id === c.cardId)?.nome || ''}: ${c.descricao}`,
-      valorTotal: c.valorTotal,
-      valorPago: valorPagoEstimado,
-      parcelas: c.parcelas,
-      parcelasPagas: parcelasPagasAtualizadas,
-      valorParcela: c.valorParcela,
-      dataVencimento: dataVencimentoAjustada,
-      tipo: c.parcelas > 1 ? 'parcelada' : 'total',
-    };
-  });
-
   // Calcular total de gastos fixos do mês selecionado
   const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
 
@@ -246,39 +221,30 @@ export default function Dashboard() {
     return y0 === selY && m0 === selM;
   });
 
-  // Calcular totais mensais usando utilitário compartilhado
-  // Usar apenas as dívidas filtradas do mês selecionado
-  const { monthlyTotal, monthlyPaid, monthlyRemaining, monthlyCount } = calculateMonthlyTotals(
-    dividasFiltradas,
-    comprasCartao,
-    cartoes,
-    selectedMonth,
-    transacoes
-  );
+  const comprasCartaoDoMes = mapPurchasesAsDividas(comprasCartao, cartoes, selectedMonth);
 
-  // Total de gastos do mês = gastos fixos + parcelas de dívidas + parcelas de cartão
-  const totalGastosMes = totalGastosFixosMes + monthlyTotal;
+  const dividasParceladasDoMes = dividasFiltradas.filter((divida) => divida.tipo === 'parcelada');
+  const comprasCartaoParceladasDoMes = comprasCartaoDoMes.filter(
+    (compra) => compra.tipo === 'parcelada' && getMonthlyDue(compra, selectedMonth) > 0
+  );
+  const dividasEsporadicasDoMes = dividasFiltradas.filter((divida) => divida.tipo === 'total');
+
+  const totalDividasParceladasMes =
+    dividasParceladasDoMes.reduce((sum, divida) => sum + getMonthlyDue(divida, selectedMonth), 0) +
+    comprasCartaoParceladasDoMes.reduce((sum, compra) => sum + getMonthlyDue(compra, selectedMonth), 0);
+  const totalParcelasCartaoMes = comprasCartaoParceladasDoMes.reduce(
+    (sum, compra) => sum + getMonthlyDue(compra, selectedMonth),
+    0
+  );
+  const totalDividasEsporadicasMes = dividasEsporadicasDoMes.reduce(
+    (sum, divida) => sum + getMonthlyDue(divida, selectedMonth),
+    0
+  );
+  const totalGastoPrevisto = totalGastosFixosMes + totalDividasParceladasMes;
+  const totalGastosMes = totalGastosFixosMes + totalDividasParceladasMes + totalDividasEsporadicasMes;
 
   // Calcular previsão de déficit/superávit
   const previsaoDeficitSuperavit = totalReceitasPrevistas - totalGastosMes;
-
-  // Calcular dívidas do mês selecionado (incluindo compras de cartão)
-  const dividasDoMes = dividas.filter(divida => {
-    const dataVencimento = new Date(divida.dataVencimento);
-    return dataVencimento.getMonth() === (mesSelecionado - 1) && dataVencimento.getFullYear() === anoSelecionado;
-  });
-
-  // Calcular valor restante total a pagar de todas as dívidas
-  const totalDividasRestante = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
-  
-  // Calcular valor restante das compras de cartão
-  const totalComprasCartaoRestante = comprasCartao.reduce((sum, compra) => {
-    const valorPago = (compra.parcelasPagas || 0) * compra.valorParcela;
-    return sum + (compra.valorTotal - valorPago);
-  }, 0);
-  
-  const totalDividasMes = totalDividasRestante + totalComprasCartaoRestante;
-  const totalParcelasMes = monthlyTotal;
 
 
   // Dados para gráfico de barras - distribuição por caixa
@@ -288,22 +254,6 @@ export default function Dashboard() {
     return { nome: caixa.nome, saldo: inicial + totalMes };
   });
 
-  // Filtrar dívidas esporádicas do mês (criadaViaTransacao: true, não parceladas, não cartão)
-  const dividasEsporadicasDoMes = dividasFiltradas.filter(d => {
-    // Deve ter criadaViaTransacao: true
-    if (!(d as any).criadaViaTransacao) return false;
-    
-    // Excluir dívidas parceladas
-    if (d.tipo === 'parcelada') return false;
-    
-    // Excluir dívidas de cartão (identificadas por id ou categoria)
-    if (d.id.startsWith('card:') || d.id.startsWith('purchase:') || d.categoria === 'Cartão de Crédito') {
-      return false;
-    }
-    
-    return true;
-  });
-
   // Dados para gráfico de pizza - gastos por categoria (apenas do mês filtrado)
   const gastosPorCategoria = gastosFixosDoMes
     .reduce((acc, gasto) => {
@@ -311,10 +261,10 @@ export default function Dashboard() {
       return acc;
     }, {} as Record<string, number>);
 
-  // Adicionar gastos esporádicos (dívidas criadaViaTransacao) por categoria
+  // Adicionar dívidas esporádicas da lista por categoria
   dividasEsporadicasDoMes.forEach(divida => {
     const categoria = divida.categoria || 'Esporádicos';
-    gastosPorCategoria[categoria] = (gastosPorCategoria[categoria] || 0) + divida.valorTotal;
+    gastosPorCategoria[categoria] = (gastosPorCategoria[categoria] || 0) + getMonthlyDue(divida, selectedMonth);
   });
 
   const dadosGastos = Object.entries(gastosPorCategoria).map(([categoria, valor]) => ({
@@ -326,7 +276,7 @@ export default function Dashboard() {
   const gastosEsporadicosPorCategoria = dividasEsporadicasDoMes
     .reduce((acc, divida) => {
       const categoria = divida.categoria || 'Esporádicos';
-      acc[categoria] = (acc[categoria] || 0) + divida.valorTotal;
+      acc[categoria] = (acc[categoria] || 0) + getMonthlyDue(divida, selectedMonth);
       return acc;
     }, {} as Record<string, number>);
 
@@ -433,24 +383,24 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Parcelas Dívidas do Mês</CardTitle>
+            <CardTitle className="text-sm">Dívidas Parceladas do Mês</CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              R$ {totalParcelasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              R$ {totalDividasParceladasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm">Investimentos Totais</CardTitle>
-            <PiggyBank className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm">Dívidas Esporádicas Mês</CardTitle>
+            <TrendingDown className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              R$ {formatBR2.format(totalInvestimentos)}
+            <div className="text-2xl font-bold text-red-600">
+              R$ {totalDividasEsporadicasMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
           </CardContent>
         </Card>
@@ -480,20 +430,30 @@ export default function Dashboard() {
             <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
                 <CreditCard className="h-4 w-4 text-orange-600 flex-shrink-0" />
-                <p className="text-sm text-muted-foreground whitespace-nowrap">Gastos Totais do Mês</p>
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Total de Gastos Previsto</p>
               </div>
               <p className="text-xl font-semibold text-orange-600">
-                R$ {totalGastosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                R$ {totalGastoPrevisto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+
+            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Parcelas de Cartão do Mês</p>
+              </div>
+              <p className="text-xl font-semibold text-red-600">
+                R$ {totalParcelasCartaoMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
             <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
               <div className="flex items-center gap-2">
-                <TrendingDown className="h-4 w-4 text-red-600 flex-shrink-0" />
-                <p className="text-sm text-muted-foreground whitespace-nowrap">Gastos Esporádicos do Mês</p>
+                <CreditCard className="h-4 w-4 text-orange-600 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground whitespace-nowrap">Gastos Totais do Mês</p>
               </div>
-              <p className="text-xl font-semibold text-red-600">
-                R$ {totalGastosEsporadicos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <p className="text-xl font-semibold text-orange-600">
+                R$ {totalGastosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
             
@@ -507,15 +467,6 @@ export default function Dashboard() {
               </p>
             </div>
             
-            <div className="space-y-2" style={{ minWidth: '180px', flex: '1 1 auto' }}>
-              <div className="flex items-center gap-2">
-                <PiggyBank className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                <p className="text-sm text-muted-foreground whitespace-nowrap">Rendimentos</p>
-              </div>
-              <p className="text-xl font-semibold text-blue-600">
-                +R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês
-              </p>
-            </div>
           </div>
           
           {/* Balanço do mês destacado */}
@@ -730,9 +681,6 @@ export default function Dashboard() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium">Cofrinhos</h3>
-              <div className="text-sm text-muted-foreground">
-              Total: R$ {formatBR2.format(Number(totalCofrinhos))}
-            </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
@@ -802,27 +750,49 @@ export default function Dashboard() {
               );
             })}
           </div>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center space-x-2">
-                  <PiggyBank className="h-5 w-5 text-green-600" />
-                  <span className="font-medium">Rendimento Total dos Cofrinhos</span>
-                </div>
-                <div className="text-right">
-                  <div className="text-lg font-bold text-green-600">
-                    +R$ {totalRendimentoAcumulado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    (+R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês)
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Investimentos Totais</CardTitle>
+            <PiggyBank className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">
+              R$ {formatBR2.format(totalInvestimentos)}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Rendimentos mês</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">
+              +R$ {totalRendimentoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm">Rendimento Total dos Cofrinhos</CardTitle>
+            <PiggyBank className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              +R$ {totalRendimentoAcumulado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Acumulado de todos os cofrinhos
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
