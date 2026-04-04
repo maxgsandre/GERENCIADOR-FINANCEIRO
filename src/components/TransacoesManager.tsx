@@ -665,10 +665,25 @@ export default function TransacoesManager() {
   });
 
   // Ordenar por data e hora (mais recentes primeiro)
-  const transacoesOrdenadas = transacoesFiltradas.sort((a, b) => {
+  const transacoesOrdenadas = [...transacoesFiltradas].sort((a, b) => {
     const dataHoraA = new Date(`${a.data}T${a.hora}`);
     const dataHoraB = new Date(`${b.data}T${b.hora}`);
-    return dataHoraB.getTime() - dataHoraA.getTime();
+    const diferencaTempo = dataHoraB.getTime() - dataHoraA.getTime();
+
+    if (diferencaTempo !== 0) {
+      return diferencaTempo;
+    }
+
+    if (a.transferenciaId && a.transferenciaId === b.transferenciaId) {
+      const prioridadeA = a.transferenciaDirecao === 'destino' ? 0 : 1;
+      const prioridadeB = b.transferenciaDirecao === 'destino' ? 0 : 1;
+
+      if (prioridadeA !== prioridadeB) {
+        return prioridadeA - prioridadeB;
+      }
+    }
+
+    return 0;
   });
 
   const totalEntradas = transacoesFiltradas
