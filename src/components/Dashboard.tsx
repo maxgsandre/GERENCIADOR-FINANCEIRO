@@ -26,6 +26,25 @@ export default function Dashboard() {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+  const formatBRCompact = new Intl.NumberFormat('pt-BR', {
+    notation: 'compact',
+    compactDisplay: 'short',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
+  const formatBROne = new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+  const formatCurrencyAxisTick = (value: number) => {
+    const numericValue = Number(value) || 0;
+
+    if (Math.abs(numericValue) < 1000) {
+      return `R$ ${formatBROne.format(numericValue)}`;
+    }
+
+    return `R$ ${formatBRCompact.format(numericValue)}`;
+  };
 
   // Calcular totais
   // Total em Caixas: alinhar com "Total Geral" da página Caixas
@@ -506,7 +525,7 @@ export default function Dashboard() {
               <BarChart data={dadosCaixas}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="nome" />
-                <YAxis />
+                <YAxis width={80} tickFormatter={formatCurrencyAxisTick} />
                 <Tooltip 
                   formatter={(value) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Saldo']}
                 />
@@ -566,8 +585,9 @@ export default function Dashboard() {
                     height={80}
                   />
                   <YAxis 
+                    width={80}
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
+                    tickFormatter={formatCurrencyAxisTick}
                     domain={[0, yAxisMax]}
                   />
                   <Tooltip 
@@ -647,8 +667,9 @@ export default function Dashboard() {
                       height={80}
                     />
                     <YAxis 
+                      width={80}
                       tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
+                      tickFormatter={formatCurrencyAxisTick}
                       domain={[0, yAxisMaxEsporadico]}
                     />
                     <Tooltip 
