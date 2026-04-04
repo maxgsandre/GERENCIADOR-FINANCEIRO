@@ -41,6 +41,9 @@ export interface Transacao {
   hora: string;
   ignorarDashboard?: boolean; // quando true, não entra nos totais de entradas/saídas do Dashboard
   periodo?: string; // YYYY-MM para armazenamento por mês
+  transferenciaId?: string;
+  caixaTransferenciaId?: string;
+  transferenciaDirecao?: 'origem' | 'destino';
 }
 
 export interface GastoFixo {
