@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Progress } from './ui/progress';
-import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign, Wallet, Loader2 } from 'lucide-react';
+import { Trash2, Plus, Edit, Calendar, CheckCircle, Circle, CreditCard, DollarSign, Wallet, Loader2, Archive } from 'lucide-react';
 import { FinanceiroContext, Divida, GastoFixo, CartaoCredito, CompraCartao } from '../App';
 import { calculateMonthlyTotals } from '../utils/monthlyCalculations';
 import { subscribeToCreditCardInvoiceItems, markCreditCardInvoiceItemsPaid, markCreditCardInvoiceItemsRefunded, CreditCardInvoiceItem } from '../services/firebaseService';
@@ -106,6 +106,7 @@ export default function DividasManager() {
   const [editingCard, setEditingCard] = useState<CartaoCredito | null>(null);
   const [editingPurchase, setEditingPurchase] = useState<CompraCartao | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [reativarCard, setReativarCard] = useState(false);
   const [purchaseDesc, setPurchaseDesc] = useState('');
   const [purchaseValorTotal, setPurchaseValorTotal] = useState('');
   const [purchaseParcelas, setPurchaseParcelas] = useState('1');
@@ -348,8 +349,33 @@ export default function DividasManager() {
     setIsSubmittingPurchase(false);
   };
 
+  const handleArquivarCard = async (c: CartaoCredito) => {
+    if (
+      !confirm(
+        `Arquivar "${c.nome}"?\n\n• Deixa de aparecer em "Nova compra".\n• Nos meses a partir de ${selectedMonth.split('-').reverse().join('/')} some da lista se não houver fatura/parcela naquele mês.\n• Meses anteriores continuam mostrando o cartão e o histórico.`
+      )
+    )
+      return;
+    try {
+      const atualizado: CartaoCredito = {
+        ...c,
+        arquivado: true,
+        arquivadoDesdeMes: selectedMonth,
+      };
+      await saveCartao(atualizado);
+      setCartoes((prev: CartaoCredito[]) => prev.map((x) => (x.id === c.id ? atualizado : x)));
+    } catch (_e) {
+      alert('Não foi possível arquivar o cartão.');
+    }
+  };
+
   const handleDeleteCard = async (cardId: string) => {
-    if (!confirm('Excluir este cartão e suas compras?')) return;
+    if (
+      !confirm(
+        'Excluir DEFINITIVAMENTE este cartão e todas as compras? O histórico de faturas será apagado. Para só ocultar cartões novos mantendo o passado, use Arquivar.'
+      )
+    )
+      return;
     try {
       // Estornar transações de todas as compras deste cartão
       const compras = (comprasCartao as CompraCartao[]).filter(p => p.cardId === cardId);
@@ -372,6 +398,7 @@ export default function DividasManager() {
 
   const openEditCard = (card: CartaoCredito) => {
     setEditingCard(card);
+    setReativarCard(false);
     setCardName(card.nome || '');
     setCardLimit(card.limite != null ? String(card.limite) : '');
     setCardDueDay(card.diaVencimento != null ? String(card.diaVencimento) : '15');
@@ -413,7 +440,19 @@ export default function DividasManager() {
     e.preventDefault();
     if (isSubmittingEditCard) return;
     if (!editingCard) return;
-    const atualizado: CartaoCredito = { ...editingCard, nome: cardName.trim() || editingCard.nome, limite: cardLimit ? parseFloat(cardLimit) : undefined, diaVencimento: parseInt(cardDueDay || '15') } as any;
+    const atualizado: CartaoCredito = { ...editingCard, nome: cardName.trim() || editingCard.nome } as CartaoCredito;
+    atualizado.diaVencimento = parseInt(cardDueDay || '15', 10);
+    if (cardLimit !== '' && cardLimit != null) {
+      const l = parseFloat(String(cardLimit).replace(',', '.'));
+      if (!Number.isNaN(l)) (atualizado as any).limite = l;
+      else delete (atualizado as any).limite;
+    } else {
+      delete (atualizado as any).limite;
+    }
+    if (reativarCard) {
+      atualizado.arquivado = false;
+      delete (atualizado as any).arquivadoDesdeMes;
+    }
     try {
       setIsSubmittingEditCard(true);
       await saveCartao(atualizado);
@@ -1289,6 +1328,48 @@ export default function DividasManager() {
     return { y, m };
   };
   const selectedYM = useMemo(() => parseYYYYMM(selectedMonth), [selectedMonth]);
+
+  /** Cartões exibidos no painel: arquivados somem a partir do mês salvo, exceto se ainda há fatura/parcela neste mês; meses anteriores sempre mostram. */
+  const cartoesNaLista = useMemo(() => {
+    const addM = (ym: string, add: number) => {
+      const [y, m] = ym.split('-').map(Number);
+      const idx = y * 12 + (m - 1) + add;
+      const ny = Math.floor(idx / 12);
+      const nm = (idx % 12) + 1;
+      return `${ny}-${String(nm).padStart(2, '0')}`;
+    };
+    const compraAfetaMes = (p: CompraCartao, ym: string) => {
+      const start = p.startMonth?.slice(0, 7);
+      if (!start) return false;
+      const n = Math.max(1, p.parcelas || 1);
+      for (let i = 0; i < n; i++) {
+        if (addM(start, i) === ym) return true;
+      }
+      return false;
+    };
+    return (cartoes as CartaoCredito[]).filter((c) => {
+      if (!c.arquivado) return true;
+      const desde = c.arquivadoDesdeMes;
+      if (!desde) return true;
+      if (selectedMonth < desde) return true;
+      const itens = invoiceItemsByCard[c.id] || [];
+      if (itens.length > 0) return true;
+      return (comprasCartao as CompraCartao[]).some(
+        (p) => p.cardId === c.id && compraAfetaMes(p, selectedMonth)
+      );
+    });
+  }, [cartoes, selectedMonth, invoiceItemsByCard, comprasCartao]);
+
+  const cartoesParaNovaCompra = useMemo(
+    () => (cartoes as CartaoCredito[]).filter((c) => !c.arquivado),
+    [cartoes]
+  );
+
+  useEffect(() => {
+    if (!selectedCardId) return;
+    const c = (cartoes as CartaoCredito[]).find((x) => x.id === selectedCardId);
+    if (c?.arquivado) setSelectedCardId(null);
+  }, [cartoes, selectedCardId]);
 
   // Monitorar exclusão de transações de pagamento de fatura
   // OBS: fluxo antigo atualizava `comprasCartao` (doc único) e precisava reverter.
@@ -2334,7 +2415,7 @@ export default function DividasManager() {
                       <Label>Cartão</Label>
                       <select className="w-full border rounded h-9 px-2 bg-background" value={selectedCardId || ''} onChange={(e) => setSelectedCardId(e.target.value)} required>
                         <option value="" disabled>Selecione</option>
-                        {cartoes.map((c: CartaoCredito) => (
+                        {cartoesParaNovaCompra.map((c: CartaoCredito) => (
                           <option key={c.id} value={c.id}>{c.nome}</option>
                         ))}
                       </select>
@@ -2456,7 +2537,7 @@ export default function DividasManager() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {cartoes.map((c: CartaoCredito) => {
+            {cartoesNaLista.map((c: CartaoCredito) => {
               // Mês selecionado (competência)
               const [cy, cm] = selectedMonth.split('-').map(Number);
 
@@ -2470,9 +2551,12 @@ export default function DividasManager() {
                   <div className="flex flex-col gap-2 md:gap-1">
                     {/* Linha principal: Nome + Fatura + Status */}
                     <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <CreditCard className="h-4 w-4" />
                         <span className="font-medium">{c.nome}</span>
+                        {c.arquivado && (
+                          <span className="text-xs rounded bg-muted px-1.5 py-0.5 text-muted-foreground">Arquivado</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 text-sm whitespace-nowrap">
                         <span>
@@ -2494,7 +2578,16 @@ export default function DividasManager() {
                         <button title="Editar" onClick={() => openEditCard(c)} className="p-2 text-muted-foreground hover:text-foreground">
                           <Edit className="h-4 w-4" />
                         </button>
-                        <button title="Excluir" onClick={() => handleDeleteCard(c.id)} className="p-2 text-red-600 hover:text-red-700">
+                        {!c.arquivado && (
+                          <button
+                            title="Arquivar (mantém histórico nos meses anteriores)"
+                            onClick={() => handleArquivarCard(c)}
+                            className="p-2 text-amber-600 hover:text-amber-700"
+                          >
+                            <Archive className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button title="Excluir definitivamente" onClick={() => handleDeleteCard(c.id)} className="p-2 text-red-600 hover:text-red-700">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -2696,6 +2789,20 @@ export default function DividasManager() {
               <Label>Dia de vencimento</Label>
               <Input type="number" min="1" max="31" value={cardDueDay} onChange={(e) => setCardDueDay(e.target.value)} />
             </div>
+            {editingCard?.arquivado && (
+              <div className="flex items-center space-x-2 rounded-md border p-3 bg-muted/30">
+                <input
+                  type="checkbox"
+                  id="reativarCard"
+                  checked={reativarCard}
+                  onChange={(e) => setReativarCard(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <Label htmlFor="reativarCard" className="text-sm font-normal cursor-pointer">
+                  Reativar cartão (voltar a usar em novas compras e na lista completa)
+                </Label>
+              </div>
+            )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditCardDialogOpen(false)}>Cancelar</Button>
               <Button type="submit">Salvar</Button>

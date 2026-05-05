@@ -1164,7 +1164,14 @@ export const replicateGastosIfNeeded = async (userId: string, targetPeriod: stri
 // =======================
 
 export const saveCreditCard = async (userId: string, card: CartaoCredito) => {
-  await setDoc(doc(db, 'users', userId, 'creditCards', card.id), card);
+  // Firestore rejeita campos com valor `undefined`; ao reativar cartão não pode enviar arquivadoDesdeMes: undefined.
+  const raw: Record<string, unknown> = { ...card };
+  Object.keys(raw).forEach((k) => {
+    const v = raw[k];
+    if (v === undefined) delete raw[k];
+    if (typeof v === 'number' && Number.isNaN(v)) delete raw[k];
+  });
+  await setDoc(doc(db, 'users', userId, 'creditCards', card.id), raw as unknown as CartaoCredito);
 };
 
 export const deleteCreditCard = async (userId: string, cardId: string) => {

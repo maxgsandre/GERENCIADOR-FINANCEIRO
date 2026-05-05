@@ -125,6 +125,10 @@ export interface CartaoCredito {
   observacao?: string;
   limite?: number;
   diaVencimento?: number;
+  /** Se true, não entra em “nova compra” e some da lista no mês atual quando não há fatura/parcela neste mês. */
+  arquivado?: boolean;
+  /** YYYY-MM: a partir deste mês (inclusive) aplica a regra de ocultar quando não há movimento. Meses anteriores continuam mostrando o cartão. */
+  arquivadoDesdeMes?: string;
 }
 
 export interface CompraCartao {
