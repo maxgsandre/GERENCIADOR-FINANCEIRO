@@ -488,7 +488,7 @@ export default function DividasManager() {
 
 
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, periodo?: string) => {
     if (!confirm('Tem certeza que deseja excluir este item?')) return;
     // Caso seja uma compra de cartão mapeada como dívida
     if (id.startsWith('purchase:')) {
@@ -511,11 +511,15 @@ export default function DividasManager() {
       return;
     }
 
-    // Dívida normal
+    // Dívida normal (passar periodo apaga o documento certo; sem isso a busca global podia falhar)
     try {
       // As transações serão revertidas automaticamente pelo useEffect
-      await deleteDivida(id);
-      setDividas(prev => prev.filter(d => d.id !== id));
+      await deleteDivida(id, periodo);
+      setDividas((prev) =>
+        periodo
+          ? prev.filter((d) => !(d.id === id && (d as any).periodo === periodo))
+          : prev.filter((d) => d.id !== id && !d.id?.startsWith(`${id}-`))
+      );
       
     } catch (e) {
       alert('Não foi possível excluir a dívida.');
@@ -2798,7 +2802,7 @@ export default function DividasManager() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(divida.id)}
+                        onClick={() => handleDelete(divida.id, (divida as any).periodo)}
                         className="text-red-600 hover:text-red-700"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -2919,7 +2923,7 @@ export default function DividasManager() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDelete(divida.id)}
+                            onClick={() => handleDelete(divida.id, (divida as any).periodo)}
                             className="text-red-600 hover:text-red-700"
                           >
                             <Trash2 className="h-4 w-4" />
