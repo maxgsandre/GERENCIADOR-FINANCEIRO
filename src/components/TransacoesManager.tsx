@@ -107,7 +107,8 @@ export default function TransacoesManager() {
       minute: '2-digit',
     });
 
-  // Preencher automaticamente o período do mês atual APENAS quando vazio
+  // Preencher automaticamente o período do mês atual APENAS quando vazio (do 1º ao último dia do mês).
+  // Antes ia até "hoje", ocultando lançamentos futuros no mesmo mês (ex.: pagamento no dia do vencimento).
   useEffect(() => {
     if (!filtroDe && !filtroAte) {
       const tz = 'America/Sao_Paulo';
@@ -118,8 +119,12 @@ export default function TransacoesManager() {
         .join('-'); // YYYY-MM-DD
       const [y, m] = todayStr.split('-');
       const firstDay = `${y}-${m}-01`;
+      const yi = Number(y);
+      const mi = Number(m);
+      const lastDayNum = new Date(yi, mi, 0).getDate();
+      const ultimoDia = `${y}-${m}-${String(lastDayNum).padStart(2, '0')}`;
       setFiltroDe(firstDay);
-      setFiltroAte(todayStr);
+      setFiltroAte(ultimoDia);
     }
   }, [filtroDe, filtroAte]);
   const [novaCategoria, setNovaCategoria] = useState('');
