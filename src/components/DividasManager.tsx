@@ -488,8 +488,33 @@ export default function DividasManager() {
 
 
 
-  const handleDelete = async (id: string, periodo?: string) => {
+  /** Remove saídas "Pagamento dívida: …" do mesmo mês da competência — excluir só o doc da dívida não apaga essas transações. */
+  const removerTransacoesPagamentoDividaMes = async (divida: Divida) => {
+    const periodoMes =
+      ((divida as any).periodo as string | undefined) ||
+      (divida.dataVencimento ? divida.dataVencimento.slice(0, 7) : '');
+    if (!periodoMes || periodoMes.length < 7) return;
+    const prefix = `Pagamento dívida: ${(divida.descricao || '').trim()}`;
+    const candidatas = ((transacoes || []) as any[]).filter(
+      (t) =>
+        t.descricao === prefix &&
+        t.tipo === 'saida' &&
+        typeof t.data === 'string' &&
+        t.data.slice(0, 7) === periodoMes.slice(0, 7)
+    );
+    for (const t of candidatas) {
+      const cx = (caixas || []).find((c: any) => c.id === t.caixaId);
+      if (cx) {
+        await saveCaixa({ ...cx, saldo: cx.saldo + t.valor });
+      }
+      await deleteTransacao(t.id);
+    }
+  };
+
+  const handleDelete = async (divida: Divida) => {
     if (!confirm('Tem certeza que deseja excluir este item?')) return;
+    const id = divida.id;
+    const periodo = (divida as any).periodo as string | undefined;
     // Caso seja uma compra de cartão mapeada como dívida
     if (id.startsWith('purchase:')) {
       const purchaseId = id.replace('purchase:', '');
@@ -513,8 +538,8 @@ export default function DividasManager() {
 
     // Dívida normal (passar periodo apaga o documento certo; sem isso a busca global podia falhar)
     try {
-      // As transações serão revertidas automaticamente pelo useEffect
       await deleteDivida(id, periodo);
+      await removerTransacoesPagamentoDividaMes(divida);
       setDividas((prev) =>
         periodo
           ? prev.filter((d) => !(d.id === id && (d as any).periodo === periodo))
@@ -2802,7 +2827,7 @@ export default function DividasManager() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(divida.id, (divida as any).periodo)}
+                        onClick={() => handleDelete(divida)}
                         className="text-red-600 hover:text-red-700"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -2923,7 +2948,7 @@ export default function DividasManager() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDelete(divida.id, (divida as any).periodo)}
+                            onClick={() => handleDelete(divida)}
                             className="text-red-600 hover:text-red-700"
                           >
                             <Trash2 className="h-4 w-4" />
