@@ -673,22 +673,30 @@ export const deleteDivida = async (userId: string, dividaId: string, periodo?: s
     return;
   }
   
-  // Sem período: buscar e deletar em todos os meses possíveis (últimos 24 meses)
+  // Sem período: varrer meses (alinhado ao subscribeToDividas). O código antigo usava getDocs().then()
+  // sem await — await Promise.all(tasks) rodava com tasks vazio e NÃO apagava nada no Firestore.
   const now = new Date();
   const tasks: Promise<void>[] = [];
-  for (let i = -12; i <= 12; i++) {
+  const MESES = 36;
+  for (let i = -MESES; i <= MESES; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    // Deletar a dívida principal e todas as parcelas (prefixo dividaId-)
     const q = query(collection(db, 'users', userId, 'dividas', ym, 'itens'));
-    getDocs(q).then((snap) => {
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() as any;
-        if (data.id === dividaId || data.id?.startsWith(`${dividaId}-`) || data.id === `${dividaId}-1`) {
-          tasks.push(deleteDoc(docSnap.ref).catch(() => undefined));
-        }
-      });
-    }).catch(() => {});
+    const snap = await getDocs(q);
+    snap.forEach((docSnap) => {
+      const data = docSnap.data() as any;
+      const matchDocId =
+        docSnap.id === dividaId ||
+        docSnap.id.startsWith(`${dividaId}-`) ||
+        docSnap.id === `${dividaId}-1`;
+      const matchField =
+        data.id === dividaId ||
+        data.id?.startsWith(`${dividaId}-`) ||
+        data.id === `${dividaId}-1`;
+      if (matchDocId || matchField) {
+        tasks.push(deleteDoc(docSnap.ref).catch(() => undefined));
+      }
+    });
   }
   if (tasks.length) await Promise.all(tasks);
 };
