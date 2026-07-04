@@ -82,7 +82,6 @@ const initializeUserData = async (userId: string) => {
   // Salvar categorias iniciais
   for (const categoria of initialData.categorias) {
     await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
-      reportProgress();
   }
 
   // Salvar receitas previstas iniciais na nova estrutura (subcoleção por período)
@@ -140,7 +139,6 @@ export const saveTransacao = async (userId: string, transacao: Transacao) => {
   const payload: any = { ...transacao, periodo };
   Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
   await setDoc(doc(db, 'users', userId, 'transacoes', periodo, 'itens', transacao.id), payload);
-      reportProgress();
 };
 
 export const deleteTransacao = async (userId: string, transacaoId: string, periodo?: string) => {
@@ -472,7 +470,6 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       if (payload[k] === undefined) delete payload[k];
     });
     await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', divida.id), payload);
-      reportProgress();
     return;
   }
   
@@ -815,7 +812,6 @@ export const subscribeToCofrinhos = (userId: string, callback: (cofrinhos: Cofri
 // Funções para Categorias
 export const saveCategoria = async (userId: string, categoria: Categoria) => {
   await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
-      reportProgress();
 };
 
 export const deleteCategoria = async (userId: string, categoriaId: string) => {

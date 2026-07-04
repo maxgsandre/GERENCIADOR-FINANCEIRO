@@ -916,7 +916,7 @@ export default function DividasManager() {
       // Pagamento de cartão (dívida temporária) - modelo mensal (igual dívidas)
       if (dividaSelecionada && dividaSelecionada.id.startsWith('card:')) {
         const cardId = dividaSelecionada.id.replace('card:', '');
-        const itensMes = (invoiceItemsByCard[cardId] || []).filter((i) => !i.pago);
+        const itensMes = invoiceItemsByCard[cardId] || [];
 
         if (!itensMes.length) {
           // nada a pagar
@@ -947,13 +947,7 @@ export default function DividasManager() {
 
         // Marcar itens do mês como pagos e linkar à transação
         if (currentUser?.uid) {
-          await markCreditCardInvoiceItemsPaid(
-            currentUser.uid,
-            cardId,
-            selectedMonth,
-            itensMes.map((i) => i.id),
-            { transacaoId, data: dataTransacao, hora: horaTransacao }
-          );
+          // markCreditCardInvoiceItemsPaid removido
         }
 
         // Atualizar saldo do caixa
@@ -1194,10 +1188,10 @@ export default function DividasManager() {
       // Verificar se é pagamento de cartão (dívida temporária)
       if (dividaSelecionada.id.startsWith('card:')) {
         const cardId = dividaSelecionada.id.replace('card:', '');
-        const itensMes = (invoiceItemsByCard[cardId] || []).filter((i) => !i.pago);
+        const itensMes = invoiceItemsByCard[cardId] || [];
 
         if (!itensMes.length) {
-          toast.info('Não há parcelas pendentes neste mês para este cartão.');
+          toast.info('Não há parcelas neste mês para este cartão.');
           return;
         }
 
@@ -1222,18 +1216,14 @@ export default function DividasManager() {
               valor: valorPagamento,
               descricao: `Pagamento fatura: ${dividaSelecionada.descricao}`,
               categoria: 'Cartão de Crédito',
+              referenceCardId: dividaSelecionada.id.replace('card:', ''),
+              referencePeriod: selectedMonth,
               data: dataTransacao,
               hora: horaTransacao,
             }));
 
           if (currentUser?.uid) {
-            await markCreditCardInvoiceItemsPaid(
-              currentUser.uid,
-              cardId,
-              selectedMonth,
-              itensMes.map((i) => i.id),
-              { transacaoId, data: dataTransacao, hora: horaTransacao }
-            );
+            // markCreditCardInvoiceItemsPaid removido
           }
 
           const cx = (caixas || []).find((x: any) => x.id === caixaPagamento);
@@ -1392,17 +1382,13 @@ export default function DividasManager() {
   // No modelo mensal (faturas/itens), o estorno deve acontecer marcando os itens do mês como não pagos.
 
   const getMonthlyDue = (d: Divida): number => {
-    if (d.tipo === 'parcelada') {
-      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
-      const idx = ymToIndex(selectedYM.y, selectedYM.m) - ymToIndex(startYM.y, startYM.m);
-      if (idx < 0 || idx >= d.parcelas) return 0;
-      const base = d.valorParcela;
-      const delta = Math.round(d.valorTotal * 100) - Math.round(base * 100) * d.parcelas;
-      const isLast = idx === d.parcelas - 1;
-      const valor = base + (isLast ? delta / 100 : 0);
-      return Math.max(0, valor);
+    if (d.id.startsWith('card:')) {
+      const cardId = d.id.replace('card:', '');
+      const total = cardInvoiceTotalForSelectedMonth(cardId);
+      const paid = cardInvoiceTotalPaidForSelectedMonth(cardId);
+      return Math.max(0, total - paid);
     }
-    return d.valorTotal;
+    return d.valorParcela || 0;
   };
 
   const purchaseInstallmentValue = (compra: CompraCartao, index: number): number => {
@@ -1437,16 +1423,20 @@ export default function DividasManager() {
     return parcelaAtual;
   };
 
-  const getStatusCartao = (cardId: string) => {
+    const getStatusCartao = (cardId: string) => {
     const itens = (invoiceItemsByCard[cardId] || []);
     if (itens.length === 0) {
       return { status: 'Sem parcelas este mês', cor: 'text-muted-foreground' };
     }
     
-    // Pago se TODOS os itens do mês estiverem marcados como pagos (modelo mensal)
-    const pendentes = itens.filter((i) => !i.pago);
-    if (pendentes.length === 0) {
+    const totalFatura = cardInvoiceTotalForSelectedMonth(cardId);
+    const totalPago = cardInvoiceTotalPaidForSelectedMonth(cardId);
+
+    if (totalPago >= totalFatura && totalFatura > 0) {
       return { status: '✓ Pago', cor: 'text-green-600' };
+    } else if (totalPago > 0) {
+      const percentual = Math.round((totalPago / totalFatura) * 100);
+      return { status: `⏳ Pago Parcial (${percentual}%)`, cor: 'text-orange-600' };
     }
     
     return { status: '⏳ Pendente', cor: 'text-red-600' };
@@ -1753,6 +1743,22 @@ export default function DividasManager() {
       }, 0);
   };
 
+  const cardInvoiceTotalPaidForSelectedMonth = (cardId: string): number => {
+    const itensMes = invoiceItemsByCard[cardId] || [];
+    let legacyPaid = 0;
+    const [ymY, ymM] = selectedMonth.split('-').map(Number);
+    if (ymY < 2026 || (ymY === 2026 && ymM < 6)) {
+      legacyPaid = itensMes.filter(i => i.pago).reduce((sum, i) => sum + (i.valor || 0), 0);
+    }
+    const transacoesPagas = (transacoes || []).filter((t: any) => 
+      t.categoria === 'Cartão de Crédito' && 
+      t.referenceCardId === cardId && 
+      t.referencePeriod === selectedMonth
+    );
+    const newPaid = transacoesPagas.reduce((sum, t) => sum + (t.valor || 0), 0);
+    return legacyPaid + newPaid;
+  };
+
 
 
   // Calcular totais das dívidas
@@ -1818,20 +1824,7 @@ export default function DividasManager() {
   }, 0);
   
   // Calcular total pago das compras de cartão baseado em parcelas pagas
-  const totalPagoCartao = (comprasCartao || []).reduce((sum, compra) => {
-    const parcelasPagas = compra.parcelasPagas || 0;
-    const totalParcelas = compra.parcelas || 1;
-    const valorParcela = compra.valorParcela || (compra.valorTotal / totalParcelas);
-    const valorPago = parcelasPagas * valorParcela;
-    
-    // Se todas as parcelas foram pagas, incluir ajuste de centavos
-    if (parcelasPagas >= totalParcelas) {
-      const ajusteCentavos = Math.round(compra.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
-      return sum + (valorPago + ajusteCentavos / 100);
-    }
-    
-    return sum + valorPago;
-  }, 0);
+  const totalPagoCartao = (transacoes || []).filter((t: any) => t.categoria === 'Cartão de Crédito').reduce((sum, t) => sum + (t.valor || 0), 0) + (comprasCartao || []).reduce((sum, c) => sum + ((c.parcelasPagas || 0) * (c.valorParcela || 0)), 0);
   
   // Totais combinados
   const totalDividas = totalDividasNormais + totalFaturasCartao;
@@ -1847,22 +1840,7 @@ export default function DividasManager() {
   }, 0);
   
   // Para compras de cartão: calcular restante individual de cada compra
-  const totalRestanteCartao = (comprasCartao || []).reduce((sum, compra) => {
-    const parcelasPagas = compra.parcelasPagas || 0;
-    const totalParcelas = compra.parcelas || 1;
-    const valorParcela = compra.valorParcela || (compra.valorTotal / totalParcelas);
-    const valorPago = parcelasPagas * valorParcela;
-    
-    // Se todas as parcelas foram pagas, incluir ajuste de centavos
-    let valorPagoTotal = valorPago;
-    if (parcelasPagas >= totalParcelas) {
-      const ajusteCentavos = Math.round(compra.valorTotal * 100) - Math.round(valorParcela * 100) * totalParcelas;
-      valorPagoTotal = valorPago + ajusteCentavos / 100;
-    }
-    
-    const restante = Math.max(0, compra.valorTotal - valorPagoTotal);
-    return sum + restante;
-  }, 0);
+  const totalRestanteCartao = Math.max(0, totalFaturasCartao - totalPagoCartao);
   
   // Total restante = soma de todos os restantes individuais
   const totalRestante = totalRestanteDividas + totalRestanteCartao;
@@ -2580,6 +2558,11 @@ export default function DividasManager() {
                           <span className="font-medium">
                             R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </span>
+                          {cardInvoiceTotalPaidForSelectedMonth(c.id) > 0 && (
+                            <span className="text-muted-foreground ml-1">
+                              (Valor Pago: R$ {cardInvoiceTotalPaidForSelectedMonth(c.id).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                            </span>
+                          )}
                         </span>
                         <span className={`${statusCartao.cor} font-medium`}>{statusCartao.status}</span>
                       </div>
