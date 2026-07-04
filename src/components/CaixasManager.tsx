@@ -1,3 +1,5 @@
+import { useConfirm } from '../contexts/ConfirmContext';
+import { toast } from 'sonner';
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -28,6 +30,7 @@ const tiposLabel = {
 };
 
 export default function CaixasManager() {
+  const confirm = useConfirm();
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
@@ -330,7 +333,7 @@ export default function CaixasManager() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta caixa?')) return;
+    if (!(await confirm('Tem certeza que deseja excluir esta caixa?'))) return;
     await deleteCaixa(id);
     // Atualização otimista da UI
       setCaixas(prev => prev.filter(c => c.id !== id));
@@ -415,7 +418,7 @@ export default function CaixasManager() {
   }, [isCofrinhoDialogOpen, editingCofrinho, selectedMonth]);
 
   const handleDeleteCofrinho = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este cofrinho?')) return;
+    if (!(await confirm('Tem certeza que deseja excluir este cofrinho?'))) return;
     await deleteCofrinho(id);
       setCofrinhos(prev => prev.filter(c => c.id !== id));
   };
@@ -520,7 +523,7 @@ export default function CaixasManager() {
   };
 
   const handleDeleteReceita = async (receita: ReceitaPrevista) => {
-    if (confirm('Tem certeza que deseja excluir esta receita prevista?')) {
+    if (await confirm('Tem certeza que deseja excluir esta receita prevista?')) {
       await deleteReceitaPrevista(receita.id, receita.periodo);
     }
   };
@@ -546,7 +549,7 @@ export default function CaixasManager() {
       setIsReceitaPagamentoOpen(true);
     } else {
       // Não permitir desmarcar diretamente - deve excluir a transação
-      alert('Para desmarcar esta receita, exclua a transação de entrada correspondente na aba Transações.');
+      toast.info('Para desmarcar esta receita, exclua a transação de entrada correspondente na aba Transações.');
     }
   };
 
@@ -556,7 +559,7 @@ export default function CaixasManager() {
     try {
       if (!receitaSelecionada || !caixaReceita) return;
       if (!currentUser?.uid) {
-        alert('Usuário não autenticado. Faça login novamente.');
+        toast.error('Usuário não autenticado. Faça login novamente.');
         return;
       }
 
@@ -641,11 +644,11 @@ export default function CaixasManager() {
   // Função para duplicar receitas de um mês para outro
   const handleDuplicarReceitas = async () => {
     if (!mesOrigemReceita || mesOrigemReceita === selectedMonth) {
-      alert('Selecione um mês de origem diferente do mês atual');
+      toast.info('Selecione um mês de origem diferente do mês atual');
       return;
     }
     
-    if (!confirm(`Deseja duplicar todas as receitas previstas de ${mesOrigemReceita} para ${selectedMonth}? As receitas originais serão mantidas intactas e as novas virão sem marcação de recebidas.`)) {
+    if (!(await confirm(`Deseja duplicar todas as receitas previstas de ${mesOrigemReceita} para ${selectedMonth}? As receitas originais serão mantidas intactas e as novas virão sem marcação de recebidas.`))) {
       return;
     }
     
@@ -669,12 +672,12 @@ export default function CaixasManager() {
       const svc = await import('../services/firebaseService');
       await (svc as any).duplicateReceitasFromPeriod(user.uid, mesOrigemReceita, selectedMonth);
       
-      alert(`Receitas previstas duplicadas com sucesso de ${mesOrigemReceita} para ${selectedMonth}!`);
+      toast.success(`Receitas previstas duplicadas com sucesso de ${mesOrigemReceita} para ${selectedMonth}!`);
       setIsDuplicarReceitaDialogOpen(false);
       setMesOrigemReceita('');
     } catch (error: any) {
       console.error('Erro ao duplicar receitas:', error);
-      alert(`Erro ao duplicar receitas previstas: ${error?.message || 'Erro desconhecido'}`);
+      toast.error(`Erro ao duplicar receitas previstas: ${error?.message || 'Erro desconhecido'}`);
     } finally {
       setIsDuplicandoReceita(false);
     }
@@ -1417,7 +1420,7 @@ export default function CaixasManager() {
                                 size="sm"
                                 type="button"
                                 onClick={async () => {
-                                  if (!confirm('Excluir este aporte?')) return;
+                                  if (!(await confirm('Excluir este aporte?'))) return;
                                   const novoSaldo = editingCofrinho.saldo - aporte.valor;
                                   const novosAportes = [...(editingCofrinho.aportes || [])];
                                   novosAportes.splice(index, 1);
