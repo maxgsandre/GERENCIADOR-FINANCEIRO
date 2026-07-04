@@ -1,3 +1,5 @@
+import { useConfirm } from '../contexts/ConfirmContext';
+import { toast } from 'sonner';
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -28,6 +30,7 @@ function isMesmoGastoFixoMes(
 }
 
 export default function GastosFixosManager() {
+  const confirm = useConfirm();
   const context = useContext(FinanceiroContext);
   const { currentUser } = useAuth();
   if (!context) return null;
@@ -435,19 +438,19 @@ export default function GastosFixosManager() {
     if (isSaving) return;
     
     if (!formData.descricao || !formData.valor || !formData.categoria || !formData.diaVencimento) {
-      alert('Por favor, preencha todos os campos obrigatórios.');
+      toast.error('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
 
     const valorNumerico = parseFloat(formData.valor.replace(',', '.'));
     if (isNaN(valorNumerico) || valorNumerico <= 0) {
-      alert('Por favor, insira um valor válido maior que zero.');
+      toast.info('Por favor, insira um valor válido maior que zero.');
       return;
     }
 
     const diaVencimentoNumerico = parseInt(formData.diaVencimento);
     if (isNaN(diaVencimentoNumerico) || diaVencimentoNumerico < 1 || diaVencimentoNumerico > 31) {
-      alert('Por favor, insira um dia de vencimento válido (1-31).');
+      toast.info('Por favor, insira um dia de vencimento válido (1-31).');
       return;
     }
 
@@ -519,7 +522,7 @@ export default function GastosFixosManager() {
   const handleEdit = (gasto: GastoFixo) => {
     // Verificar se é um gasto vinculado a dívida ou cartão
     if (gasto.id.startsWith('divida:') || gasto.id.startsWith('cartao:')) {
-      alert('Este gasto está vinculado a uma dívida. Para editá-lo, modifique a dívida correspondente na seção "Dívidas".');
+      toast.info('Este gasto está vinculado a uma dívida. Para editá-lo, modifique a dívida correspondente na seção "Dívidas".');
       return;
     }
     
@@ -537,11 +540,11 @@ export default function GastosFixosManager() {
   const handleDelete = async (id: string) => {
     // Verificar se é um gasto vinculado a dívida ou cartão
     if (id.startsWith('divida:') || id.startsWith('cartao:')) {
-      alert('Este gasto está vinculado a uma dívida. Para excluí-lo, remova a dívida correspondente na seção "Dívidas".');
+      toast.info('Este gasto está vinculado a uma dívida. Para excluí-lo, remova a dívida correspondente na seção "Dívidas".');
       return;
     }
     
-    if (!confirm('Tem certeza que deseja excluir este gasto fixo?')) return;
+    if (!(await confirm('Tem certeza que deseja excluir este gasto fixo?'))) return;
     const gasto = (gastosFixos as GastoFixo[]).find(g => g.id === id);
     const periodo = (gasto as any)?.periodo || selectedMonth;
     await deleteGastoFixo(id, periodo);
@@ -660,7 +663,7 @@ export default function GastosFixosManager() {
   const excluirPagamento = async (pagamentoId: string) => {
     if (!editingGasto || !editingGasto.pagamentos) return;
     
-    if (!confirm('Tem certeza que deseja excluir este pagamento?')) return;
+    if (!(await confirm('Tem certeza que deseja excluir este pagamento?'))) return;
     
     // Filtrar o pagamento específico
     const pagamentosAtualizados = editingGasto.pagamentos.filter(p => p.id !== pagamentoId);
@@ -699,14 +702,14 @@ export default function GastosFixosManager() {
       const valorPago = parseFloat(valorPagoInput.replace(',', '.')) || 0;
       
       if (valorPago <= 0) {
-        alert('Valor deve ser maior que zero.');
+        toast.info('Valor deve ser maior que zero.');
         return;
       }
       
       // Verificar saldo do caixa (usar saldo real do mês)
       const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
       if (caixa && saldoRealDoMes(caixa) < valorPago) {
-        alert('Saldo insuficiente no caixa selecionado.');
+        toast.error('Saldo insuficiente no caixa selecionado.');
         return;
       }
     
@@ -814,7 +817,7 @@ export default function GastosFixosManager() {
       if (caixaAtual) {
         const novoSaldo = caixaAtual.saldo - valorPago;
         if (novoSaldo < 0) {
-          alert('Saldo insuficiente no caixa selecionado. A operação foi bloqueada.');
+          toast.error('Saldo insuficiente no caixa selecionado. A operação foi bloqueada.');
           return;
         }
         
@@ -888,7 +891,7 @@ export default function GastosFixosManager() {
         return;
       } else {
         // Desmarcar todas
-        if (!confirm('Desmarcar pagamento e estornar?')) return;
+        if (!(await confirm('Desmarcar pagamento e estornar?'))) return;
         
         const totalValor = parcelasDoCartao.reduce((sum, p) => sum + p.valor, 0);
         const gastoConsolidado = {
@@ -922,7 +925,7 @@ export default function GastosFixosManager() {
       return;
     }
     if (gasto.pago && isLinked) {
-      if (!confirm('Desmarcar pagamento e estornar?')) return;
+      if (!(await confirm('Desmarcar pagamento e estornar?'))) return;
       setGastoSelecionado(gasto);
       setCaixaPagamento(caixas && caixas.length > 0 ? caixas[0].id : null);
       setModoPagamento('refund');
@@ -940,11 +943,11 @@ export default function GastosFixosManager() {
 
   const handleDuplicarGastos = async () => {
     if (!mesOrigem || mesOrigem === selectedMonth) {
-      alert('Selecione um mês de origem diferente do mês atual');
+      toast.info('Selecione um mês de origem diferente do mês atual');
       return;
     }
     
-    if (!confirm(`Deseja duplicar todos os gastos fixos de ${mesOrigem} para ${selectedMonth}? Os gastos originais serão mantidos intactos e os novos virão sem pagamentos.`)) {
+    if (!(await confirm(`Deseja duplicar todos os gastos fixos de ${mesOrigem} para ${selectedMonth}? Os gastos originais serão mantidos intactos e os novos virão sem pagamentos.`))) {
       return;
     }
     
@@ -956,12 +959,12 @@ export default function GastosFixosManager() {
         await (svc as any).duplicateGastosFromPeriod(currentUser.uid, mesOrigem, selectedMonth);
       
       // Atualizar lista local (o subscribe vai atualizar automaticamente, mas força refresh)
-      alert(`Gastos fixos duplicados com sucesso de ${mesOrigem} para ${selectedMonth}!`);
+      toast.success(`Gastos fixos duplicados com sucesso de ${mesOrigem} para ${selectedMonth}!`);
       setIsDuplicarDialogOpen(false);
       setMesOrigem('');
     } catch (error: any) {
       console.error('Erro ao duplicar gastos:', error);
-      alert(`Erro ao duplicar gastos fixos: ${error?.message || 'Erro desconhecido'}`);
+      toast.error(`Erro ao duplicar gastos fixos: ${error?.message || 'Erro desconhecido'}`);
     } finally {
       setIsDuplicando(false);
     }
@@ -1041,7 +1044,7 @@ export default function GastosFixosManager() {
         const caixa = (caixas || []).find((x: any) => x.id === caixaPagamento);
         if (caixa) {
           const novoSaldo = caixa.saldo - valorPagamento;
-          if (novoSaldo < 0) { alert('Saldo insuficiente no caixa selecionado.'); return; }
+          if (novoSaldo < 0) { toast.error('Saldo insuficiente no caixa selecionado.'); return; }
           await (saveCaixa && (saveCaixa as any)({ ...caixa, saldo: novoSaldo }));
         }
         await (saveTransacao && saveTransacao({
