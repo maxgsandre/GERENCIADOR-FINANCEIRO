@@ -1,3 +1,4 @@
+import { useConfirm } from '../contexts/ConfirmContext';
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -21,6 +22,7 @@ function getQuitYM(d: Divida): { y: number; m: number } | null {
 }
 
 export default function DividasManager() {
+  const confirm = useConfirm();
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
@@ -367,7 +369,7 @@ export default function DividasManager() {
       await saveCartao(atualizado);
       setCartoes((prev: CartaoCredito[]) => prev.map((x) => (x.id === c.id ? atualizado : x)));
     } catch (_e) {
-      alert('Não foi possível arquivar o cartão.');
+      toast.error('Não foi possível arquivar o cartão.');
     }
   };
 
@@ -394,7 +396,7 @@ export default function DividasManager() {
       // remover cartão
       await (context as any).deleteCartao(cardId);
     } catch (e) {
-      alert('Não foi possível excluir o cartão.');
+      toast.error('Não foi possível excluir o cartão.');
     }
   };
 
@@ -424,7 +426,7 @@ export default function DividasManager() {
   const handleDeletePurchase = async (
     purchase: CompraCartao | { id: string; cardId?: string; startMonth?: string; parcelas?: number }
   ) => {
-    if (!confirm('Excluir esta compra? Esta ação não pode ser desfeita.')) return;
+    if (!(await confirm('Excluir esta compra? Esta ação não pode ser desfeita.'))) return;
     try {
       await (context as any).deleteCompraCartao(purchase.id, {
         cardId: purchase.cardId,
@@ -433,7 +435,7 @@ export default function DividasManager() {
       });
       setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchase.id));
     } catch (e) {
-      alert('Não foi possível excluir a compra.');
+      toast.error('Não foi possível excluir a compra.');
     }
   };
 
@@ -463,7 +465,7 @@ export default function DividasManager() {
       setEditingCard(null);
       setCardName(''); setCardLimit('');
     } catch (e) {
-      alert('Não foi possível salvar o cartão.');
+      toast.error('Não foi possível salvar o cartão.');
     }
     setIsSubmittingEditCard(false);
   };
@@ -568,7 +570,7 @@ export default function DividasManager() {
         setDividas((prev) => prev.filter((d) => d.debtId !== baseId && d.id !== baseId && !d.id?.startsWith(`${baseId}-`)));
       }
     } catch (e) {
-      alert('Não foi possível excluir a dívida.');
+      toast.error('Não foi possível excluir a dívida.');
     }
   };
 
@@ -577,7 +579,7 @@ export default function DividasManager() {
     
     // Caso seja uma compra de cartão mapeada como dívida
     if (id.startsWith('purchase:')) {
-      if (!confirm('Tem certeza que deseja excluir esta compra do cartão?')) return;
+      if (!(await confirm('Tem certeza que deseja excluir esta compra do cartão?'))) return;
       const purchaseId = id.replace('purchase:', '');
       const compra = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
       if (!compra) return;
@@ -590,7 +592,7 @@ export default function DividasManager() {
         });
         setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
       } catch (e) {
-        alert('Não foi possível excluir a compra do cartão.');
+        toast.error('Não foi possível excluir a compra do cartão.');
       }
       return;
     }
@@ -598,7 +600,7 @@ export default function DividasManager() {
     if (divida.tipo === 'parcelada') {
       setDividaToDelete(divida);
     } else {
-      if (confirm('Tem certeza que deseja excluir este item?')) {
+      if (await confirm('Tem certeza que deseja excluir este item?')) {
         executeDeleteDivida(divida, true);
       }
     }
@@ -697,7 +699,7 @@ export default function DividasManager() {
 
   const handleEstorno = (divida: Divida) => {
     if ((divida.valorPago || 0) === 0) {
-      alert('Não há pagamentos para estornar.');
+      toast.info('Não há pagamentos para estornar.');
       return;
     }
     
@@ -725,7 +727,7 @@ export default function DividasManager() {
 
   const handleEstornoCompra = (compra: CompraCartao) => {
     if (((compra as any).valorPago || 0) === 0) {
-      alert('Não há pagamentos para estornar.');
+      toast.info('Não há pagamentos para estornar.');
       return;
     }
     setCompraSelecionada(compra);
@@ -765,7 +767,7 @@ export default function DividasManager() {
       }
       
       if (!caixaPagamento) { 
-        alert('Selecione um caixa.'); 
+        toast.error('Selecione um caixa.'); 
         isSavingRef.current = false;
         setIsSaving(false);
         return; 
@@ -773,7 +775,7 @@ export default function DividasManager() {
       
       const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
       if (isNaN(valorPagamento) || valorPagamento <= 0) {
-        alert('Valor inválido.');
+        toast.error('Valor inválido.');
         isSavingRef.current = false;
         setIsSaving(false);
         return;
@@ -781,7 +783,7 @@ export default function DividasManager() {
 
       const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
       if (c && c.saldo < valorPagamento) { 
-        alert('Saldo insuficiente no caixa selecionado.'); 
+        toast.error('Saldo insuficiente no caixa selecionado.'); 
         isSavingRef.current = false;
         setIsSaving(false);
         return; 
@@ -969,7 +971,7 @@ export default function DividasManager() {
       setDataPagamento('');
       setHoraPagamento('');
     } catch (error: any) {
-      alert('Erro ao processar pagamento: ' + (error.message || error));
+      toast.error('Erro ao processar pagamento: ' + (error.message || error));
       // Em caso de erro, NÃO fechar o modal para o usuário poder tentar novamente
       // Limpar qualquer transação em criação em caso de erro
       transacoesEmCriacaoRef.current.clear();
@@ -1007,7 +1009,7 @@ export default function DividasManager() {
       }
       
       if (!caixaPagamento) { 
-        alert('Selecione um caixa.'); 
+        toast.error('Selecione um caixa.'); 
         isSavingRef.current = false;
         setIsSaving(false);
         return; 
@@ -1015,7 +1017,7 @@ export default function DividasManager() {
       
       const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
       if (isNaN(valorPagamento) || valorPagamento <= 0) {
-        alert('Valor inválido.');
+        toast.error('Valor inválido.');
         isSavingRef.current = false;
         setIsSaving(false);
         return;
@@ -1165,7 +1167,7 @@ export default function DividasManager() {
       setHoraPagamento('');
       setValorPagamentoInput('');
     } catch (error: any) {
-      alert('Erro ao processar estorno: ' + (error.message || error));
+      toast.error('Erro ao processar estorno: ' + (error.message || error));
       // Em caso de erro, NÃO fechar o modal para o usuário poder tentar novamente
     } finally {
       isSavingRef.current = false;
@@ -1181,12 +1183,12 @@ export default function DividasManager() {
     try {
       if (!dividaSelecionada && !compraSelecionada) return;
       if (!caixaPagamento) { 
-        alert('Selecione um caixa.'); 
+        toast.error('Selecione um caixa.'); 
         return; 
       }
       // Bloqueio de saldo negativo
       const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
-      if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
+      if (c && c.saldo < valorPagamento) { toast.error('Saldo insuficiente no caixa selecionado.'); return; }
 
     if (dividaSelecionada) {
       // Verificar se é pagamento de cartão (dívida temporária)
@@ -1195,7 +1197,7 @@ export default function DividasManager() {
         const itensMes = (invoiceItemsByCard[cardId] || []).filter((i) => !i.pago);
 
         if (!itensMes.length) {
-          alert('Não há parcelas pendentes neste mês para este cartão.');
+          toast.info('Não há parcelas pendentes neste mês para este cartão.');
           return;
         }
 
@@ -1240,7 +1242,7 @@ export default function DividasManager() {
           }
         } catch (_error) {
           console.error('Erro ao processar pagamento do cartão');
-          alert('Erro ao processar pagamento: ' + (_error as any).message);
+          toast.error('Erro ao processar pagamento: ' + (_error as any).message);
           return;
         }
       } else {
