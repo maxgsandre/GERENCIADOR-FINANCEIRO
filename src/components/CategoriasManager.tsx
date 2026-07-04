@@ -1,3 +1,5 @@
+import { useConfirm } from '../contexts/ConfirmContext';
+import { toast } from 'sonner';
 import React, { useContext, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Button } from './ui/button';
@@ -47,7 +49,7 @@ export default function CategoriasManager({ onCategoriaSelect }: CategoriasManag
   };
 
   const handleExcluirCategoria = async (categoria: Categoria) => {
-    if (confirm(`Tem certeza que deseja excluir a categoria "${categoria.nome}"?`)) {
+    if (await confirm(`Tem certeza que deseja excluir a categoria "${categoria.nome}"?`)) {
       await deleteCategoria(categoria.id);
     }
   };
