@@ -82,6 +82,7 @@ const initializeUserData = async (userId: string) => {
   // Salvar categorias iniciais
   for (const categoria of initialData.categorias) {
     await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
+      reportProgress();
   }
 
   // Salvar receitas previstas iniciais na nova estrutura (subcoleção por período)
@@ -139,6 +140,7 @@ export const saveTransacao = async (userId: string, transacao: Transacao) => {
   const payload: any = { ...transacao, periodo };
   Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
   await setDoc(doc(db, 'users', userId, 'transacoes', periodo, 'itens', transacao.id), payload);
+      reportProgress();
 };
 
 export const deleteTransacao = async (userId: string, transacaoId: string, periodo?: string) => {
@@ -470,6 +472,7 @@ export const saveDivida = async (userId: string, divida: Divida) => {
       if (payload[k] === undefined) delete payload[k];
     });
     await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', divida.id), payload);
+      reportProgress();
     return;
   }
   
@@ -812,6 +815,7 @@ export const subscribeToCofrinhos = (userId: string, callback: (cofrinhos: Cofri
 // Funções para Categorias
 export const saveCategoria = async (userId: string, categoria: Categoria) => {
   await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
+      reportProgress();
 };
 
 export const deleteCategoria = async (userId: string, categoriaId: string) => {
@@ -1862,9 +1866,28 @@ export const exportUserData = async (
 export const importUserData = async (
   userId: string,
   backup: BackupData,
-  options?: { substituirExistentes?: boolean }
+  options?: { substituirExistentes?: boolean; onProgress?: (progress: number) => void }
 ): Promise<void> => {
   const substituir = options?.substituirExistentes ?? false;
+  let processed = 0;
+  const total = 
+    (backup.caixas?.length || 0) + 
+    (backup.transacoes?.length || 0) + 
+    (backup.gastosFixos?.length || 0) + 
+    (backup.dividas?.length || 0) + 
+    (backup.cofrinhos?.length || 0) + 
+    (backup.categorias?.length || 0) + 
+    (backup.receitasPrevistas?.length || 0) + 
+    (backup.cartoes?.length || 0) + 
+    (backup.comprasCartao?.length || 0);
+
+  const reportProgress = () => {
+    processed++;
+    if (options?.onProgress && total > 0) {
+      options.onProgress(Math.min(100, Math.round((processed / total) * 100)));
+    }
+  };
+
 
   // Mapa de cartões por id (para casar a descrição das transações com o card correto)
   const cartoesById = new Map<string, CartaoCredito>();
@@ -1907,6 +1930,7 @@ export const importUserData = async (
   // 1. Importar Caixas
   for (const caixa of backup.caixas) {
     await setDoc(doc(db, 'users', userId, 'caixas', caixa.id), caixa);
+    reportProgress();
   }
 
   // 2. Importar Transações
@@ -1956,6 +1980,7 @@ export const importUserData = async (
       delete payload.id;
       Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
       await setDoc(doc(db, 'users', userId, 'gastosFixos', periodo, 'itens', gasto.id), payload);
+      reportProgress();
     }
   }
 
@@ -1982,16 +2007,19 @@ export const importUserData = async (
   // 5. Importar Cofrinhos
   for (const cofrinho of backup.cofrinhos) {
     await setDoc(doc(db, 'users', userId, 'cofrinhos', cofrinho.id), cofrinho);
+    reportProgress();
   }
 
   // 6. Importar Categorias (só se não existirem ou se substituirExistentes)
   for (const categoria of backup.categorias) {
     if (substituir) {
       await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
+      reportProgress();
     } else {
       const catDoc = await getDoc(doc(db, 'users', userId, 'categorias', categoria.id));
       if (!catDoc.exists()) {
         await setDoc(doc(db, 'users', userId, 'categorias', categoria.id), categoria);
+      reportProgress();
       }
     }
   }
@@ -2013,12 +2041,14 @@ export const importUserData = async (
       delete payload.id;
       Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
       await setDoc(doc(db, 'users', userId, 'receitasPrevistas', periodo, 'receitas', receita.id), payload);
+      reportProgress();
     }
   }
 
   // 8. Importar Cartões de Crédito
   for (const cartao of backup.cartoes) {
     await setDoc(doc(db, 'users', userId, 'creditCards', cartao.id), cartao);
+    reportProgress();
   }
 
   // 9. Importar Compras de Cartão
@@ -2028,6 +2058,7 @@ export const importUserData = async (
       delete payload.id;
       Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
       await setDoc(doc(db, 'users', userId, 'creditCards', compra.cardId, 'compras', compra.id), payload);
+      reportProgress();
 
       // Reconstruir faturas no modelo mensal (por competência), usando transações de pagamento
       // Quando existir ao menos 1 pagamento do card no backup, marcamos "pago" apenas

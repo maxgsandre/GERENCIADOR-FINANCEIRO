@@ -1,3 +1,5 @@
+import { useConfirm } from '../../contexts/ConfirmContext';
+import { toast } from 'sonner';
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -200,7 +202,7 @@ export default function Login({ onToggleMode }: LoginProps) {
                           setSendingReset(true);
                           await resetPassword(forgotEmail);
                           setIsForgotOpen(false);
-                          alert('Enviamos um link para ' + forgotEmail);
+                          toast.info('Enviamos um link para ' + forgotEmail);
                         } catch (e: any) {
                           setForgotError('Não foi possível enviar o email.');
                         } finally {

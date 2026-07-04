@@ -1,3 +1,4 @@
+import { useConfirm } from '../contexts/ConfirmContext';
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -21,6 +22,7 @@ function getQuitYM(d: Divida): { y: number; m: number } | null {
 }
 
 export default function DividasManager() {
+  const confirm = useConfirm();
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
@@ -119,6 +121,7 @@ export default function DividasManager() {
   // Estados para dívida em andamento na compra
   const [purchaseEmAndamento, setPurchaseEmAndamento] = useState(false);
   const [purchaseParcelasRestantes, setPurchaseParcelasRestantes] = useState('');
+  const [dividaToDelete, setDividaToDelete] = useState<Divida | null>(null);
   
   const addMonthsYYYYMM = (ym: string, add: number) => {
     const [y, m] = ym.split('-').map(Number);
@@ -217,10 +220,11 @@ export default function DividasManager() {
           categoria: formData.categoria,
         } as any;
 
-        // Usar o mês selecionado no filtro como competência inicial para novas dívidas
+        // Usar a data de vencimento para determinar a competência inicial de novas dívidas
         // Se for edição, manter comportamento atual (sem competenciaInicial)
         if (!editingDivida) {
-          (novaDivida as any).competenciaInicial = selectedMonth;
+          const dtVenc = new Date(formData.dataVencimento + 'T00:00:00');
+          (novaDivida as any).competenciaInicial = `${dtVenc.getFullYear()}-${String(dtVenc.getMonth() + 1).padStart(2, '0')}`;
         }
 
         await saveDivida(novaDivida);
@@ -365,7 +369,7 @@ export default function DividasManager() {
       await saveCartao(atualizado);
       setCartoes((prev: CartaoCredito[]) => prev.map((x) => (x.id === c.id ? atualizado : x)));
     } catch (_e) {
-      alert('Não foi possível arquivar o cartão.');
+      toast.error('Não foi possível arquivar o cartão.');
     }
   };
 
@@ -392,7 +396,7 @@ export default function DividasManager() {
       // remover cartão
       await (context as any).deleteCartao(cardId);
     } catch (e) {
-      alert('Não foi possível excluir o cartão.');
+      toast.error('Não foi possível excluir o cartão.');
     }
   };
 
@@ -422,7 +426,7 @@ export default function DividasManager() {
   const handleDeletePurchase = async (
     purchase: CompraCartao | { id: string; cardId?: string; startMonth?: string; parcelas?: number }
   ) => {
-    if (!confirm('Excluir esta compra? Esta ação não pode ser desfeita.')) return;
+    if (!(await confirm('Excluir esta compra? Esta ação não pode ser desfeita.'))) return;
     try {
       await (context as any).deleteCompraCartao(purchase.id, {
         cardId: purchase.cardId,
@@ -431,7 +435,7 @@ export default function DividasManager() {
       });
       setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchase.id));
     } catch (e) {
-      alert('Não foi possível excluir a compra.');
+      toast.error('Não foi possível excluir a compra.');
     }
   };
 
@@ -461,7 +465,7 @@ export default function DividasManager() {
       setEditingCard(null);
       setCardName(''); setCardLimit('');
     } catch (e) {
-      alert('Não foi possível salvar o cartão.');
+      toast.error('Não foi possível salvar o cartão.');
     }
     setIsSubmittingEditCard(false);
   };
@@ -550,12 +554,32 @@ export default function DividasManager() {
     }
   };
 
-  const handleDelete = async (divida: Divida) => {
-    if (!confirm('Tem certeza que deseja excluir este item?')) return;
+  const executeDeleteDivida = async (divida: Divida, onlyMonth: boolean) => {
     const id = divida.id;
+    const baseId = divida.debtId || (id.includes('-') ? id.substring(0, id.lastIndexOf('-')) : id);
     const periodo = (divida as any).periodo as string | undefined;
+
+    try {
+      if (onlyMonth) {
+        await deleteDivida(id, periodo);
+        await removerTransacoesPagamentoDividaMes(divida);
+        setDividas((prev) => prev.filter((d) => !(d.id === id && (d as any).periodo === periodo)));
+      } else {
+        await deleteDivida(baseId); // apaga todas as parcelas usando o ID base
+        await removerTransacoesPagamentoDividaMes(divida); // remove transação de pgto do mês atual
+        setDividas((prev) => prev.filter((d) => d.debtId !== baseId && d.id !== baseId && !d.id?.startsWith(`${baseId}-`)));
+      }
+    } catch (e) {
+      toast.error('Não foi possível excluir a dívida.');
+    }
+  };
+
+  const handleDelete = async (divida: Divida) => {
+    const id = divida.id;
+    
     // Caso seja uma compra de cartão mapeada como dívida
     if (id.startsWith('purchase:')) {
+      if (!(await confirm('Tem certeza que deseja excluir esta compra do cartão?'))) return;
       const purchaseId = id.replace('purchase:', '');
       const compra = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
       if (!compra) return;
@@ -567,26 +591,18 @@ export default function DividasManager() {
           parcelas: compra.parcelas,
         });
         setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
-        
-        // remover gastos fixos vinculados
       } catch (e) {
-        alert('Não foi possível excluir a compra do cartão.');
+        toast.error('Não foi possível excluir a compra do cartão.');
       }
       return;
     }
 
-    // Dívida normal (passar periodo apaga o documento certo; sem isso a busca global podia falhar)
-    try {
-      await deleteDivida(id, periodo);
-      await removerTransacoesPagamentoDividaMes(divida);
-      setDividas((prev) =>
-        periodo
-          ? prev.filter((d) => !(d.id === id && (d as any).periodo === periodo))
-          : prev.filter((d) => d.id !== id && !d.id?.startsWith(`${id}-`))
-      );
-      
-    } catch (e) {
-      alert('Não foi possível excluir a dívida.');
+    if (divida.tipo === 'parcelada') {
+      setDividaToDelete(divida);
+    } else {
+      if (await confirm('Tem certeza que deseja excluir este item?')) {
+        executeDeleteDivida(divida, true);
+      }
     }
   };
 
@@ -683,7 +699,7 @@ export default function DividasManager() {
 
   const handleEstorno = (divida: Divida) => {
     if ((divida.valorPago || 0) === 0) {
-      alert('Não há pagamentos para estornar.');
+      toast.info('Não há pagamentos para estornar.');
       return;
     }
     
@@ -711,7 +727,7 @@ export default function DividasManager() {
 
   const handleEstornoCompra = (compra: CompraCartao) => {
     if (((compra as any).valorPago || 0) === 0) {
-      alert('Não há pagamentos para estornar.');
+      toast.info('Não há pagamentos para estornar.');
       return;
     }
     setCompraSelecionada(compra);
@@ -751,7 +767,7 @@ export default function DividasManager() {
       }
       
       if (!caixaPagamento) { 
-        alert('Selecione um caixa.'); 
+        toast.error('Selecione um caixa.'); 
         isSavingRef.current = false;
         setIsSaving(false);
         return; 
@@ -759,7 +775,7 @@ export default function DividasManager() {
       
       const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
       if (isNaN(valorPagamento) || valorPagamento <= 0) {
-        alert('Valor inválido.');
+        toast.error('Valor inválido.');
         isSavingRef.current = false;
         setIsSaving(false);
         return;
@@ -767,7 +783,7 @@ export default function DividasManager() {
 
       const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
       if (c && c.saldo < valorPagamento) { 
-        alert('Saldo insuficiente no caixa selecionado.'); 
+        toast.error('Saldo insuficiente no caixa selecionado.'); 
         isSavingRef.current = false;
         setIsSaving(false);
         return; 
@@ -955,7 +971,7 @@ export default function DividasManager() {
       setDataPagamento('');
       setHoraPagamento('');
     } catch (error: any) {
-      alert('Erro ao processar pagamento: ' + (error.message || error));
+      toast.error('Erro ao processar pagamento: ' + (error.message || error));
       // Em caso de erro, NÃO fechar o modal para o usuário poder tentar novamente
       // Limpar qualquer transação em criação em caso de erro
       transacoesEmCriacaoRef.current.clear();
@@ -993,7 +1009,7 @@ export default function DividasManager() {
       }
       
       if (!caixaPagamento) { 
-        alert('Selecione um caixa.'); 
+        toast.error('Selecione um caixa.'); 
         isSavingRef.current = false;
         setIsSaving(false);
         return; 
@@ -1001,7 +1017,7 @@ export default function DividasManager() {
       
       const valorPagamento = parseFloat(valorPagamentoInput.replace(',', '.'));
       if (isNaN(valorPagamento) || valorPagamento <= 0) {
-        alert('Valor inválido.');
+        toast.error('Valor inválido.');
         isSavingRef.current = false;
         setIsSaving(false);
         return;
@@ -1151,7 +1167,7 @@ export default function DividasManager() {
       setHoraPagamento('');
       setValorPagamentoInput('');
     } catch (error: any) {
-      alert('Erro ao processar estorno: ' + (error.message || error));
+      toast.error('Erro ao processar estorno: ' + (error.message || error));
       // Em caso de erro, NÃO fechar o modal para o usuário poder tentar novamente
     } finally {
       isSavingRef.current = false;
@@ -1167,12 +1183,12 @@ export default function DividasManager() {
     try {
       if (!dividaSelecionada && !compraSelecionada) return;
       if (!caixaPagamento) { 
-        alert('Selecione um caixa.'); 
+        toast.error('Selecione um caixa.'); 
         return; 
       }
       // Bloqueio de saldo negativo
       const c = (caixas || []).find((x: any) => x.id === caixaPagamento);
-      if (c && c.saldo < valorPagamento) { alert('Saldo insuficiente no caixa selecionado.'); return; }
+      if (c && c.saldo < valorPagamento) { toast.error('Saldo insuficiente no caixa selecionado.'); return; }
 
     if (dividaSelecionada) {
       // Verificar se é pagamento de cartão (dívida temporária)
@@ -1181,7 +1197,7 @@ export default function DividasManager() {
         const itensMes = (invoiceItemsByCard[cardId] || []).filter((i) => !i.pago);
 
         if (!itensMes.length) {
-          alert('Não há parcelas pendentes neste mês para este cartão.');
+          toast.info('Não há parcelas pendentes neste mês para este cartão.');
           return;
         }
 
@@ -1226,7 +1242,7 @@ export default function DividasManager() {
           }
         } catch (_error) {
           console.error('Erro ao processar pagamento do cartão');
-          alert('Erro ao processar pagamento: ' + (_error as any).message);
+          toast.error('Erro ao processar pagamento: ' + (_error as any).message);
           return;
         }
       } else {
@@ -3084,6 +3100,29 @@ export default function DividasManager() {
           )}
         </CardContent>
       </Card>
+      
+      {/* Modal de confirmação de exclusão */}
+      <Dialog open={!!dividaToDelete} onOpenChange={(open) => !open && setDividaToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir Dívida</DialogTitle>
+            <DialogDescription>
+              Você deseja excluir apenas a parcela deste mês ou a dívida completa (todas as parcelas)?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 mt-4">
+            <Button variant="outline" onClick={() => { if (dividaToDelete) executeDeleteDivida(dividaToDelete, true); setDividaToDelete(null); }}>
+              Apenas deste mês
+            </Button>
+            <Button variant="destructive" onClick={() => { if (dividaToDelete) executeDeleteDivida(dividaToDelete, false); setDividaToDelete(null); }}>
+              Excluir TODA a dívida
+            </Button>
+            <Button variant="ghost" onClick={() => setDividaToDelete(null)}>
+              Cancelar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
