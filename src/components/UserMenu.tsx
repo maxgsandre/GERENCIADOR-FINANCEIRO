@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from './ui/dropdown-menu';
+import { toast } from 'sonner';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { LogOut, User, Moon, Sun, Lock, Pencil, Download, HardDrive, Upload, FileDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,6 +18,7 @@ import * as firebaseService from '../services/firebaseService';
 export default function UserMenu() {
   const { currentUser, logout, changePassword, updateName } = useAuth();
   const { theme, setTheme } = useTheme();
+  const confirm = useConfirm();
   const [isChangeOpen, setIsChangeOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -156,9 +159,9 @@ export default function UserMenu() {
                 setLoading(true);
                 await changePassword(currentPassword, newPassword);
                 setIsChangeOpen(false);
-                alert('Senha alterada com sucesso.');
+                toast.success('Senha alterada com sucesso.');
               } catch (e: any) {
-                setError('Não foi possível alterar a senha.');
+                toast.error('Não foi possível alterar a senha.');
               } finally {
                 setLoading(false);
               }
@@ -187,9 +190,9 @@ export default function UserMenu() {
                 setLoading(true);
                 await updateName(name.trim());
                 setIsEditOpen(false);
-                alert('Perfil atualizado.');
+                toast.success('Perfil atualizado.');
               } catch (e) {
-                alert('Não foi possível atualizar o perfil.');
+                toast.error('Não foi possível atualizar o perfil.');
               } finally {
                 setLoading(false);
               }
@@ -314,7 +317,9 @@ export default function UserMenu() {
                 const blob = new Blob([jsonStr], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                const fileName = `backup-${backupData.exportDate.split('T')[0]}.json`;
+                const now = new Date();
+                const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                const fileName = `backup-${localDate}.json`;
                 a.href = url;
                 a.download = fileName;
                 document.body.appendChild(a);
@@ -325,7 +330,7 @@ export default function UserMenu() {
                 setBackupTipo('todos');
                 setBackupPeriodoInicio('');
                 setBackupPeriodoFim('');
-                alert('Backup exportado com sucesso!');
+                toast.success('Backup exportado com sucesso!');
               } catch (e) {
                 setError('Erro ao exportar backup.');
                 console.error(e);
@@ -360,9 +365,8 @@ export default function UserMenu() {
             }
             
             // Confirmar importação
-            const confirmar = window.confirm(
-              'Esta operação irá restaurar todos os dados do backup. ' +
-              'Dados existentes com mesmos IDs serão substituídos. Deseja continuar?'
+            const confirmar = await confirm(
+              'Esta operação irá restaurar todos os dados do backup. Dados existentes com mesmos IDs serão substituídos. Deseja continuar?'
             );
             
             if (!confirmar) {
@@ -370,11 +374,16 @@ export default function UserMenu() {
               return;
             }
             
+            const toastId = toast.loading('Importando backup... 0%');
+
             await firebaseService.importUserData(currentUser.uid, backupData, {
-              substituirExistentes: true
+              substituirExistentes: true,
+              onProgress: (progress) => {
+                toast.loading(`Importando backup... ${progress}%`, { id: toastId });
+              }
             });
             
-            alert('Backup importado com sucesso! Recarregue a página para ver as alterações.');
+            toast.success('Backup importado com sucesso! Recarregue a página para ver as alterações.', { id: toastId });
             
             // Limpar input
             if (fileInputRef.current) {
@@ -383,7 +392,7 @@ export default function UserMenu() {
           } catch (e: any) {
             setError(e.message || 'Erro ao importar backup.');
             console.error(e);
-            alert('Erro ao importar backup: ' + (e.message || 'Arquivo inválido.'));
+            toast.error('Erro ao importar backup: ' + (e.message || 'Arquivo inválido.'));
           } finally {
             setLoading(false);
           }
