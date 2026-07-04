@@ -119,6 +119,7 @@ export default function DividasManager() {
   // Estados para dívida em andamento na compra
   const [purchaseEmAndamento, setPurchaseEmAndamento] = useState(false);
   const [purchaseParcelasRestantes, setPurchaseParcelasRestantes] = useState('');
+  const [dividaToDelete, setDividaToDelete] = useState<Divida | null>(null);
   
   const addMonthsYYYYMM = (ym: string, add: number) => {
     const [y, m] = ym.split('-').map(Number);
@@ -217,10 +218,11 @@ export default function DividasManager() {
           categoria: formData.categoria,
         } as any;
 
-        // Usar o mês selecionado no filtro como competência inicial para novas dívidas
+        // Usar a data de vencimento para determinar a competência inicial de novas dívidas
         // Se for edição, manter comportamento atual (sem competenciaInicial)
         if (!editingDivida) {
-          (novaDivida as any).competenciaInicial = selectedMonth;
+          const dtVenc = new Date(formData.dataVencimento + 'T00:00:00');
+          (novaDivida as any).competenciaInicial = `${dtVenc.getFullYear()}-${String(dtVenc.getMonth() + 1).padStart(2, '0')}`;
         }
 
         await saveDivida(novaDivida);
@@ -550,12 +552,32 @@ export default function DividasManager() {
     }
   };
 
-  const handleDelete = async (divida: Divida) => {
-    if (!confirm('Tem certeza que deseja excluir este item?')) return;
+  const executeDeleteDivida = async (divida: Divida, onlyMonth: boolean) => {
     const id = divida.id;
+    const baseId = divida.debtId || (id.includes('-') ? id.substring(0, id.lastIndexOf('-')) : id);
     const periodo = (divida as any).periodo as string | undefined;
+
+    try {
+      if (onlyMonth) {
+        await deleteDivida(id, periodo);
+        await removerTransacoesPagamentoDividaMes(divida);
+        setDividas((prev) => prev.filter((d) => !(d.id === id && (d as any).periodo === periodo)));
+      } else {
+        await deleteDivida(baseId); // apaga todas as parcelas usando o ID base
+        await removerTransacoesPagamentoDividaMes(divida); // remove transação de pgto do mês atual
+        setDividas((prev) => prev.filter((d) => d.debtId !== baseId && d.id !== baseId && !d.id?.startsWith(`${baseId}-`)));
+      }
+    } catch (e) {
+      alert('Não foi possível excluir a dívida.');
+    }
+  };
+
+  const handleDelete = async (divida: Divida) => {
+    const id = divida.id;
+    
     // Caso seja uma compra de cartão mapeada como dívida
     if (id.startsWith('purchase:')) {
+      if (!confirm('Tem certeza que deseja excluir esta compra do cartão?')) return;
       const purchaseId = id.replace('purchase:', '');
       const compra = (comprasCartao as CompraCartao[]).find(p => p.id === purchaseId);
       if (!compra) return;
@@ -567,26 +589,18 @@ export default function DividasManager() {
           parcelas: compra.parcelas,
         });
         setComprasCartao((prev: CompraCartao[]) => prev.filter(p => p.id !== purchaseId));
-        
-        // remover gastos fixos vinculados
       } catch (e) {
         alert('Não foi possível excluir a compra do cartão.');
       }
       return;
     }
 
-    // Dívida normal (passar periodo apaga o documento certo; sem isso a busca global podia falhar)
-    try {
-      await deleteDivida(id, periodo);
-      await removerTransacoesPagamentoDividaMes(divida);
-      setDividas((prev) =>
-        periodo
-          ? prev.filter((d) => !(d.id === id && (d as any).periodo === periodo))
-          : prev.filter((d) => d.id !== id && !d.id?.startsWith(`${id}-`))
-      );
-      
-    } catch (e) {
-      alert('Não foi possível excluir a dívida.');
+    if (divida.tipo === 'parcelada') {
+      setDividaToDelete(divida);
+    } else {
+      if (confirm('Tem certeza que deseja excluir este item?')) {
+        executeDeleteDivida(divida, true);
+      }
     }
   };
 
@@ -3084,6 +3098,29 @@ export default function DividasManager() {
           )}
         </CardContent>
       </Card>
+      
+      {/* Modal de confirmação de exclusão */}
+      <Dialog open={!!dividaToDelete} onOpenChange={(open) => !open && setDividaToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir Dívida</DialogTitle>
+            <DialogDescription>
+              Você deseja excluir apenas a parcela deste mês ou a dívida completa (todas as parcelas)?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 mt-4">
+            <Button variant="outline" onClick={() => { if (dividaToDelete) executeDeleteDivida(dividaToDelete, true); setDividaToDelete(null); }}>
+              Apenas deste mês
+            </Button>
+            <Button variant="destructive" onClick={() => { if (dividaToDelete) executeDeleteDivida(dividaToDelete, false); setDividaToDelete(null); }}>
+              Excluir TODA a dívida
+            </Button>
+            <Button variant="ghost" onClick={() => setDividaToDelete(null)}>
+              Cancelar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
