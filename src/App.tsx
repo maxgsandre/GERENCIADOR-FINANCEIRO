@@ -18,6 +18,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 import Logo from './components/Logo';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Toaster } from './components/ui/sonner';
+import { ConfirmProvider } from './contexts/ConfirmContext';
 import * as firebaseService from './services/firebaseService';
 
 // Types para os dados financeiros
@@ -709,8 +710,10 @@ export default function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={true} storageKey="theme">
       <AuthProvider>
-        <AppContent />
-        <Toaster />
+        <ConfirmProvider>
+          <AppContent />
+          <Toaster />
+        </ConfirmProvider>
       </AuthProvider>
     </ThemeProvider>
   );
