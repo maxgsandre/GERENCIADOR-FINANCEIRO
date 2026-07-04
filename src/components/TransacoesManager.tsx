@@ -1,3 +1,5 @@
+import { useConfirm } from '../contexts/ConfirmContext';
+import { toast } from 'sonner';
 import React, { useContext, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -14,6 +16,7 @@ import { FinanceiroContext, Transacao } from '../App';
 import CategoriasManager from './CategoriasManager';
 
 export default function TransacoesManager() {
+  const confirm = useConfirm();
   const context = useContext(FinanceiroContext);
   if (!context) return null;
 
@@ -221,7 +224,7 @@ export default function TransacoesManager() {
         : saldoRealAtual - novaTransacao.valor;
         
       if (novoSaldo < 0) {
-        alert('Saldo insuficiente no caixa selecionado. A operação foi bloqueada.');
+        toast.error('Saldo insuficiente no caixa selecionado. A operação foi bloqueada.');
         setIsSubmitting(false);
         return;
       }
@@ -261,13 +264,13 @@ export default function TransacoesManager() {
     if (!transferFormData.caixaOrigemId || !transferFormData.caixaDestinoId || !transferFormData.valor) return;
 
     if (transferFormData.caixaOrigemId === transferFormData.caixaDestinoId) {
-      alert('Selecione caixas diferentes para a transferência.');
+      toast.info('Selecione caixas diferentes para a transferência.');
       return;
     }
 
     const valorTransferencia = parseFloat(transferFormData.valor.replace(',', '.'));
     if (isNaN(valorTransferencia) || valorTransferencia <= 0) {
-      alert('Informe um valor válido para a transferência.');
+      toast.info('Informe um valor válido para a transferência.');
       return;
     }
 
@@ -275,13 +278,13 @@ export default function TransacoesManager() {
     const caixaDestino = caixas.find((caixa) => caixa.id === transferFormData.caixaDestinoId);
 
     if (!caixaOrigem || !caixaDestino) {
-      alert('Selecione o caixa de origem e o de destino.');
+      toast.info('Selecione o caixa de origem e o de destino.');
       return;
     }
 
     const saldoOrigem = getSaldoRealParaData(caixaOrigem, transferFormData.data);
     if ((saldoOrigem - valorTransferencia) < 0) {
-      alert('Saldo insuficiente no caixa de origem para concluir a transferência.');
+      toast.error('Saldo insuficiente no caixa de origem para concluir a transferência.');
       return;
     }
 
@@ -503,7 +506,7 @@ export default function TransacoesManager() {
       ? 'Tem certeza que deseja excluir esta transferência? A saída e a entrada vinculadas serão removidas.'
       : 'Tem certeza que deseja excluir esta transação?';
 
-    if (!confirm(mensagemConfirmacao)) {
+    if (!(await confirm(mensagemConfirmacao))) {
       return;
     }
     
@@ -552,7 +555,7 @@ export default function TransacoesManager() {
 
   const openEdit = (transacao: Transacao) => {
     if (isTransferencia(transacao)) {
-      alert('Transferências entre caixas não podem ser editadas individualmente. Exclua a transferência e crie outra.');
+      toast.info('Transferências entre caixas não podem ser editadas individualmente. Exclua a transferência e crie outra.');
       return;
     }
 
@@ -633,7 +636,7 @@ export default function TransacoesManager() {
         : saldoRealAtual - transacaoAtualizada.valor;
         
       if (saldoAplicado < 0) {
-        alert('Saldo insuficiente no caixa selecionado após a edição. A operação foi bloqueada.');
+        toast.error('Saldo insuficiente no caixa selecionado após a edição. A operação foi bloqueada.');
         setIsSubmitting(false);
         return;
       }
