@@ -1674,7 +1674,7 @@ export default function GastosFixosManager() {
             <CardTitle className="text-sm">Total Gastos Fixos</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">
+            <div className="text-2xl font-bold text-red-600">
               R$ {totalGastosFixos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -1702,7 +1702,7 @@ export default function GastosFixosManager() {
             <CardTitle className="text-sm">Total Gastos Pendentes</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">
+            <div className="text-2xl font-bold text-orange-600">
               R$ {totalPendentes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
