@@ -1145,8 +1145,7 @@ export default function GastosFixosManager() {
 
   // Calcular totais (gastos fixos são sempre visíveis)
   const totalPagos = gastosComDataAjustada
-    .filter(g => g.pago)
-    .reduce((sum, g) => sum + g.valor, 0);
+    .reduce((sum, g) => sum + (g.pago ? Math.max(g.valor, g.valorPago || 0) : (g.valorPago || 0)), 0);
 
   const totalPendentes = gastosComDataAjustada
     .reduce((sum, g) => sum + Math.max(0, g.valor - (g.valorPago || 0)), 0);
