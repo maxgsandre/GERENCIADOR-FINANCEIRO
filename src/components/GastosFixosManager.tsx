@@ -1145,11 +1145,12 @@ export default function GastosFixosManager() {
 
   // Calcular totais (gastos fixos são sempre visíveis)
   const totalPagos = gastosComDataAjustada
-    .filter(g => g.pago)
-    .reduce((sum, g) => sum + g.valor, 0);
+    .reduce((sum, g) => sum + (g.pago ? Math.max(g.valor, g.valorPago || 0) : (g.valorPago || 0)), 0);
 
   const totalPendentes = gastosComDataAjustada
     .reduce((sum, g) => sum + Math.max(0, g.valor - (g.valorPago || 0)), 0);
+
+  const totalGastosFixos = totalPagos + totalPendentes;
 
   // Verificar vencimentos próximos (próximos 7 dias) que ainda não foram pagos
   const hoje = new Date();
@@ -1667,7 +1668,21 @@ export default function GastosFixosManager() {
       </div>
 
       {/* Cards de resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Total Gastos Fixos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">
+              R$ {totalGastosFixos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {gastosComDataAjustada.length} gasto(s) no mês
+            </p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Total Gastos Pagos</CardTitle>
@@ -1687,7 +1702,7 @@ export default function GastosFixosManager() {
             <CardTitle className="text-sm">Total Gastos Pendentes</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">
+            <div className="text-2xl font-bold text-orange-600">
               R$ {totalPendentes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
