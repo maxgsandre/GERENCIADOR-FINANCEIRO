@@ -464,7 +464,44 @@ export default function TransacoesManager() {
         valorPago: novoValorPago,
         parcelasPagas: Math.min(novasParcelasPagas, dividaEncontrada.parcelas),
       };
-      if (parceladaVarias) {
+      
+      if (dividaAtualizada.quitadaEm && novoValorPago < dividaAtualizada.valorTotal) {
+        dividaAtualizada.quitadaEm = null;
+        
+        // Em vez de deixar o firebaseService recriar, vamos apenas reativar as parcelas
+        // que foram inativadas no soft delete.
+        dividaAtualizada.atualizarSomenteEsteMes = true;
+        
+        if (parceladaVarias) {
+          try {
+            const debtIdBase = dividaAtualizada.debtId || (dividaAtualizada.id.includes('-') ? dividaAtualizada.id.substring(0, dividaAtualizada.id.lastIndexOf('-')) : dividaAtualizada.id);
+            const currentIdx = dividaAtualizada.parcelaIndex || 1;
+            const parcelasTotal = dividaAtualizada.parcelas || 1;
+            const currentY = parseInt((dividaAtualizada as any).periodo.split('-')[0]);
+            const currentM = parseInt((dividaAtualizada as any).periodo.split('-')[1]);
+            
+            for (let i = currentIdx + 1; i <= parcelasTotal; i++) {
+              const mesesAFrente = i - currentIdx;
+              let anoP = currentY;
+              let mesP = currentM + mesesAFrente;
+              while (mesP > 12) { mesP -= 12; anoP++; }
+              const periodoP = `${anoP}-${String(mesP).padStart(2, '0')}`;
+              const docIdP = `${debtIdBase}-${i}`;
+              
+              await saveDivida({
+                id: docIdP,
+                inativa: false, // Reativando!
+                atualizarSomenteEsteMes: true,
+                tipo: 'parcelada',
+                parcelas: parcelasTotal,
+                periodo: periodoP
+              } as any).catch(() => {});
+            }
+          } catch (e) {
+            console.error("Erro ao reativar meses futuros", e);
+          }
+        }
+      } else if (parceladaVarias) {
         dividaAtualizada.atualizarSomenteEsteMes = true;
       }
       

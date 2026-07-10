@@ -469,7 +469,7 @@ export const saveDivida = async (userId: string, divida: Divida) => {
     Object.keys(payload).forEach((k) => {
       if (payload[k] === undefined) delete payload[k];
     });
-    await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', divida.id), payload);
+    await setDoc(doc(db, 'users', userId, 'dividas', periodo, 'itens', divida.id), payload, { merge: true });
     return;
   }
   
