@@ -305,11 +305,12 @@ export const calculateMonthlyTotals = (
   selectedMonth: string,
   transacoes: any[] = []
 ) => {
+  const activeDividas = dividas.filter(d => !d.inativa);
   const purchasesAsDividas = mapPurchasesAsDividas(comprasCartao, cartoes, selectedMonth);
   
   // Totais das dívidas originais
-  const monthlyTotalDividas = dividas.reduce((sum, d) => sum + getMonthlyDue(d, selectedMonth), 0);
-  const monthlyPaidDividas = dividas.reduce((sum, d) => sum + getMonthlyPaid(d, transacoes, selectedMonth, cartoes), 0);
+  const monthlyTotalDividas = activeDividas.reduce((sum, d) => sum + getMonthlyDue(d, selectedMonth), 0);
+  const monthlyPaidDividas = activeDividas.reduce((sum, d) => sum + getMonthlyPaid(d, transacoes, selectedMonth, cartoes), 0);
   
   // Totais incluindo compras de cartão
   const monthlyTotal = monthlyTotalDividas + purchasesAsDividas.reduce((sum, d) => sum + getMonthlyDue(d, selectedMonth), 0);
@@ -317,11 +318,11 @@ export const calculateMonthlyTotals = (
   
   // Calcular restante do mês somando o restante de cada item individual
   // Isso garante que o cálculo seja baseado em valorPago e valorParcela de cada item
-  const remainingDividas = dividas.reduce((sum, d) => sum + getMonthlyRemaining(d, selectedMonth), 0);
+  const remainingDividas = activeDividas.reduce((sum, d) => sum + getMonthlyRemaining(d, selectedMonth), 0);
   const remainingPurchases = purchasesAsDividas.reduce((sum, d) => sum + getMonthlyRemaining(d, selectedMonth), 0);
   const monthlyRemaining = remainingDividas + remainingPurchases;
   
-  const monthlyCount = dividas.filter(d => getMonthlyDue(d, selectedMonth) > 0).length + 
+  const monthlyCount = activeDividas.filter(d => getMonthlyDue(d, selectedMonth) > 0).length + 
     purchasesAsDividas.filter(d => getMonthlyDue(d, selectedMonth) > 0).length;
 
   return {
