@@ -87,6 +87,8 @@ export interface Divida {
   parcelaIndex?: number; // Para parceladas: índice da parcela (1, 2, 3...)
   parcelaTotal?: number; // Para parceladas: total de parcelas
   debtId?: string; // Chave de agrupamento para identificar todas as parcelas da mesma dívida (NOVO)
+  quitadaEm?: string; // YYYY-MM se a dívida foi quitada antecipadamente
+  inativa?: boolean; // Flag para soft delete de parcelas futuras após quitação
 }
 
 export interface Cofrinho {
