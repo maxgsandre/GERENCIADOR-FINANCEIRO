@@ -56,6 +56,7 @@ export default function DividasManager() {
   const [caixaPagamento, setCaixaPagamento] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [valorPagamentoInput, setValorPagamentoInput] = useState('');
+  const [isQuitandoDivida, setIsQuitandoDivida] = useState(false);
   const [modoPagamento, setModoPagamento] = useState<'pay' | 'refund'>('pay');
   const [dataPagamento, setDataPagamento] = useState('');
   const [horaPagamento, setHoraPagamento] = useState('');
@@ -253,6 +254,7 @@ export default function DividasManager() {
       dataUltimoPagamento: ''
     });
     setEditingDivida(null);
+    setIsQuitandoDivida(false);
     setIsDialogOpen(false);
     try { setTimeout(() => window.scrollTo({ top: scrollBeforeDialogRef.current || 0, left: 0, behavior: 'instant' as ScrollBehavior }), 60); } catch {}
   };
@@ -1240,20 +1242,68 @@ export default function DividasManager() {
         const dividaAtual = dividas.find(d => d.id === dividaSelecionada.id);
         if (!dividaAtual) return;
 
-      const novoValorPago = (dividaAtual.valorPago || 0) + valorPagamento;
-      const valorParcela = dividaAtual.valorParcela || (dividaAtual.valorTotal / (dividaAtual.parcelas || 1));
-      const novasParcelasPagas = dividaAtual.tipo === 'parcelada' 
-        ? Math.floor(novoValorPago / valorParcela)
-        : novoValorPago >= dividaAtual.valorTotal ? 1 : 0;
+      let novoValorPago = (dividaAtual.valorPago || 0) + valorPagamento;
+      let novasParcelasPagas = 0;
+      let atualizada: Divida;
 
-      const atualizada: Divida = {
-        ...dividaAtual,
-        valorPago: novoValorPago,
-        parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas || 1),
-      };
+      if (isQuitandoDivida) {
+        novoValorPago = (dividaAtual.valorPago || 0) + valorPagamento;
+        atualizada = {
+          ...dividaAtual,
+          valorPago: novoValorPago,
+          valorTotal: novoValorPago > (dividaAtual.valorTotal || 0) ? novoValorPago : dividaAtual.valorTotal,
+          parcelasPagas: dividaAtual.parcelaIndex || dividaAtual.parcelas || 1,
+          quitadaEm: selectedMonth,
+          atualizarSomenteEsteMes: true 
+        };
+      } else {
+        const valorParcela = dividaAtual.valorParcela || (dividaAtual.valorTotal / (dividaAtual.parcelas || 1));
+        novasParcelasPagas = dividaAtual.tipo === 'parcelada' 
+          ? Math.floor(novoValorPago / valorParcela)
+          : novoValorPago >= dividaAtual.valorTotal ? 1 : 0;
+
+        atualizada = {
+          ...dividaAtual,
+          valorPago: novoValorPago,
+          parcelasPagas: Math.min(novasParcelasPagas, dividaAtual.parcelas || 1),
+          atualizarSomenteEsteMes: true
+        };
+      }
 
       await saveDivida(atualizada);
       setDividas(prev => prev.map(d => d.id === atualizada.id ? atualizada : d));
+
+      if (isQuitandoDivida && atualizada.tipo === 'parcelada' && atualizada.parcelas > 1) {
+        try {
+          const debtIdBase = atualizada.debtId || (atualizada.id.includes('-') ? atualizada.id.substring(0, atualizada.id.lastIndexOf('-')) : atualizada.id);
+          const currentIdx = atualizada.parcelaIndex || 1;
+          const parcelasTotal = atualizada.parcelas || 1;
+          const currentY = parseInt(selectedMonth.split('-')[0]);
+          const currentM = parseInt(selectedMonth.split('-')[1]);
+          
+          for (let i = currentIdx + 1; i <= parcelasTotal; i++) {
+            const mesesAFrente = i - currentIdx;
+            let anoP = currentY;
+            let mesP = currentM + mesesAFrente;
+            while (mesP > 12) { mesP -= 12; anoP++; }
+            const periodoP = `${anoP}-${String(mesP).padStart(2, '0')}`;
+            const docIdP = `${debtIdBase}-${i}`;
+            
+            await saveDivida({
+              id: docIdP,
+              inativa: true,
+              atualizarSomenteEsteMes: true,
+              tipo: 'parcelada',
+              parcelas: parcelasTotal,
+              periodo: periodoP
+            } as any).catch(() => {});
+            
+            setDividas(prev => prev.filter(d => !(d.id === docIdP && (d as any).periodo === periodoP)));
+          }
+        } catch (e) {
+          console.error("Erro ao limpar meses futuros", e);
+        }
+      }
 
       // registrar saída no caixa selecionado
       try {
@@ -1643,6 +1693,8 @@ export default function DividasManager() {
   const { y: selY, m: selM } = selectedYM;
 
   const dividasFiltradas = dividas.filter((d) => {
+    if (d.inativa) return false;
+    
     // Se tem período, usar ele diretamente (nova estrutura)
     if (d.periodo) {
       return d.periodo === selectedMonth;
@@ -2193,23 +2245,37 @@ export default function DividasManager() {
               </div>
             )}
             
-            <DialogFooter>
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => { if (isSavingRef.current || isSaving) return; setIsPagamentoOpen(false); setDataPagamento(''); setHoraPagamento(''); }} 
-                disabled={isSaving || isSavingRef.current}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={isSaving || isSavingRef.current}>
-                {(isSaving || isSavingRef.current) ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Carregando...
-                  </>
-                ) : 'Confirmar Pagamento'}
-              </Button>
+            <DialogFooter className="sm:justify-between items-center w-full mt-4">
+              {(!compraSelecionada) ? (
+                <div className="flex items-center space-x-2 mr-auto mb-4 sm:mb-0">
+                  <input
+                    type="checkbox"
+                    id="quitarDivida"
+                    checked={isQuitandoDivida}
+                    onChange={(e) => setIsQuitandoDivida(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                  />
+                  <Label htmlFor="quitarDivida" className="font-medium cursor-pointer text-sm">Quitar Dívida</Label>
+                </div>
+              ) : <div />}
+              <div className="flex space-x-2 w-full sm:w-auto justify-end">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => { if (isSavingRef.current || isSaving) return; setIsPagamentoOpen(false); setDataPagamento(''); setHoraPagamento(''); }} 
+                  disabled={isSaving || isSavingRef.current}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={isSaving || isSavingRef.current}>
+                  {(isSaving || isSavingRef.current) ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Carregando...
+                    </>
+                  ) : 'Confirmar Pagamento'}
+                </Button>
+              </div>
             </DialogFooter>
           </form>
         </DialogContent>
