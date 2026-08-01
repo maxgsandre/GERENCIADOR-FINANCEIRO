@@ -488,14 +488,24 @@ export default function TransacoesManager() {
               const periodoP = `${anoP}-${String(mesP).padStart(2, '0')}`;
               const docIdP = `${debtIdBase}-${i}`;
               
-              await saveDivida({
-                id: docIdP,
-                inativa: false, // Reativando!
-                atualizarSomenteEsteMes: true,
-                tipo: 'parcelada',
-                parcelas: parcelasTotal,
-                periodo: periodoP
-              } as any).catch(() => {});
+              const futuraExistente = dividas.find(d => d.id === docIdP);
+              if (futuraExistente) {
+                await saveDivida({
+                  ...futuraExistente,
+                  inativa: false,
+                  atualizarSomenteEsteMes: true
+                } as any).catch(() => {});
+              } else {
+                await saveDivida({
+                  id: docIdP,
+                  inativa: false,
+                  atualizarSomenteEsteMes: true,
+                  tipo: 'parcelada',
+                  parcelas: parcelasTotal,
+                  periodo: periodoP,
+                  dataVencimento: `${periodoP}-${dividaAtualizada.dataVencimento.split('-')[2] || '01'}`
+                } as any).catch(() => {});
+              }
             }
           } catch (e) {
             console.error("Erro ao reativar meses futuros", e);

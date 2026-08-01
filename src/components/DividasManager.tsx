@@ -118,6 +118,33 @@ export default function DividasManager() {
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'));
   const [purchaseDataUltimoPagamento, setPurchaseDataUltimoPagamento] = useState('');
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+
+  // Auto-heal: Inativar parcelas futuras de dívidas já quitadas
+  useEffect(() => {
+    if (!dividas || dividas.length === 0) return;
+    const dividasQuitadas = dividas.filter(d => d.quitadaEm);
+    dividasQuitadas.forEach(quitada => {
+      if (quitada.tipo === 'parcelada' && quitada.parcelas > 1 && quitada.parcelaIndex) {
+        const debtIdBase = quitada.debtId || (quitada.id.includes('-') ? quitada.id.substring(0, quitada.id.lastIndexOf('-')) : quitada.id);
+        const currentIndex = quitada.parcelaIndex;
+        
+        const futurasAtivas = dividas.filter(d => {
+          const idBase = d.debtId || (d.id.includes('-') ? d.id.substring(0, d.id.lastIndexOf('-')) : d.id);
+          return idBase === debtIdBase && d.parcelaIndex && d.parcelaIndex > currentIndex && !d.inativa;
+        });
+        
+        if (futurasAtivas.length > 0) {
+          futurasAtivas.forEach(futura => {
+            saveDivida({
+              ...futura,
+              inativa: true,
+              atualizarSomenteEsteMes: true
+            } as any).catch(() => {});
+          });
+        }
+      }
+    });
+  }, [dividas, saveDivida]);
   
   // Estados para dívida em andamento na compra
   const [purchaseEmAndamento, setPurchaseEmAndamento] = useState(false);
@@ -1289,14 +1316,24 @@ export default function DividasManager() {
             const periodoP = `${anoP}-${String(mesP).padStart(2, '0')}`;
             const docIdP = `${debtIdBase}-${i}`;
             
-            await saveDivida({
-              id: docIdP,
-              inativa: true,
-              atualizarSomenteEsteMes: true,
-              tipo: 'parcelada',
-              parcelas: parcelasTotal,
-              periodo: periodoP
-            } as any).catch(() => {});
+            const futuraExistente = dividas.find(d => d.id === docIdP);
+            if (futuraExistente) {
+              await saveDivida({
+                ...futuraExistente,
+                inativa: true,
+                atualizarSomenteEsteMes: true
+              } as any).catch(() => {});
+            } else {
+              await saveDivida({
+                id: docIdP,
+                inativa: true,
+                atualizarSomenteEsteMes: true,
+                tipo: 'parcelada',
+                parcelas: parcelasTotal,
+                periodo: periodoP,
+                dataVencimento: `${periodoP}-${atualizada.dataVencimento.split('-')[2] || '01'}`
+              } as any).catch(() => {});
+            }
             
             setDividas(prev => prev.filter(d => !(d.id === docIdP && (d as any).periodo === periodoP)));
           }
