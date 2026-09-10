@@ -48,7 +48,7 @@
             "tailwind-merge": "*",
             "tsx": "^4.20.6",
             "vaul": "^1.1.2",
-            "xlsx": "^0.18.5"
+            "xlsx-js-style": "^1.2.0"
       },
       "devDependencies": {
             "@commitlint/cli": "^19.5.0",

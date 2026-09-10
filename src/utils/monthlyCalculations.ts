@@ -298,6 +298,33 @@ const getMonthlyRemaining = (d: Divida | CompraCartao, selectedMonth: string): n
 };
 
 // Função principal para calcular totais mensais
+/**
+ * Dívidas que pertencem ao mês informado.
+ * Exclui parcelas inativas (soft delete aplicado quando uma dívida é quitada
+ * antecipadamente) — elas continuam no banco, mas não devem entrar em nenhum cálculo.
+ */
+export const getDividasDoMes = <T extends Divida>(dividas: T[], selectedMonth: string): T[] => {
+  const { y: selY, m: selM } = parseYYYYMM(selectedMonth);
+  return dividas.filter((d) => {
+    if (d.inativa) return false;
+
+    // Estrutura nova: um documento por período
+    if (d.periodo) {
+      return d.periodo === selectedMonth;
+    }
+
+    // Compatibilidade: dívidas antigas sem período
+    if (d.tipo === 'parcelada') {
+      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
+      const idx = ymToIndex(selY, selM) - ymToIndex(startYM.y, startYM.m);
+      return idx >= 0 && idx < d.parcelas;
+    }
+
+    const { y: y0, m: m0 } = parseYYYYMMDDtoYM(d.dataVencimento);
+    return y0 === selY && m0 === selM;
+  });
+};
+
 export const calculateMonthlyTotals = (
   dividas: Divida[],
   comprasCartao: CompraCartao[],

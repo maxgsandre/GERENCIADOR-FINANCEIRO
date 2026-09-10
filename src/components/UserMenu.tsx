@@ -12,7 +12,6 @@ import { Label } from './ui/label';
 import { Input } from './ui/input';
 import { useContext, useMemo, useRef } from 'react';
 import { FinanceiroContext } from '../App';
-import { exportMonthToXlsx } from '../utils/exportXlsx';
 import * as firebaseService from '../services/firebaseService';
 
 export default function UserMenu() {
@@ -217,10 +216,12 @@ export default function UserMenu() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsExportOpen(false)}>Cancelar</Button>
-            <Button onClick={() => {
+            <Button onClick={async () => {
               if (!ctx) return;
               const { caixas, transacoes, dividas, receitasPrevistas, comprasCartao, cartoes, gastosFixos, cofrinhos } = ctx as any;
               const month = exportMonth || todayDefault;
+              // Import dinâmico: a lib de xlsx só é baixada quando o usuário exporta.
+              const { exportMonthToXlsx } = await import('../utils/exportXlsx');
               exportMonthToXlsx(month, { caixas, transacoes, dividas, receitasPrevistas, comprasCartao, cartoes, gastosFixos, cofrinhos });
               setIsExportOpen(false);
             }}>Exportar</Button>
