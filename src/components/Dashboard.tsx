@@ -4,7 +4,14 @@ import { Input } from './ui/input';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, LabelList } from 'recharts';
 import { FinanceiroContext } from '../App';
 import { TrendingUp, TrendingDown, Wallet, CreditCard, PiggyBank, Percent, ArrowUpCircle, Target, LayoutDashboard } from 'lucide-react';
-import { getMonthlyDue, mapPurchasesAsDividas, parseYYYYMMDDtoYM, parseYYYYMM } from '../utils/monthlyCalculations';
+import { getMonthlyDue, mapPurchasesAsDividas, getDividasDoMes } from '../utils/monthlyCalculations';
+import {
+  initialForMonth as initialForMonthShared,
+  monthlyTotalFor as monthlyTotalForShared,
+  principalOf,
+  computeCdiSaldoLiquido,
+  computeCdiRendimentoMensal,
+} from '../utils/cofrinhoCalculations';
 
 // Função auxiliar para calcular índice de mês
 const ymToIndex = (year: number, month1to12: number) => year * 12 + (month1to12 - 1);
@@ -49,104 +56,14 @@ export default function Dashboard() {
   // Calcular totais
   // Total em Caixas: alinhar com "Total Geral" da página Caixas
   const [ySel, mSel] = selectedMonth.split('-').map(Number);
-  const initialForMonth = (caixa: any, ym: string) => {
-    const init = (caixa as any).initialByMonth as Record<string, number> | undefined;
-    if (init && Object.prototype.hasOwnProperty.call(init, ym)) {
-      return (init as any)[ym] ?? 0;
-    }
-    // Propagar a partir do último mês conhecido
-    const ymToIndex = (y: number, m: number) => y * 12 + (m - 1);
-    const parseYM = (ym2: string) => { const [yy, mm] = ym2.split('-').map(Number); return { y: yy, m: mm }; };
-    const nextYM = (y: number, m: number) => ({ y: m === 12 ? y + 1 : y, m: m === 12 ? 1 : m + 1 });
-    if (!init) return 0;
-    let bestKey: string | null = null;
-    Object.keys(init).forEach(k => {
-      const { y, m } = parseYM(k);
-      if (ymToIndex(y, m) <= ymToIndex(ySel, mSel)) {
-        if (bestKey === null) bestKey = k; else {
-          const { y: by, m: bm } = parseYM(bestKey);
-          if (ymToIndex(y, m) > ymToIndex(by, bm)) bestKey = k;
-        }
-      }
-    });
-    if (!bestKey) return 0;
-    const { y: sy, m: sm } = parseYM(bestKey);
-    let current = (init as any)[bestKey] ?? 0;
-    let cy = sy, cm = sm;
-    while (!(cy === ySel && cm === mSel)) {
-      const total = transacoes
-        .filter(t => t.caixaId === caixa.id)
-        .filter(t => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === cy && d.getMonth() === (cm - 1); })
-        .reduce((s, t) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
-      const n = nextYM(cy, cm);
-      current = current + total;
-      cy = n.y; cm = n.m;
-    }
-    return current;
-  };
-  const monthlyTotalFor = (caixaId: string, y: number, m: number) => {
-    return transacoes
-      .filter(t => t.caixaId === caixaId)
-      .filter(t => { const d = new Date(t.data + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === (m - 1); })
-      .reduce((s, t) => s + (t.tipo === 'entrada' ? t.valor : -t.valor), 0);
-  };
+  const initialForMonth = (caixa: any, ym: string) => initialForMonthShared(caixa, ym, transacoes);
+  const monthlyTotalFor = (caixaId: string, y: number, m: number) =>
+    monthlyTotalForShared(transacoes, caixaId, y, m);
   const totalCaixasSomenteCaixas = caixas.reduce((sum, c) => {
     const inicial = initialForMonth(c, selectedMonth);
     const totalMes = monthlyTotalFor(c.id, ySel, mSel);
     return sum + (inicial + totalMes);
   }, 0);
-  const CDI_ANUAL_PERCENT = 10.75;
-  const dailyRateFromAnnual = (annualPercent: number) => Math.pow(1 + annualPercent / 100, 1 / 252) - 1;
-  const approxBusinessDays = (from: string, to: string) => {
-    const d1 = new Date(from + 'T00:00:00');
-    const d2 = new Date(to + 'T00:00:00');
-    const diffDays = Math.max(0, Math.floor((d2.getTime() - d1.getTime()) / 86400000));
-    return Math.max(0, Math.round(diffDays * (252 / 365)));
-  };
-  const iofRateForDays = (daysSince: number) => {
-    if (daysSince >= 30) return 0;
-    const remain = 30 - daysSince; // 30..1
-    return Math.max(0, remain / 30);
-  };
-  const irRateForDays = (daysSince: number) => {
-    if (daysSince <= 180) return 0.225;
-    if (daysSince <= 360) return 0.20;
-    if (daysSince <= 720) return 0.175;
-    return 0.15;
-  };
-  const todayStr = new Date().toISOString().slice(0,10);
-  const principalOf = (c: any) => ((c.valorAplicado || 0) + ((c.aportes || []).reduce((s: number, a: any) => s + a.valor, 0)));
-  const computeCdiSaldoLiquido = (c: any) => {
-    const percentOfCDI = c.percentualCDI || 0;
-    const baseDaily = dailyRateFromAnnual(CDI_ANUAL_PERCENT);
-    const daily = baseDaily * (percentOfCDI / 100);
-    const aportes = [ ...(c.valorAplicado && c.dataAplicacao ? [{ data: c.dataAplicacao, valor: c.valorAplicado }] : []), ...(c.aportes || []) ];
-    const principal = principalOf(c);
-    let rendimentoBruto = 0;
-    let totalIR = 0;
-    let totalIOF = 0;
-    for (const ap of aportes) {
-      const nBiz = approxBusinessDays(ap.data, todayStr);
-      const fator = Math.pow(1 + daily, nBiz);
-      const rendBrutoAp = ap.valor * (fator - 1);
-      const daysSince = Math.max(0, Math.floor((new Date(todayStr).getTime() - new Date(ap.data).getTime())/86400000));
-      const iof = iofRateForDays(daysSince) * rendBrutoAp;
-      const baseIr = rendBrutoAp - iof;
-      const ir = Math.max(0, baseIr) * irRateForDays(daysSince);
-      rendimentoBruto += rendBrutoAp;
-      totalIOF += iof;
-      totalIR += ir;
-    }
-    const rendimentoLiquido = Math.max(0, rendimentoBruto - totalIOF - totalIR);
-    return principal + rendimentoLiquido;
-  };
-
-  const computeCdiRendimentoMensal = (c: any) => {
-    const percentOfCDI = c.percentualCDI || 0;
-    const annual = (percentOfCDI / 100) * CDI_ANUAL_PERCENT; // % a.a.
-    const principal = principalOf(c);
-    return (principal * annual) / 12 / 100; // R$ por mês (aprox.)
-  };
 
   const totalCofrinhos = cofrinhos.reduce((sum, cofrinho) => sum + (cofrinho.tipo === 'cdi' ? computeCdiSaldoLiquido(cofrinho) : cofrinho.saldo), 0);
   // Total em Caixas: apenas caixas, sem cofrinhos
@@ -168,7 +85,9 @@ export default function Dashboard() {
     return sum + Math.max(0, (c.saldo || 0) - principal);
   }, 0);
   
-  const totalDividas = dividas.reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
+  const totalDividas = dividas
+    .filter((divida) => !divida.inativa)
+    .reduce((sum, divida) => sum + (divida.valorTotal - divida.valorPago), 0);
 
   // Entradas e saídas do mês selecionado
   const [anoSelecionado, mesSelecionado] = selectedMonth.split('-').map(Number);
@@ -222,23 +141,7 @@ export default function Dashboard() {
   const totalGastosFixosMes = gastosFixosDoMes.reduce((sum, gasto) => sum + gasto.valor, 0);
 
   // Filtrar dívidas do mês selecionado (mesma lógica do DividasManager)
-  const { y: selY, m: selM } = parseYYYYMM(selectedMonth);
-  const dividasFiltradas = dividas.filter((d) => {
-    // Se tem período, usar ele diretamente (nova estrutura)
-    if (d.periodo) {
-      return d.periodo === selectedMonth;
-    }
-    
-    // Compatibilidade: lógica antiga para dívidas sem período
-    if (d.tipo === 'parcelada') {
-      const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
-      const idx = ymToIndex(selY, selM) - ymToIndex(startYM.y, startYM.m);
-      return idx >= 0 && idx < d.parcelas;
-    }
-
-    const { y: y0, m: m0 } = parseYYYYMMDDtoYM(d.dataVencimento);
-    return y0 === selY && m0 === selM;
-  });
+  const dividasFiltradas = getDividasDoMes(dividas, selectedMonth);
 
   const comprasCartaoDoMes = mapPurchasesAsDividas(comprasCartao, cartoes, selectedMonth);
 
