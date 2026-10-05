@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, homolog]
+  pull_request:
+    branches: [main, homolog]
+  workflow_dispatch:
+
+concurrency:
+  # Um push novo cancela a execucao anterior do mesmo ref.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificacao:
+    name: Lint, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      # A suite fixa TZ=America/Sao_Paulo no vitest.config.ts, entao as regras
+      # de vencimento sao avaliadas no mesmo fuso aqui e na maquina local.
+      - run: npm test
+
+      # O build nao precisa das variaveis VITE_FIREBASE_*: elas viram undefined
+      # no bundle e nada no pipeline acessa o Firebase. O passo valida que o
+      # projeto compila e empacota, nao a configuracao de producao.
+      - run: npm run build
