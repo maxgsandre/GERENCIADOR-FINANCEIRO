@@ -74,6 +74,8 @@
             "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "emulator": "firebase emulators:start --only auth,firestore",
+    "emulator:seed": "node scripts/seed-emulator.mjs",
             "lint:fix": "eslint . --fix",
             "format": "prettier . --write",
             "format:check": "prettier . --check",
