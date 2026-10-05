@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// ATENÇÃO ANTES DE PUBLICAR
+// ─────────────────────────────────────────────────────────────────────────────
+// Este arquivo foi escrito a partir da estrutura de dados usada em
+// src/services/firebaseService.ts, para que o emulador local tenha regras
+// equivalentes às de produção. Ele NÃO foi exportado do console do Firebase.
+//
+// Antes de rodar `firebase deploy --only firestore:rules`, compare com as regras
+// que estão publicadas hoje no console. Se as de produção forem mais restritivas
+// em algum ponto, publicar isto afrouxaria o acesso ao banco.
+//
+// Estrutura protegida (todos os dados ficam sob o usuário dono):
+//   users/{uid}/caixas/{id}
+//   users/{uid}/cofrinhos/{id}
+//   users/{uid}/categorias/{id}
+//   users/{uid}/creditCards/{id}
+//   users/{uid}/creditCardPurchases/{id}
+//   users/{uid}/transacoes/{periodo}/itens/{id}
+//   users/{uid}/gastosFixos/{periodo}/itens/{id}
+//   users/{uid}/dividas/{periodo}/itens/{id}
+//   users/{uid}/receitasPrevistas/{periodo}/receitas/{id}
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // O usuário autenticado é dono exclusivo da própria subárvore. Vale para o
+    // documento do usuário e para tudo abaixo dele, em qualquer profundidade.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /{documento=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Nada fora de users/{uid} é acessível pelo cliente.
+    match /{documento=**} {
+      allow read, write: if false;
+    }
+  }
+}
