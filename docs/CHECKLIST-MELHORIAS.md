@@ -48,15 +48,20 @@ encontrados e nenhuma delas toca o Firebase — dá pra testar sem infraestrutur
   `undefined` quando a variável não existe e o build conclui normalmente. O passo
   valida que o projeto compila, não a configuração de produção.
 
-### 1.3 Emulador do Firebase (pré-requisito do E2E) 🟡
+### 1.3 Emulador do Firebase (pré-requisito do E2E) 🟡 — ✅ concluído
 
-- [ ] Adicionar `firebase.json` configurando os emuladores de Auth (9099) e Firestore (8080).
-- [ ] Adicionar `firebase-tools` como dependência de desenvolvimento.
-- [ ] Criar um script de seed que popule o emulador com um cenário conhecido
+- [x] Adicionar `firebase.json` configurando os emuladores de Auth (9099) e Firestore (8080).
+- [x] ~~Adicionar `firebase-tools` como dependência de desenvolvimento.~~
+  Decidido não adicionar: carrega centenas de MB em dependências transitivas e o CI
+  não usa o emulador, então pesaria todo `npm ci` sem contrapartida. O requisito
+  (instalação global, Java 11+) ficou documentado no README. Quando o E2E entrar,
+  ele passa a viver no pacote `e2e/`, como no `fichas-onprime`.
+- [x] Criar um script de seed que popule o emulador com um cenário conhecido
   (um caixa, uma dívida parcelada, uma quitação antecipada).
-- [ ] Documentar no README como subir o ambiente com `VITE_USE_FIREBASE_EMULATOR=true`.
+- [x] Documentar no README como subir o ambiente com `VITE_USE_FIREBASE_EMULATOR=true`.
 
-O gancho já existe em [`src/lib/firebase.ts`](../src/lib/firebase.ts) — falta só a configuração.
+O gancho `VITE_USE_FIREBASE_EMULATOR` já existia em [`src/lib/firebase.ts`](../src/lib/firebase.ts);
+faltava a configuração, que agora está em `firebase.json` e `scripts/seed-emulator.mjs`.
 
 ### 1.4 Playwright end-to-end 🔵
 
@@ -72,11 +77,18 @@ Só depois de 1.3. Rodar E2E contra o Firebase de produção poluiria os dados r
   - Exportar o `.xlsx` e validar que o arquivo foi gerado.
 - [ ] Encadear no CI com `needs: verificacao` e publicar o relatório em caso de falha.
 
-### 1.5 Regras do Firestore versionadas 🔴
+### 1.5 Regras do Firestore versionadas 🔴 — ⚠️ parcial
 
-- [ ] Exportar as regras atuais do console para `firestore.rules` e commitar.
-- [ ] Adicionar os índices em `firestore.indexes.json`.
-- [ ] Validar que cada usuário só lê e escreve sob o próprio `userId`.
+- [x] Criar `firestore.rules` e `firestore.indexes.json` versionados.
+- [x] Validar que cada usuário só lê e escreve sob o próprio `userId` — verificado
+  contra o emulador: leitura de outro usuário, escrita em outro usuário e acesso
+  fora de `users/` retornam `permission-denied`.
+- [ ] **Comparar com as regras publicadas hoje no console antes de qualquer deploy.**
+  O arquivo foi escrito a partir da estrutura de dados em `firebaseService.ts`, não
+  exportado do console. Se as de produção forem mais restritivas em algum ponto,
+  publicar isto afrouxaria o acesso.
+- [ ] Preencher `firestore.indexes.json` com os índices que o projeto realmente usa
+  (hoje está vazio; o emulador não exige índice composto, o Firestore real exige).
 
 Hoje as regras de um aplicativo financeiro existem apenas no console do Firebase, sem
 histórico, sem revisão e sem forma de restaurar se forem alteradas por engano.
