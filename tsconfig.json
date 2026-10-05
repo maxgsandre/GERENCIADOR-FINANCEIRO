@@ -16,10 +16,14 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "types": ["vite/client"],
+    // baseUrl e descontinuado no TypeScript 7, mas removê-lo hoje quebra a
+    // resolucao dos imports versionados em components/ui. Migrar e tarefa
+    // separada (ver docs/CHECKLIST-MELHORIAS.md).
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
     }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "vitest.config.ts"]
 }
