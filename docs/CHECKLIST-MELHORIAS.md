@@ -16,35 +16,37 @@ sido pego por um teste de dez linhas.
 Referência: o projeto `fichas-onprime` já usa Vitest para unidade, Playwright para
 end-to-end e GitHub Actions encadeando os dois. O padrão é reaproveitável aqui.
 
-### 1.1 Vitest para a lógica pura 🔴
+### 1.1 Vitest para a lógica pura 🔴 — ✅ concluído
 
-- [ ] Instalar `vitest` e criar `vitest.config.ts` (ambiente `node`, sem jsdom por ora).
-- [ ] Adicionar os scripts `test` (`vitest run`) e `test:watch` (`vitest`) no `package.json`.
-- [ ] Cobrir `src/utils/monthlyCalculations.ts`:
+- [x] Instalar `vitest` e criar `vitest.config.ts` (ambiente `node`, sem jsdom por ora).
+- [x] Adicionar os scripts `test` (`vitest run`) e `test:watch` (`vitest`) no `package.json`.
+- [x] Cobrir `src/utils/monthlyCalculations.ts`:
   - `getDividasDoMes` ignora parcelas com `inativa: true`.
   - `getDividasDoMes` respeita `periodo` e também o caminho legado sem `periodo`.
   - `getMonthlyDue` devolve `valorParcela` para parcelada e `valorTotal` para esporádica.
   - `getMonthlyDue` ajusta os centavos na última parcela.
-- [ ] Cobrir `src/utils/cofrinhoCalculations.ts`:
+- [x] Cobrir `src/utils/cofrinhoCalculations.ts`:
   - `initialForMonth` propaga o saldo quando o mês não tem valor inicial cadastrado.
   - `caixaSaldoNoMes` = inicial + extrato do mês.
-- [ ] Cobrir `src/utils/exportXlsx.ts`:
+- [x] Cobrir `src/utils/exportXlsx.ts`:
   - O total de "dívidas em aberto" soma `valorParcela`, nunca `valorTotal`
     (regressão do bug que inflava o número para R$ 841 mil).
-- [ ] Criar um teste de fuso dedicado, no espírito do `timezone.test.ts` do
+- [x] Criar um teste de fuso dedicado, no espírito do `timezone.test.ts` do
   `fichas-onprime`, fixando `TZ=America/Sao_Paulo` e travando a regra de que data
   `YYYY-MM-DD` sempre vira `T00:00:00` local.
 
 **Por que primeiro:** essas quatro áreas concentram todos os bugs de cálculo já
 encontrados e nenhuma delas toca o Firebase — dá pra testar sem infraestrutura nenhuma.
 
-### 1.2 CI no GitHub Actions 🔴
+### 1.2 CI no GitHub Actions 🔴 — ✅ concluído
 
-- [ ] Criar `.github/workflows/ci.yml` disparando em push e PR para `main` e `homolog`.
-- [ ] Job de verificação: `npm ci` → `npm run lint` → `npm test` → `npm run build`.
-- [ ] Usar `concurrency` com `cancel-in-progress` para um push novo cancelar o anterior.
-- [ ] Definir as variáveis `VITE_FIREBASE_*` como valores de fachada no CI — o build
-  precisa delas, mas nada no pipeline acessa o Firebase de verdade.
+- [x] Criar `.github/workflows/ci.yml` disparando em push e PR para `main` e `homolog`.
+- [x] Job de verificação: `npm ci` → `npm run lint` → `npm test` → `npm run build`.
+- [x] Usar `concurrency` com `cancel-in-progress` para um push novo cancelar o anterior.
+- [x] ~~Definir as variáveis `VITE_FIREBASE_*` como valores de fachada no CI.~~
+  Verificado: não é necessário. O Vite substitui `import.meta.env.VITE_*` por
+  `undefined` quando a variável não existe e o build conclui normalmente. O passo
+  valida que o projeto compila, não a configuração de produção.
 
 ### 1.3 Emulador do Firebase (pré-requisito do E2E) 🟡
 
@@ -197,6 +199,17 @@ de Dívidas.
 - [ ] `src/utils/cofrinhoCalculations.ts` (linhas 3-8) redefine os três.
 - [ ] `src/components/Dashboard.tsx:17` tem um `ymToIndex` órfão, sem uso.
 
+Há também uma **terceira** implementação de `getMonthlyDue`, local em
+[`DividasManager.tsx:1471`](../src/components/DividasManager.tsx#L1471), que devolve
+`valorParcela` para qualquer tipo — inclusive esporádicas, para as quais a versão
+compartilhada usa `valorTotal`.
+
+- [ ] Unificar com a versão de `monthlyCalculations.ts`.
+
+Hoje as duas coincidem porque as 490 esporádicas do banco têm `valorParcela` igual a
+`valorTotal`. Basta um lançamento sem `valorParcela` para a aba de Dívidas divergir do
+Dashboard de novo.
+
 ### 6.2 Código morto 🔵
 
 - [ ] Remover `migrateDividaToSubcollection` (~90 linhas em `firebaseService.ts`), chamada
@@ -205,7 +218,33 @@ de Dívidas.
 - [ ] Remover o bloco comentado de 24 linhas que a invoca.
 - [ ] Zerar os 258 avisos do ESLint (0 erros) — imports e variáveis sem uso, em maioria.
 
-### 6.3 TypeScript permissivo 🔵
+### 6.3 Checagem de tipos quebrada há tempo 🟡
+
+O `tsc` nunca chegou a checar este projeto. O `tsconfig.json` usava `baseUrl`, descontinuado
+no TypeScript 7, e esse erro de **configuração** fazia o compilador abortar antes de
+analisar os arquivos — reportando um único erro e dando a impressão de projeto limpo.
+
+Ao silenciar a descontinuação com `ignoreDeprecations`, aparecem **84 erros reais**:
+
+| Tipo | Qtd | Causa |
+| --- | --- | --- |
+| TS2307 + TS2503 | 73 | Imports com versão (`'lucide-react@0.487.0'`) em `components/ui`, resolvidos só por alias do `vite.config.ts` |
+| TS2339 | 9 | `monthlyCalculations.ts` acessa `tipo` e `dataVencimento` na união `Divida \| CompraCartao`, e `CompraCartao` não tem esses campos |
+| TS5097 | 1 | `main.tsx` importa com a extensão `.tsx` explícita |
+| TS2322 | 1 | `ThemeProvider` em `App.tsx:713` não aceita `children` no tipo |
+
+- [ ] Resolver os 73 imports versionados: espelhar os aliases do Vite em `paths`, ou
+  reescrever os imports sem a versão. É a correção de maior volume e menor risco.
+- [ ] Corrigir os 9 erros de `monthlyCalculations.ts` — são um buraco de tipagem real
+  no módulo mais crítico do sistema.
+- [ ] Corrigir `main.tsx` e o `ThemeProvider`.
+- [ ] Adicionar o script `typecheck` (`tsc --noEmit`) e incluí-lo no CI.
+- [ ] Remover `baseUrl` do `tsconfig.json`, aposentando o `ignoreDeprecations`.
+
+**Enquanto isso não for feito, o CI não checa tipos.** O `vite build` usa esbuild, que
+apenas remove as anotações sem validá-las — um erro de tipo passa direto pelo pipeline.
+
+### 6.4 TypeScript permissivo 🔵
 
 - [ ] Ativar `"strict": true` no `tsconfig.json` e tratar os erros por arquivo.
 - [ ] Reduzir os 368 usos de `any`, concentrados em `DividasManager` (89),
@@ -213,7 +252,7 @@ de Dívidas.
 
 Foi o modo permissivo que deixou passar o `cofrinho.objetivo` do item 4.3.
 
-### 6.4 Componentes grandes demais 🔵
+### 6.5 Componentes grandes demais 🔵
 
 - [ ] Avaliar a quebra de `DividasManager.tsx` (3.214 linhas), `firebaseService.ts` (2.136)
   e `GastosFixosManager.tsx` (2.010).
