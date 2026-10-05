@@ -17,8 +17,11 @@ export const ymToIndex = (year: number, month1to12: number) => year * 12 + (mont
 
 // Função para calcular valor devido no mês
 export const getMonthlyDue = (d: Divida | CompraCartao, selectedMonth: string): number => {
-  // Se tem período, verificar diretamente (estrutura nova por mês)
-  if ((d as any).periodo && (d as any).periodo === selectedMonth) {
+  // Estrutura nova: um documento por competência. O período é a resposta final —
+  // se não é o mês pedido, não há nada devido. Cair no fallback abaixo faria uma
+  // parcela de 48 meses responder por todos os 48, e não só pelo seu mês.
+  if ((d as any).periodo) {
+    if ((d as any).periodo !== selectedMonth) return 0;
     if (d.tipo === 'parcelada') {
       // Para parceladas, usar valorParcela diretamente
       return (d.valorParcela || 0);
@@ -26,7 +29,7 @@ export const getMonthlyDue = (d: Divida | CompraCartao, selectedMonth: string): 
     // Para não parceladas, usar valorTotal
     return (d.valorTotal || 0);
   }
-  
+
   // Fallback: lógica antiga para dívidas sem período (compatibilidade)
   if (d.tipo === 'parcelada') {
     const startYM = parseYYYYMMDDtoYM(d.dataVencimento);
