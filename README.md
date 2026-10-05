@@ -23,6 +23,7 @@
 - [🛠️ Instalação](#️-instalação)
 - [📱 Interface](#-interface)
 - [🔧 Configuração](#-configuração)
+- [🧪 Desenvolvimento e Testes](#-desenvolvimento-e-testes)
 - [📊 Dicas de Uso](#-dicas-de-uso)
 - [🤝 Contribuição](#-contribuição)
 
@@ -199,8 +200,14 @@ graph TD
    ```
 
 2. **Configurar Regras de Segurança**
+
+   As regras ficam versionadas em [`firestore.rules`](./firestore.rules) e são as
+   mesmas usadas pelo emulador local. Antes de publicar com
+   `firebase deploy --only firestore:rules`, compare com o que está no console —
+   o arquivo foi escrito a partir da estrutura de dados, não exportado de lá.
+
    ```javascript
-   // Firestore Rules
+   // Resumo do que as regras garantem
    rules_version = '2';
    service cloud.firestore {
      match /databases/{database}/documents {
@@ -239,6 +246,75 @@ vercel
 
 # Configurar variáveis de ambiente no painel Vercel
 ```
+
+---
+
+## 🧪 Desenvolvimento e Testes
+
+### ✅ **Testes automatizados**
+
+```bash
+npm test          # roda a suíte uma vez
+npm run test:watch   # re-roda ao salvar
+```
+
+Os testes cobrem a lógica de cálculo em `src/utils/` — competência mensal, parcelas
+inativas, saldo dos caixas, rendimento dos cofrinhos e a exportação para Excel.
+
+O fuso fica fixado em `America/Sao_Paulo` no `vitest.config.ts`. As regras de
+vencimento dependem do fuso, e sem isso a suíte passaria na máquina de quem
+desenvolve e falharia no CI, que roda em UTC.
+
+### 🔄 **Integração contínua**
+
+O workflow em [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) roda a cada push
+e pull request para `main` e `homolog`: `npm ci` → `lint` → `test` → `build`.
+
+> A checagem de tipos ainda não entra no pipeline. O `vite build` usa esbuild, que
+> remove as anotações sem validá-las, e o `tsc` acusa erros preexistentes. Ver a
+> seção 6.3 de [`docs/CHECKLIST-MELHORIAS.md`](./docs/CHECKLIST-MELHORIAS.md).
+
+### 🔥 **Emulador do Firebase**
+
+Permite desenvolver sem tocar nos dados reais. Requer **Java 11+** e o
+**firebase-tools 13+** instalado globalmente:
+
+```bash
+npm install -g firebase-tools
+```
+
+> Não está em `devDependencies` de propósito: ele carrega centenas de MB em
+> dependências e o CI não usa o emulador. Quando os testes end-to-end entrarem,
+> ele passa a viver no pacote `e2e/`, como no projeto `fichas-onprime`.
+
+Em um terminal, suba os emuladores de Auth e Firestore:
+
+```bash
+npm run emulator
+```
+
+Em outro, popule com um cenário conhecido:
+
+```bash
+npm run emulator:seed
+```
+
+O seed cria o usuário `teste@exemplo.local` (senha `teste123`) com dois caixas, uma
+receita prevista, dois gastos fixos e uma dívida parcelada **quitada
+antecipadamente** — o cenário em que as parcelas futuras ficam inativas e não podem
+entrar nos totais. O script se recusa a rodar se o emulador não estiver no ar, para
+nunca escrever no Firestore de produção por engano.
+
+Para o aplicativo apontar para o emulador, use no `.env.local`:
+
+```env
+VITE_USE_FIREBASE_EMULATOR=true
+VITE_FIREBASE_PROJECT_ID=demo-gerenciador-financeiro
+VITE_FIREBASE_API_KEY=emulador
+```
+
+O prefixo `demo-` faz o emulador rodar totalmente offline, sem exigir credenciais
+nem projeto real. Painel em `http://127.0.0.1:4000`.
 
 ---
 
