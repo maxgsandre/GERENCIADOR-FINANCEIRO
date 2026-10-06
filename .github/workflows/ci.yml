@@ -38,3 +38,48 @@ jobs:
       # no bundle e nada no pipeline acessa o Firebase. O passo valida que o
       # projeto compila e empacota, nao a configuracao de producao.
       - run: npm run build
+
+  e2e:
+    name: Testes end-to-end
+    runs-on: ubuntu-latest
+    # Sobe emulador, servidor de desenvolvimento e navegador: mais lento que a
+    # verificacao, por isso roda depois dela passar.
+    needs: verificacao
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # O dev server e o seed usam as dependencias da raiz.
+      - run: npm ci
+
+      - name: Instalar dependencias dos testes
+        working-directory: e2e
+        run: npm ci
+
+      - name: Instalar o navegador
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      # O emulador do Firestore precisa de Java, ja presente no runner.
+      - name: Instalar o firebase-tools
+        run: npm install -g firebase-tools
+
+      - name: Rodar a suite
+        working-directory: e2e
+        run: npm run e2e
+
+      - name: Guardar o relatorio em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 7
