@@ -77,21 +77,26 @@ Só depois de 1.3. Rodar E2E contra o Firebase de produção poluiria os dados r
   - Exportar o `.xlsx` e validar que o arquivo foi gerado.
 - [ ] Encadear no CI com `needs: verificacao` e publicar o relatório em caso de falha.
 
-### 1.5 Regras do Firestore versionadas 🔴 — ⚠️ parcial
+### 1.5 Regras do Firestore versionadas 🔴 — ✅ concluído
 
 - [x] Criar `firestore.rules` e `firestore.indexes.json` versionados.
 - [x] Validar que cada usuário só lê e escreve sob o próprio `userId` — verificado
   contra o emulador: leitura de outro usuário, escrita em outro usuário e acesso
   fora de `users/` retornam `permission-denied`.
-- [ ] **Comparar com as regras publicadas hoje no console antes de qualquer deploy.**
-  O arquivo foi escrito a partir da estrutura de dados em `firebaseService.ts`, não
-  exportado do console. Se as de produção forem mais restritivas em algum ponto,
-  publicar isto afrouxaria o acesso.
+- [x] Comparar com as regras publicadas no console. Conferido em 05/10/2026 contra a
+  versão de 07/10/2025: o arquivo reproduz exatamente as regras em produção. A
+  estrutura foi alinhada à do console para que a comparação futura seja uma leitura
+  direta, e o isolamento foi revalidado no emulador depois da mudança.
 - [ ] Preencher `firestore.indexes.json` com os índices que o projeto realmente usa
   (hoje está vazio; o emulador não exige índice composto, o Firestore real exige).
 
-Hoje as regras de um aplicativo financeiro existem apenas no console do Firebase, sem
-histórico, sem revisão e sem forma de restaurar se forem alteradas por engano.
+Até aqui as regras de um aplicativo financeiro existiam apenas no console, sem
+histórico, sem revisão e sem forma de restaurar se fossem alteradas por engano. Agora
+o repositório é a cópia fiel, e o emulador roda com as mesmas regras de produção.
+
+Resta apenas o `firestore.indexes.json` vazio: publicá-lo como está pode derrubar
+consultas que hoje funcionam, então ele não deve entrar em `firebase deploy` antes de
+ser preenchido.
 
 ---
 

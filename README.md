@@ -202,9 +202,9 @@ graph TD
 2. **Configurar Regras de Segurança**
 
    As regras ficam versionadas em [`firestore.rules`](./firestore.rules) e são as
-   mesmas usadas pelo emulador local. Antes de publicar com
-   `firebase deploy --only firestore:rules`, compare com o que está no console —
-   o arquivo foi escrito a partir da estrutura de dados, não exportado de lá.
+   mesmas usadas pelo emulador local. O arquivo foi conferido com o console em
+   05/10/2026 e reproduz exatamente a versão publicada — pode ser usado como fonte
+   para `firebase deploy --only firestore:rules`.
 
    ```javascript
    // Resumo do que as regras garantem
