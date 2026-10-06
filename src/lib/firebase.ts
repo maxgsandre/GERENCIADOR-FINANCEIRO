@@ -27,8 +27,10 @@ try {
   const isDevelopment = import.meta.env.DEV;
   
   if (isDevelopment && useEmulator) {
-    connectAuthEmulator(auth, 'http://localhost:9099');
-    connectFirestoreEmulator(db, 'localhost', 8080);
+    // 127.0.0.1 em vez de localhost: em algumas maquinas Windows o nome resolve
+    // apenas para ::1, e o emulador escuta so em IPv4 -- a conexao falharia.
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    connectFirestoreEmulator(db, '127.0.0.1', 8080);
   }
 } catch (error) {
   // Silenciar detalhes para evitar exposição de dados sensíveis
