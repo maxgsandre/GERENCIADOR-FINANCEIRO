@@ -63,19 +63,25 @@ encontrados e nenhuma delas toca o Firebase — dá pra testar sem infraestrutur
 O gancho `VITE_USE_FIREBASE_EMULATOR` já existia em [`src/lib/firebase.ts`](../src/lib/firebase.ts);
 faltava a configuração, que agora está em `firebase.json` e `scripts/seed-emulator.mjs`.
 
-### 1.4 Playwright end-to-end 🔵
+### 1.4 Playwright end-to-end 🔵 — ✅ concluído
 
-Só depois de 1.3. Rodar E2E contra o Firebase de produção poluiria os dados reais.
+Rodar E2E contra o Firebase de produção poluiria os dados reais, então a suíte só
+sobe contra o emulador, em porta própria, e nunca reaproveita um servidor já aberto.
+Um dos testes falha se qualquer requisição sair para os domínios de produção.
 
-- [ ] Criar o pacote `e2e/` com `package.json` próprio, como no `fichas-onprime`.
-- [ ] `playwright.config.ts` com `locale: 'pt-BR'` e `timezoneId: 'America/Sao_Paulo'`
+- [x] Criar o pacote `e2e/` com `package.json` próprio, como no `fichas-onprime`.
+- [x] `playwright.config.ts` com `locale: 'pt-BR'` e `timezoneId: 'America/Sao_Paulo'`
   (essencial dado o histórico de bugs de fuso).
-- [ ] Fluxos mínimos a cobrir:
-  - Login e carregamento do Dashboard.
-  - Lançar uma dívida parcelada e conferir o valor no Dashboard.
-  - Quitar antecipadamente e confirmar que os meses seguintes zeram.
-  - Exportar o `.xlsx` e validar que o arquivo foi gerado.
-- [ ] Encadear no CI com `needs: verificacao` e publicar o relatório em caso de falha.
+- [x] Login, carregamento do Dashboard e conferência dos totais do mês.
+- [x] Confirmar que as parcelas inativadas por quitação antecipada não entram nos
+  totais dos meses seguintes, nem no Dashboard nem na aba de Dívidas.
+- [x] Exportar o `.xlsx` e validar o nome do arquivo, o formato e o tamanho.
+- [ ] Lançar uma dívida parcelada **pela interface** e conferir o valor no Dashboard.
+  Hoje a dívida vem pronta do seed; exercitar o formulário de criação é um fluxo
+  bem maior e ficou de fora desta etapa.
+- [ ] Quitar antecipadamente **pela interface**, em vez de partir de um cenário já
+  quitado. Cobriria o caminho que gerou o bug, não só o estado final.
+- [x] Encadear no CI com `needs: verificacao` e publicar o relatório em caso de falha.
 
 ### 1.5 Regras do Firestore versionadas 🔴 — ✅ concluído
 
@@ -200,6 +206,10 @@ nenhum cofrinho o possui. O bloco nunca renderiza. Só compila porque o `tsconfi
 
 As quatro telas mantêm cópias independentes, todas iniciadas no mês atual. Escolher
 setembro no Dashboard e navegar para Dívidas volta para o mês corrente.
+
+Confirmado pelos testes end-to-end: o primeiro teste de navegação falhou exatamente
+por isso, e precisou selecionar o mês de novo depois de trocar de aba. Quando o item
+for corrigido, essa chamada extra em `e2e/tests/dashboard.spec.ts` pode sair.
 
 ---
 

@@ -268,7 +268,12 @@ desenvolve e falharia no CI, que roda em UTC.
 ### 🔄 **Integração contínua**
 
 O workflow em [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) roda a cada push
-e pull request para `main` e `homolog`: `npm ci` → `lint` → `test` → `build`.
+e pull request para `main` e `homolog`, em dois estágios:
+
+1. **Verificação** — `npm ci` → `lint` → `test` → `build`.
+2. **End-to-end** — só começa se o primeiro passar, porque sobe emulador,
+   servidor e navegador. Em caso de falha, o relatório do Playwright fica
+   disponível como artefato por 7 dias.
 
 > A checagem de tipos ainda não entra no pipeline. O `vite build` usa esbuild, que
 > remove as anotações sem validá-las, e o `tsc` acusa erros preexistentes. Ver a
@@ -315,6 +320,39 @@ VITE_FIREBASE_API_KEY=emulador
 
 O prefixo `demo-` faz o emulador rodar totalmente offline, sem exigir credenciais
 nem projeto real. Painel em `http://127.0.0.1:4000`.
+
+---
+
+### 🎭 **Testes end-to-end**
+
+Vivem em [`e2e/`](./e2e), com `package.json` próprio — o Playwright não entra nas
+dependências do aplicativo. Exigem os mesmos pré-requisitos do emulador.
+
+```bash
+cd e2e
+npm install
+npx playwright install chromium
+npm run e2e
+```
+
+O `npm run e2e` cuida de tudo: sobe os emuladores, popula o cenário, levanta o
+servidor em `127.0.0.1:3100` apontado para o emulador, roda a suíte e derruba tudo
+ao final — inclusive se algum teste falhar.
+
+Dois cuidados embutidos:
+
+- O servidor sobe numa porta própria e **nunca** reaproveita um já aberto. Um
+  `npm run dev` rodando aponta para o Firebase real, e os testes escreveriam em
+  dados de verdade.
+- Um dos testes falha se qualquer requisição sair para os domínios de produção do
+  Firebase.
+
+Para rodar um arquivo só ou ver o relatório:
+
+```bash
+npm run e2e -- tests/smoke.spec.ts
+npm run report
+```
 
 ---
 
