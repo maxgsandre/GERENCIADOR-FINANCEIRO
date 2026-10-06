@@ -281,8 +281,8 @@ e pull request para `main` e `homolog`, em dois estágios:
 
 ### 🔥 **Emulador do Firebase**
 
-Permite desenvolver sem tocar nos dados reais. Requer **Java 11+** e o
-**firebase-tools 13+** instalado globalmente:
+Permite desenvolver sem tocar nos dados reais. Requer **Java 21+** (exigência do
+firebase-tools 15) e o **firebase-tools** instalado globalmente:
 
 ```bash
 npm install -g firebase-tools

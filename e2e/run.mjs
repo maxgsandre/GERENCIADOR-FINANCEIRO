@@ -21,7 +21,7 @@ if (!temFirebaseTools()) {
   console.error(
     '\nfirebase-tools nao encontrado.\n' +
       'Instale com: npm install -g firebase-tools\n' +
-      'O emulador do Firestore tambem exige Java 11 ou superior.\n'
+      'O emulador do Firestore exige Java 21 ou superior.\n'
   );
   process.exit(1);
 }
