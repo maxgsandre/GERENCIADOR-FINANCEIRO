@@ -1,0 +1,16 @@
+{
+  "name": "gerenciador-financeiro-e2e",
+  "private": true,
+  "description": "Testes end-to-end, executados contra o emulador do Firebase.",
+  "scripts": {
+    "e2e": "node run.mjs",
+    "test": "playwright test",
+    "report": "playwright show-report",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^20.19.0",
+    "typescript": "^5.9.0"
+  }
+}
