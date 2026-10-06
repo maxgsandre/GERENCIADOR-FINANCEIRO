@@ -55,6 +55,8 @@
     },
     server: {
       port: 3000,
-      open: true,
+      // Os testes end-to-end sobem o servidor em outra porta e nao podem abrir
+      // janela: o navegador quem controla e o Playwright.
+      open: !process.env.E2E,
     },
   });
