@@ -116,6 +116,9 @@ const criarParcelas = () => {
         parcelas: totalParcelas,
         parcelasPagas: i === 0 ? 1 : 0,
         parcelaIndex: i + 1,
+        // parcelaTotal e o que permite a aba de Dividas agrupar as parcelas de
+        // uma mesma divida; sem ele, cada parcela conta como divida inteira.
+        parcelaTotal: totalParcelas,
         valorParcela,
         dataVencimento: `${periodo}-20`,
         tipo: 'parcelada',
